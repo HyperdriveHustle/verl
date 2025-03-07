@@ -29,9 +29,7 @@ def run_ppo(config, compute_score=None):
     if not ray.is_initialized():
         # this is for local ray cluster
         ray.init(runtime_env={'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN'}})
-
     ray.get(main_task.remote(config, compute_score))
-
 
 @ray.remote(num_cpus=1)  # please make sure main_task is not scheduled on head
 def main_task(config, compute_score=None):
@@ -115,7 +113,6 @@ def main_task(config, compute_score=None):
     val_reward_fn = reward_manager_cls(tokenizer=tokenizer, num_examine=1, compute_score=compute_score)
 
     resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
-
     trainer = RayPPOTrainer(config=config,
                             tokenizer=tokenizer,
                             processor=processor,
@@ -125,6 +122,7 @@ def main_task(config, compute_score=None):
                             reward_fn=reward_fn,
                             val_reward_fn=val_reward_fn)
     trainer.init_workers()
+    print("begin fit")
     trainer.fit()
 
 

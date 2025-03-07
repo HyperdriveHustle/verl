@@ -33,6 +33,9 @@ def _default_compute_score(data_source, solution_str, ground_truth, extra_info=N
     elif data_source in ['hiyouga/geometry3k']:
         from . import geo3k
         res = geo3k.compute_score(solution_str, ground_truth)
+    elif data_source in ['/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/math_train/reinforce_step150_wrong_answer/train_sample20_less_than_0d8.jsonl']:
+        from . import self_developed
+        res = self_developed.compute_score(solution_str, ground_truth)
     else:
         raise NotImplementedError
 

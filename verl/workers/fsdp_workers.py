@@ -641,7 +641,6 @@ class CriticWorker(Worker):
         from verl.utils.torch_dtypes import PrecisionType
         from torch.distributed.fsdp import FullyShardedDataParallel as FSDP, ShardingStrategy, MixedPrecision
         from torch import optim
-
         local_path = copy_to_local(config.model.path)
         # note that the tokenizer between actor and critic may be different. So override tokenizer info with actor info
         # using random initialized model from any architecture. May not be the same as Actor.
@@ -681,6 +680,7 @@ class CriticWorker(Worker):
             apply_monkey_patch(critic_model_config, verbose=True)
 
         init_context = get_init_weight_context_manager()
+        print(f"prepare for pretrained | 进程 PID={os.getpid()} | 设备={torch.cuda.current_device()} | Rank={self.rank}")
         with init_context(), warnings.catch_warnings():
             warnings.simplefilter("ignore")
             setattr(critic_model_config, 'classifier_dropout', 0.)
@@ -690,7 +690,7 @@ class CriticWorker(Worker):
                                                                             config=critic_model_config,
                                                                             attn_implementation='flash_attention_2',
                                                                             trust_remote_code=trust_remote_code)
-
+            print(f"finish from pretrained | 进程 PID={os.getpid()} | 设备={torch.cuda.current_device()} | Rank={self.rank}")
             # some parameters may not in torch_dtype
             critic_module.to(torch_dtype)
 
@@ -713,14 +713,13 @@ class CriticWorker(Worker):
             buffer_dtype = torch.float32
 
         mixed_precision = MixedPrecision(param_dtype=param_dtype, reduce_dtype=reduce_dtype, buffer_dtype=buffer_dtype)
-
         auto_wrap_policy = get_fsdp_wrap_policy(module=critic_module, config=self.config.model.fsdp_config.wrap_policy)
 
         log_gpu_memory_usage('Before critic FSDP', logger=None)
 
         fsdp_mesh = self.device_mesh
         sharding_strategy = get_sharding_strategy(fsdp_mesh)
-
+        print(f"prepare for FSDP | 进程 PID={os.getpid()} | 设备={torch.cuda.current_device()} | Rank={self.rank}")
         # Note: We force turn off CPUOffload for critic because it causes incorrect results when using grad accumulation
         critic_module = FSDP(critic_module,
                              param_init_fn=init_fn,
@@ -733,7 +732,7 @@ class CriticWorker(Worker):
                              forward_prefetch=False,
                              device_mesh=self.device_mesh,
                              cpu_offload=None)
-
+        # print(f"FSDP 运行进程: PID={os.getpid()}, 设备={torch.cuda.current_device()}")
         log_gpu_memory_usage('After critic FSDP', logger=None)
 
         critic_optimizer = optim.AdamW(critic_module.parameters(),
@@ -761,23 +760,24 @@ class CriticWorker(Worker):
         from verl.workers.critic import DataParallelPPOCritic
         self.critic_module, self.critic_optimizer, self.critic_lr_scheduler = self._build_critic_model_optimizer(
             self.config)
-
+        
         if self._is_offload_param:
             offload_fsdp_model_to_cpu(self.critic_module)
         if self._is_offload_optimizer:
             offload_fsdp_optimizer(optimizer=self.critic_optimizer)
-
+        print("critic")
         self.critic = DataParallelPPOCritic(config=self.config,
                                             critic_module=self.critic_module,
                                             critic_optimizer=self.critic_optimizer)
-
+        print("flops")
         self.flops_counter = FlopsCounter(self.critic_model_config)
+        print("prepare checkpoint_manager")
         self.checkpoint_manager = FSDPCheckpointManager(
             model=self.critic_module,
             optimizer=self.critic_optimizer,
             lr_scheduler=self.critic_lr_scheduler,
             processing_class=self.processor if self.processor is not None else self.tokenizer)
-
+        print("finish")
         torch.cuda.empty_cache()
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)

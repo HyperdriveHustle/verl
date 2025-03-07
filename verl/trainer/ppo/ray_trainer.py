@@ -645,21 +645,17 @@ class RayPPOTrainer(object):
                 'do_sample': False,
                 'validate': True,
             }
-
             # pad to be divisible by dp_size
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
             test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
             # unpad
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
-            print('validation generation end')
 
             # Store generated outputs
             output_ids = test_output_gen_batch.batch['responses']
             output_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids]
             sample_outputs.extend(output_texts)
-
             test_batch = test_batch.union(test_output_gen_batch)
-
             # evaluate using reward_function
             reward_tensor = self.val_reward_fn(test_batch)
 
@@ -692,9 +688,7 @@ class RayPPOTrainer(object):
     def init_workers(self):
         """Init resource pool and worker group"""
         self.resource_pool_manager.create_resource_pool()
-
         self.resource_pool_to_cls = {pool: {} for pool in self.resource_pool_manager.resource_pool_dict.values()}
-
         # create actor and rollout
         if self.hybrid_engine:
             resource_pool = self.resource_pool_manager.get_resource_pool(Role.ActorRollout)
@@ -743,19 +737,23 @@ class RayPPOTrainer(object):
         if self.use_critic:
             self.critic_wg = all_wg['critic']
             self.critic_wg.init_model()
-
+        print("Critic model initialized.")
+        print("="*100)
         if self.use_reference_policy:
             self.ref_policy_wg = all_wg['ref']
             self.ref_policy_wg.init_model()
-
+        print("Reference policy initialized.")
+        print("="*100)
         if self.use_rm:
             self.rm_wg = all_wg['rm']
             self.rm_wg.init_model()
-
+        print("Reward model initialized.")
+        print("="*100)
         # we should create rollout at the end so that vllm can have a better estimation of kv cache memory
         self.actor_rollout_wg = all_wg['actor_rollout']
         self.actor_rollout_wg.init_model()
-
+        print("Actor rollout initialized.")
+        print("="*100)
     def _save_checkpoint(self):
         # path: given_path + `/global_step_{global_steps}` + `/actor`
         local_global_step_folder = os.path.join(self.config.trainer.default_local_dir,
@@ -867,7 +865,7 @@ class RayPPOTrainer(object):
         """
         from verl.utils.tracking import Tracking
         from omegaconf import OmegaConf
-
+        
         logger = Tracking(project_name=self.config.trainer.project_name,
                           experiment_name=self.config.trainer.experiment_name,
                           default_backend=self.config.trainer.logger,
@@ -877,7 +875,7 @@ class RayPPOTrainer(object):
 
         # load checkpoint before doing anything
         self._load_checkpoint()
-
+        
         # perform validation before training
         # currently, we only support validation using the reward_function.
         if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
@@ -889,8 +887,10 @@ class RayPPOTrainer(object):
 
         # we start from step 1
         self.global_steps += 1
+        last_val_metrics = None
 
         for epoch in range(self.config.trainer.total_epochs):
+            print(f"now in {epoch}")
             for batch_dict in self.train_dataloader:
                 metrics = {}
                 timing_raw = {}
@@ -973,7 +973,7 @@ class RayPPOTrainer(object):
                         # we combine with rule-based rm
                         reward_tensor = self.reward_fn(batch)
                         batch.batch['token_level_scores'] = reward_tensor
-
+                        
                         # compute rewards. apply_kl_penalty if available
                         if not self.config.actor_rollout_ref.actor.get('use_kl_loss', False):
                             batch, kl_metrics = apply_kl_penalty(batch,
@@ -991,12 +991,13 @@ class RayPPOTrainer(object):
                                                   num_repeat=self.config.actor_rollout_ref.rollout.n)
 
                     # update critic
+                    print("have come here?")
                     if self.use_critic:
                         with _timer('update_critic', timing_raw):
                             critic_output = self.critic_wg.update_critic(batch)
                         critic_output_metrics = reduce_metrics(critic_output.meta_info['metrics'])
                         metrics.update(critic_output_metrics)
-
+                    print("yes come here")
                     # implement critic warmup
                     if self.config.trainer.critic_warmup <= self.global_steps:
                         # update actor
