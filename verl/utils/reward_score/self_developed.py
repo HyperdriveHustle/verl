@@ -47,12 +47,10 @@ def evaluate_answer(ans, ground_truth, is_base=True):
     else: ans = "assistant:".join(ans)
     
     ans = ans.strip()
-    # print(ans)
-    # print("*"*100)
     # 0. 对于 base model 先判断是否遵循指令
     if ans.startswith("<think>") and ans.endswith("</answer>") and "<answer>" in ans  and "</think>" in ans:
         follow_format = 1
-    # print(f">> follow_format = {follow_format}\n>> ans = {ans}")
+    print(f">> follow_format = {follow_format}\n>> ans = {ans}")
     # 必须要 follow format 才可以继续训
     if follow_format > 0:
         # 1. 先判断时候包含 boxed
