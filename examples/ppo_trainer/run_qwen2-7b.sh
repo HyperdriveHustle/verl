@@ -16,6 +16,7 @@ python3 -m verl.trainer.main_ppo \
     data.max_response_length=512 \
     actor_rollout_ref.model.path=Qwen/Qwen2-7B-Instruct \
     actor_rollout_ref.actor.optim.lr=1e-6 \
+    actor_rollout_ref.actor.ulysses_sequence_parallel_size=2 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=256 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=16 \
@@ -31,6 +32,7 @@ python3 -m verl.trainer.main_ppo \
     critic.optim.lr=1e-5 \
     critic.model.use_remove_padding=True \
     critic.model.path=Qwen/Qwen2-7B-Instruct \
+    critic.ulysses_sequence_parallel_size=2 \
     critic.model.enable_gradient_checkpointing=True \
     critic.ppo_micro_batch_size_per_gpu=32 \
     critic.model.fsdp_config.param_offload=False \
