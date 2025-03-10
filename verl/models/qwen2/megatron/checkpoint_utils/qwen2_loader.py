@@ -18,6 +18,35 @@ from typing import Dict, Any, Callable, Optional
 import torch.distributed as dist
 
 
+def print_rank_0(message):
+    """If distributed is initialized, print only on rank 0."""
+    if torch.distributed.is_initialized():
+        if torch.distributed.get_rank() == 0:
+            print(message, flush=True)
+    else:
+        print(message, flush=True)
+
+from megatron.core import DistributedDataParallel as DDP
+try:
+    from megatron.core.distributed import TorchFullyShardedDataParallel as torch_FSDP
+    ALL_MODULE_WRAPPER_CLASSNAMES = (DDP, torch_FSDP)
+except ImportError:
+    ALL_MODULE_WRAPPER_CLASSNAMES = (DDP)
+
+def unwrap_model(model, module_instances=ALL_MODULE_WRAPPER_CLASSNAMES):
+    return_list = True
+    if not isinstance(model, list):
+        model = [model]
+        return_list = False
+    unwrapped_model = []
+    for model_module in model:
+        while isinstance(model_module, module_instances):
+            model_module = model_module.module
+        unwrapped_model.append(model_module)
+    if not return_list:
+        return unwrapped_model[0]
+    return unwrapped_model
+
 def _megatron_calc_layer_map(config):
     """Calculate the mapping of global layer_idx to local layer_idx
     Returns:
@@ -53,7 +82,7 @@ def load_state_dict_to_megatron_qwen2(state_dict, wrapped_models, config, params
     """
     import megatron
     from megatron.core import mpu
-    from megatron.training.utils import print_rank_0, unwrap_model
+    # from megatron.training.utils import print_rank_0, unwrap_model
     from megatron.core.transformer.module import Float16Module
     from megatron.core import DistributedDataParallel as LocalDDP
     from torch.nn.parallel import DistributedDataParallel as torchDDP
@@ -460,3 +489,4 @@ def load_state_dict_to_megatron_qwen2(state_dict, wrapped_models, config, params
 
     torch.cuda.empty_cache()
     print_rank_0(f"loading megatron ckpt done, time elapsed {time.time() - start_time}s")
+

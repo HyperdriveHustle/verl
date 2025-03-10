@@ -17,10 +17,11 @@ python3 -m verl.trainer.main_ppo \
     data.train_batch_size=1024 \
     data.max_prompt_length=1024 \
     data.max_response_length=1024 \
-    actor_rollout_ref.model.path=/data02/global_step150_hf \
+    actor_rollout_ref.model.path=/nvfile-heatstorage/chatrl/users/hxh/models/rl_models/Qwen25-7B-Base-change-chat-template-math-hard-rloo-mix-reward-0220/global_step150_hf \
     actor_rollout_ref.actor.optim.lr=7e-7 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=16 \
+    actor_rollout_ref.actor.ulysses_sequence_parallel_size=2 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
@@ -35,7 +36,8 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     critic.optim.lr=1e-5 \
     critic.model.use_remove_padding=True \
-    critic.model.path=/data02/global_step150_hf \
+    critic.ulysses_sequence_parallel_size=2 \
+    critic.model.path=/nvfile-heatstorage/chatrl/users/hxh/models/rl_models/Qwen25-7B-Base-change-chat-template-math-hard-rloo-mix-reward-0220/global_step150_hf \
     critic.model.enable_gradient_checkpointing=True \
     critic.ppo_micro_batch_size_per_gpu=8 \
     critic.model.fsdp_config.param_offload=False \
