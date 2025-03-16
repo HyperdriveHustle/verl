@@ -913,50 +913,52 @@ class RayPPOTrainer(object):
                     if self.config.algorithm.filter_groups.enable:
                         filter_metric_dict = {}
 
-                        uid2seq_rewards = defaultdict(list)
+                        # Collect the sequence reward for each trajectory
+                        prompt_uid2seq_rewards = defaultdict(list)
                         for uid, tok_rewards in zip(batch.non_tensor_batch['uid'], batch.batch['token_level_rewards']):
                             seq_reward = torch.sum(tok_rewards).item()
-                            uid2seq_rewards[uid].append(seq_reward)
+                            prompt_uid2seq_rewards[uid].append(seq_reward)
 
-                        uid2seq_reward_std = {}
-                        for uid, seq_rewards in uid2seq_rewards.items():
-                            uid2seq_reward_std[uid] = np.std(seq_rewards)
 
-                        kept_uids = [uid for uid, std in uid2seq_reward_std.items() if std > 0]
-                        filter_metric_dict["non_uniform_reward_prompt_ratio"] = len(kept_uids) / len(uid2seq_rewards)
-                        filter_metric_dict["non_uniform_reward_prompt_bsz"] = len(kept_uids)
+                        prompt_uid2seq_reward_std = {}
+                        for prompt_uid, seq_rewards in prompt_uid2seq_rewards.items():
+                            prompt_uid2seq_reward_std[prompt_uid] = np.std(seq_rewards)
 
-                        kept_idxs = []
+                        kept_prompt_uids = [uid for uid, std in prompt_uid2seq_reward_std.items() if std > 0]
+                        filter_metric_dict["non_uniform_reward_prompt_ratio"] = len(kept_prompt_uids) / len(
+                            prompt_uid2seq_rewards)
+                        filter_metric_dict["non_uniform_reward_prompt_bsz"] = len(kept_prompt_uids)
 
                         train_prompt_bsz = self.config.data.train_batch_size
                         fill_to_train_bsz = self.config.algorithm.filter_groups.fill_to_train_bsz
-                        if len(kept_uids) > train_prompt_bsz or not fill_to_train_bsz:
-                            kept_uids = kept_uids[:train_prompt_bsz]
+                        if len(kept_prompt_uids) > train_prompt_bsz or not fill_to_train_bsz:
+                            kept_prompt_uids = kept_prompt_uids[:train_prompt_bsz]
                         else:
-                            for uid in uid2seq_reward_std.keys():
-                                if uid not in kept_uids:
-                                    kept_uids.append(uid)
-                                if len(kept_uids) == train_prompt_bsz:
+                            for prompt_uid in prompt_uid2seq_reward_std.keys():
+                                if prompt_uid not in kept_prompt_uids:
+                                    kept_prompt_uids.append(prompt_uid)
+                                if len(kept_prompt_uids) == train_prompt_bsz:
                                     break
 
-                        for idx, uid in enumerate(batch.non_tensor_batch['uid']):
-                            if uid in kept_uids:
-                                kept_idxs.append(idx)
-                        filter_metric_dict["non_uniform_reward_traj_bsz"] = len(kept_idxs)
+                        kept_traj_idxs = []
+                        for traj_idx, traj_prompt_uid in enumerate(batch.non_tensor_batch['uid']):
+                            if traj_prompt_uid in kept_prompt_uids:
+                                kept_traj_idxs.append(traj_idx)
+                        filter_metric_dict["non_uniform_reward_traj_bsz"] = len(kept_traj_idxs)
 
                         world_size = self.actor_rollout_wg.world_size
-                        kept_idxs = kept_idxs[:len(kept_idxs) // world_size * world_size]
+                        kept_traj_idxs = kept_traj_idxs[:len(kept_traj_idxs) // world_size * world_size]
                         if self.config.algorithm.filter_groups.drop_last_mini_batch:
                             train_traj_mini_bsz = self.config.actor_rollout_ref.actor.ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n
-                            if len(kept_idxs) > train_traj_mini_bsz:
-                                kept_idxs = kept_idxs[:len(kept_idxs) // train_traj_mini_bsz * train_traj_mini_bsz]
+                            if len(kept_traj_idxs) > train_traj_mini_bsz:
+                                kept_traj_idxs = kept_traj_idxs[:len(kept_traj_idxs) // train_traj_mini_bsz * train_traj_mini_bsz]
                             else:
-                                print(f'[WARNING] {len(kept_idxs)=} < {train_traj_mini_bsz=}')
+                                print(f'[WARNING] {len(kept_traj_idxs)=} < {train_traj_mini_bsz=}')
 
-                        filter_metric_dict["final_traj_ratio"] = len(kept_idxs) / len(batch.batch)
-                        filter_metric_dict["final_traj_bsz"] = len(kept_idxs)
+                        filter_metric_dict["final_traj_ratio"] = len(kept_traj_idxs) / len(batch.batch)
+                        filter_metric_dict["final_traj_bsz"] = len(kept_traj_idxs)
 
-                        batch = batch.select_idxs(kept_idxs)
+                        batch = batch.select_idxs(kept_traj_idxs)
 
                     # balance the number of valid tokens on each dp rank.
                     # Note that this breaks the order of data inside the batch.
