@@ -17,9 +17,6 @@ import re
 import signal
 from typing import Optional
 
-import sympy
-from sympy.parsing.latex import parse_latex
-
 
 def last_boxed_only_string(string: str) -> Optional[str]:
     """Extract the last LaTeX boxed expression from a string.
@@ -37,7 +34,7 @@ def last_boxed_only_string(string: str) -> Optional[str]:
     i = idx
     right_brace_idx = None
     num_left_braces_open = 0
-    
+
     while i < len(string):
         if string[i] == "{":
             num_left_braces_open += 1
@@ -81,45 +78,6 @@ class timeout:
 
     def __exit__(self, type, value, traceback):
         signal.alarm(0)
-
-
-def is_equiv(x1: str, x2: str) -> bool:
-    """
-    Args:
-        x1, x2: normalized LaTeX string
-    """
-    try:
-        with timeout(seconds=10):
-            try:
-                parsed_x1 = parse_latex(x1)
-                parsed_x2 = parse_latex(x2)
-            except (
-                    sympy.parsing.latex.errors.LaTeXParsingError,
-                    sympy.SympifyError,
-                    TypeError,
-            ):
-                return False
-
-            try:
-                diff = parsed_x1 - parsed_x2
-            except TypeError:
-                return False
-
-            try:
-                if sympy.simplify(diff) == 0:
-                    return True
-                else:
-                    return False
-            except ValueError:
-                return False
-
-    except TimeoutError:
-        return False
-    except ImportError as e:
-        raise
-    except Exception as e:
-        return False
-
 
 # Constants for normalization
 SUBSTITUTIONS = [
@@ -205,7 +163,7 @@ def is_correct_minerva(solution_str: str, gt: str, gt_need_extract: bool = False
     else:
         gt = normalize_final_answer(gt)
 
-    return (pred == gt or is_equiv(pred, gt)), pred
+    return (pred == gt), pred
 
 
 def is_correct_strict_box(pred: str, gt: str, pause_tokens_index: Optional[list[int]] = None) -> tuple[int, Optional[str]]:
@@ -247,14 +205,16 @@ def verify(solution_str: str, answer: str, strict_box_verify: bool = False,
         True if the solution is correct, False otherwise
     """
     if strict_box_verify:
-        corr, _ = is_correct_strict_box(solution_str, answer, pause_tokens_index)
-        return corr == 1
+        correct, pred = is_correct_strict_box(solution_str, answer, pause_tokens_index)
+        return correct == 1, pred
 
-    corr, _ = is_correct_minerva(solution_str, answer)
-    return corr
+    correct, pred = is_correct_minerva(solution_str, answer)
+    return correct, pred
 
-
-def compute_score(solution_str: str, ground_truth: str, config, pause_tokens_index: Optional[list[int]] = None) -> float:
+def compute_score(solution_str: str,
+                  ground_truth: str,
+                  strict_box_verify: bool = False,
+                  pause_tokens_index: Optional[list[int]] = None) -> float:
     """Compute the reward score for a solution.
     
     Args:
@@ -268,9 +228,15 @@ def compute_score(solution_str: str, ground_truth: str, config, pause_tokens_ind
     """
     # Limit solution length for efficiency
     solution_str = solution_str[-300:]  # The longest answer in MATH-500 has 159 characters
-    
+
     # Verify the solution
-    strict_box_verify = config.reward_model.strict_box_verify
-    correct = verify(solution_str, ground_truth, strict_box_verify, pause_tokens_index)
-    
-    return 1.0 if correct else -1.0
+    correct, pred = verify(solution_str, ground_truth, strict_box_verify, pause_tokens_index)
+
+    reward = 1.0 if correct else -1.0
+    acc = correct
+
+    return {
+        "reward": reward,
+        "acc": acc,
+        "pred": pred,
+    }
