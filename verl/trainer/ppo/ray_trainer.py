@@ -570,6 +570,9 @@ class RayPPOTrainer(object):
 
         self._maybe_log_val_generations(inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores)
 
+        for lst in reward_extra_infos_dict.values():
+            assert len(lst) == 0 or len(lst) == len(sample_scores)
+
         data_sources = np.concatenate(data_source_lst, axis=0)
 
         data_src2prompt2var2vals = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
