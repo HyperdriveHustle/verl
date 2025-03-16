@@ -923,8 +923,8 @@ class RayPPOTrainer(object):
                             uid2seq_reward_std[uid] = np.std(seq_rewards)
 
                         kept_uids = [uid for uid, std in uid2seq_reward_std.items() if std > 0]
-                        filter_metric_dict["non_uni_rew_prompt_ratio"] = len(kept_uids) / len(uid2seq_rewards)
-                        filter_metric_dict["non_uni_rew_prompt_bsz"] = len(kept_uids)
+                        filter_metric_dict["non_uniform_reward_prompt_ratio"] = len(kept_uids) / len(uid2seq_rewards)
+                        filter_metric_dict["non_uniform_reward_prompt_bsz"] = len(kept_uids)
 
                         kept_idxs = []
 
@@ -942,7 +942,7 @@ class RayPPOTrainer(object):
                         for idx, uid in enumerate(batch.non_tensor_batch['uid']):
                             if uid in kept_uids:
                                 kept_idxs.append(idx)
-                        filter_metric_dict["non_uni_rew_traj_bsz"] = len(kept_idxs)
+                        filter_metric_dict["non_uniform_reward_traj_bsz"] = len(kept_idxs)
 
                         world_size = self.actor_rollout_wg.world_size
                         kept_idxs = kept_idxs[:len(kept_idxs) // world_size * world_size]
