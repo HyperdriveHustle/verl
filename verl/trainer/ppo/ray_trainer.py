@@ -919,7 +919,6 @@ class RayPPOTrainer(object):
                             seq_reward = torch.sum(tok_rewards).item()
                             prompt_uid2seq_rewards[uid].append(seq_reward)
 
-
                         prompt_uid2seq_reward_std = {}
                         for prompt_uid, seq_rewards in prompt_uid2seq_rewards.items():
                             prompt_uid2seq_reward_std[prompt_uid] = np.std(seq_rewards)
@@ -951,7 +950,8 @@ class RayPPOTrainer(object):
                         if self.config.algorithm.filter_groups.drop_last_mini_batch:
                             train_traj_mini_bsz = self.config.actor_rollout_ref.actor.ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n
                             if len(kept_traj_idxs) > train_traj_mini_bsz:
-                                kept_traj_idxs = kept_traj_idxs[:len(kept_traj_idxs) // train_traj_mini_bsz * train_traj_mini_bsz]
+                                kept_traj_idxs = kept_traj_idxs[:len(kept_traj_idxs) // train_traj_mini_bsz *
+                                                                train_traj_mini_bsz]
                             else:
                                 print(f'[WARNING] {len(kept_traj_idxs)=} < {train_traj_mini_bsz=}')
 
