@@ -124,6 +124,9 @@ class NaiveRewardManager:
                 ground_truth=ground_truth,
                 extra_info=extra_info,
             )
+            # Store the information including original reward
+            for key, value in result.items():
+                reward_extra_info[key].append(value)
 
             final_reward = 0
 
@@ -134,16 +137,13 @@ class NaiveRewardManager:
             else:
                 reward = result
 
-            for key, value in result.items():
-                reward_extra_info[key].append(value)
-
             final_reward += reward
 
             overlong_buffer_len = self.overlong_buffer_cfg.len
             if overlong_buffer_len > 0:
                 overlong_penalty_factor = self.overlong_buffer_cfg.penalty_factor
                 exceed_len = valid_response_length - (self.max_resp_len - overlong_buffer_len)
-                overlong_reward = max(-exceed_len / overlong_buffer_len * overlong_penalty_factor, 0)
+                overlong_reward = min(-exceed_len / overlong_buffer_len * overlong_penalty_factor, 0)
                 final_reward += overlong_reward
                 if self.overlong_buffer_cfg.log:
                     reward_extra_info["overlong_reward"].append(overlong_reward)
