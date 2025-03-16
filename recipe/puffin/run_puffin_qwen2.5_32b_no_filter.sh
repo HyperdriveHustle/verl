@@ -2,7 +2,7 @@
 set -euxo pipefail
 
 project_name='puffin'
-exp_name='Qwen2.5-32B-Puffin'
+exp_name='Qwen2.5-32B-Puffin-NoFilter'
 
 # Ray
 export RAY_ADDRESS=${RAY_ADDRESS:-"http://localhost:8265"}
