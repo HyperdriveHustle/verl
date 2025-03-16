@@ -124,20 +124,18 @@ class NaiveRewardManager:
                 ground_truth=ground_truth,
                 extra_info=extra_info,
             )
-            # Store the information including original reward
-            for key, value in result.items():
-                reward_extra_info[key].append(value)
-
-            final_reward = 0
 
             reward: float
             if isinstance(result, dict):
                 assert "reward" in result
                 reward = result["reward"]
+                # Store the information including original reward
+                for key, value in result.items():
+                    reward_extra_info[key].append(value)
             else:
                 reward = result
 
-            final_reward += reward
+            final_reward = reward
 
             overlong_buffer_len = self.overlong_buffer_cfg.len
             if overlong_buffer_len > 0:
@@ -159,8 +157,11 @@ class NaiveRewardManager:
                 print("[prompt]", prompt_str)
                 print("[response]", response_str)
                 print("[ground_truth]", ground_truth)
-                for key, value in result.items():
-                    print(f"[{key}]", value)
+                if isinstance(result, dict):
+                    for key, value in result.items():
+                        print(f"[{key}]", value)
+                else:
+                    print(f"[reward]", result)
 
         if return_dict:
             return {
