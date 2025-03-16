@@ -89,6 +89,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.ref.fsdp_config.param_offload=${offload} \
     actor_rollout_ref.ref.ulysses_sequence_parallel_size=1 \
     actor_rollout_ref.actor.fsdp_config.fsdp_size=-1 \
+    custom_reward_function.overlong_buffer.enable=True \
     custom_reward_function.overlong_buffer.len=512 \
     custom_reward_function.overlong_buffer.penalty_factor=1.0 \
     trainer.logger=['console','wandb'] \
