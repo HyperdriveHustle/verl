@@ -269,7 +269,14 @@ def compute_rewards(token_level_scores, old_log_prob, ref_log_prob, kl_ratio):
     return token_level_scores - kl * kl_ratio
 
 
-def compute_policy_loss(old_log_prob, log_prob, advantages, eos_mask, cliprange=None, cliprange_low=None, cliprange_high=None, use_token_level_loss=False):
+def compute_policy_loss(old_log_prob,
+                        log_prob,
+                        advantages,
+                        eos_mask,
+                        cliprange=None,
+                        cliprange_low=None,
+                        cliprange_high=None,
+                        use_token_level_loss=False):
     """Adapted from https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py#L1122
     Args:
         old_log_prob: `(torch.Tensor)`
@@ -306,8 +313,9 @@ def compute_policy_loss(old_log_prob, log_prob, advantages, eos_mask, cliprange=
         cliprange_low = cliprange
     if cliprange_high is None:
         cliprange_high = cliprange
-    pg_losses2 = -advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high) # - clip(ratio, 1-cliprange, 1+cliprange) * A
-    pg_losses = torch.maximum(pg_losses1, pg_losses2) # max(-ratio * A, -clip(ratio, 1-cliprange, 1+cliprange) * A)
+    pg_losses2 = -advantages * torch.clamp(ratio, 1 - cliprange_low,
+                                           1 + cliprange_high)  # - clip(ratio, 1-cliprange, 1+cliprange) * A
+    pg_losses = torch.maximum(pg_losses1, pg_losses2)  # max(-ratio * A, -clip(ratio, 1-cliprange, 1+cliprange) * A)
 
     if use_token_level_loss:
         pg_loss = verl_F.masked_mean(pg_losses, eos_mask)
