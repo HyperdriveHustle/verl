@@ -370,7 +370,7 @@ class DataProto:
 
         return DataProto(batch=sub_batch, non_tensor_batch=non_tensor_batch, meta_info=sub_meta_info)
 
-    def sel_idxs(self, idxs):
+    def select_idxs(self, idxs):
         """
         Select specific indices from the DataProto.
         

@@ -956,7 +956,7 @@ class RayPPOTrainer(object):
                         filter_metric_dict["final_traj_ratio"] = len(kept_idxs) / len(batch.batch)
                         filter_metric_dict["final_traj_bsz"] = len(kept_idxs)
 
-                        batch = batch.sel_idxs(kept_idxs)
+                        batch = batch.select_idxs(kept_idxs)
 
                     # balance the number of valid tokens on each dp rank.
                     # Note that this breaks the order of data inside the batch.
