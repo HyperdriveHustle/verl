@@ -320,6 +320,11 @@ class RayPPOTrainer(object):
             assert config.data.train_batch_size == config.data.gen_batch_size, \
                 f"train_batch_size must be equal to gen_batch_size when filter_groups.enable is False, but got {config.data.train_batch_size =} and {config.data.gen_batch_size =}"
 
+        overlong_buffer_cfg = config.custom_reward_function.overlong_buffer
+        if overlong_buffer_cfg.enable:
+            assert config.data.max_response_length >= overlong_buffer_cfg.len > 0, \
+                f"{config.data.max_response_length=} / {overlong_buffer_cfg.len=}"
+
         # 1. Check total batch size for data correctness
         real_train_batch_size = config.data.train_batch_size * config.actor_rollout_ref.rollout.n
         assert real_train_batch_size % n_gpus == 0, \
