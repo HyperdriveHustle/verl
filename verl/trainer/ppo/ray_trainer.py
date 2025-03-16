@@ -928,7 +928,7 @@ class RayPPOTrainer(object):
 
                         kept_idxs = []
 
-                        train_prompt_bsz = len(batch.batch)
+                        train_prompt_bsz = self.config.data.train_batch_size
                         fill_to_train_bsz = self.config.algorithm.filter_groups.fill_to_train_bsz
                         if len(kept_uids) > train_prompt_bsz or not fill_to_train_bsz:
                             kept_uids = kept_uids[:train_prompt_bsz]
