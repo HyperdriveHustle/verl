@@ -22,7 +22,13 @@ class NaiveRewardManager:
     """The reward manager.
     """
 
-    def __init__(self, tokenizer, num_examine, compute_score=None, reward_fn_key='data_source', max_resp_len=None, overlong_buffer_cfg = None) -> None:
+    def __init__(self,
+                 tokenizer,
+                 num_examine,
+                 compute_score=None,
+                 reward_fn_key='data_source',
+                 max_resp_len=None,
+                 overlong_buffer_cfg=None) -> None:
         self.tokenizer = tokenizer
         self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
         self.compute_score = compute_score or _default_compute_score
@@ -76,9 +82,7 @@ class NaiveRewardManager:
         # If there is rm score, we directly return rm score. Otherwise, we compute via rm_score_fn
         if 'rm_scores' in data.batch.keys():
             if return_dict:
-                return {
-                    "reward": data.batch['rm_scores']
-                }
+                return {"reward": data.batch['rm_scores']}
             else:
                 return data.batch['rm_scores']
 

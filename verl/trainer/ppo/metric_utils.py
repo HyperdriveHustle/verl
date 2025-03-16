@@ -168,12 +168,12 @@ def compute_throughout_metrics(batch: DataProto, timing_raw: Dict[str, float], n
         'perf/throughput': total_num_tokens / (time * n_gpus),
     }
 
+
 def bootstrap_metric(data: list[dict[str, Any]],
-                    subset_size: int,
-                    reduce_fns: list[Callable[[np.ndarray], float]],
-                    n_bootstrap: int = 1000,
-                    seed: int = 42
-                    ) -> list[tuple[float, float]]:
+                     subset_size: int,
+                     reduce_fns: list[Callable[[np.ndarray], float]],
+                     n_bootstrap: int = 1000,
+                     seed: int = 42) -> list[tuple[float, float]]:
     """
     Bootstrap the metric to get the confidence interval
     """
@@ -186,6 +186,7 @@ def bootstrap_metric(data: list[dict[str, Any]],
         for i, reduce_fn in enumerate(reduce_fns):
             bootstrap_metric_lsts[i].append(reduce_fn(bootstrap_data))
     return [(np.mean(lst), np.std(lst)) for lst in bootstrap_metric_lsts]
+
 
 def calc_maj_val(data: list[dict[str, Any]], vote_key: str, val_key: str) -> float:
     """

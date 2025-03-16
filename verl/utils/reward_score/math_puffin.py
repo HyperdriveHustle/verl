@@ -79,22 +79,63 @@ class timeout:
     def __exit__(self, type, value, traceback):
         signal.alarm(0)
 
+
 # Constants for normalization
 SUBSTITUTIONS = [
-    ("an ", ""), ("a ", ""), (".$", "$"), ("\\$", ""),
-    (r"\ ", ""), (" ", ""), ("mbox", "text"),
-    (",\\text{and}", ","), ("\\text{and}", ","), ("\\text{m}", "\\text{}"),
+    ("an ", ""),
+    ("a ", ""),
+    (".$", "$"),
+    ("\\$", ""),
+    (r"\ ", ""),
+    (" ", ""),
+    ("mbox", "text"),
+    (",\\text{and}", ","),
+    ("\\text{and}", ","),
+    ("\\text{m}", "\\text{}"),
 ]
 
 REMOVED_EXPRESSIONS = [
-    "square", "ways", "integers", "dollars", "mph", "inches",
-    "hours", "km", "units", "\\ldots", "sue", "points", "feet",
-    "minutes", "digits", "cents", "degrees", "cm", "gm", "pounds",
-    "meters", "meals", "edges", "students", "childrentickets",
-    "multiples", "\\text{s}", "\\text{.}", "\\text{\ns}",
-    "\\text{}^2", "\\text{}^3", "\\text{\n}", "\\text{}",
-    r"\mathrm{th}", r"^\circ", r"^{\circ}", r"\;", r",\!",
-    "{,}", '"', "\\dots",
+    "square",
+    "ways",
+    "integers",
+    "dollars",
+    "mph",
+    "inches",
+    "hours",
+    "km",
+    "units",
+    "\\ldots",
+    "sue",
+    "points",
+    "feet",
+    "minutes",
+    "digits",
+    "cents",
+    "degrees",
+    "cm",
+    "gm",
+    "pounds",
+    "meters",
+    "meals",
+    "edges",
+    "students",
+    "childrentickets",
+    "multiples",
+    "\\text{s}",
+    "\\text{.}",
+    "\\text{\ns}",
+    "\\text{}^2",
+    "\\text{}^3",
+    "\\text{\n}",
+    "\\text{}",
+    r"\mathrm{th}",
+    r"^\circ",
+    r"^{\circ}",
+    r"\;",
+    r",\!",
+    "{,}",
+    '"',
+    "\\dots",
 ]
 
 
@@ -139,7 +180,9 @@ def normalize_final_answer(final_answer: str) -> str:
     return final_answer.strip()
 
 
-def is_correct_minerva(solution_str: str, gt: str, gt_need_extract: bool = False,
+def is_correct_minerva(solution_str: str,
+                       gt: str,
+                       gt_need_extract: bool = False,
                        answer_pattern: str = r"(?i)Answer\s*:\s*([^\n]+)") -> tuple[bool, str]:
     """Check if the solution is correct according to Minerva criteria.
     
@@ -166,7 +209,9 @@ def is_correct_minerva(solution_str: str, gt: str, gt_need_extract: bool = False
     return (pred == gt), pred
 
 
-def is_correct_strict_box(pred: str, gt: str, pause_tokens_index: Optional[list[int]] = None) -> tuple[int, Optional[str]]:
+def is_correct_strict_box(pred: str,
+                          gt: str,
+                          pause_tokens_index: Optional[list[int]] = None) -> tuple[int, Optional[str]]:
     """Check if the prediction is correct using strict boxed answer criteria.
     
     Args:
@@ -191,7 +236,9 @@ def is_correct_strict_box(pred: str, gt: str, pause_tokens_index: Optional[list[
     return 1 if (extracted_pred == gt) else -1, extracted_pred
 
 
-def verify(solution_str: str, answer: str, strict_box_verify: bool = False,
+def verify(solution_str: str,
+           answer: str,
+           strict_box_verify: bool = False,
            pause_tokens_index: Optional[list[int]] = None) -> bool:
     """Verify if the solution is correct.
     
@@ -210,6 +257,7 @@ def verify(solution_str: str, answer: str, strict_box_verify: bool = False,
 
     correct, pred = is_correct_minerva(solution_str, answer)
     return correct, pred
+
 
 def compute_score(solution_str: str,
                   ground_truth: str,

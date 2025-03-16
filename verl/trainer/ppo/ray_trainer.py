@@ -925,7 +925,6 @@ class RayPPOTrainer(object):
 
                         kept_idxs = []
 
-
                         train_prompt_bsz = len(batch.batch)
                         fill_train_batch = self.config.algorithm.filter_groups.fill_train_batch
                         if len(kept_uids) > train_prompt_bsz or not fill_train_batch:
