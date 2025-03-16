@@ -929,8 +929,8 @@ class RayPPOTrainer(object):
                         kept_idxs = []
 
                         train_prompt_bsz = len(batch.batch)
-                        fill_train_batch = self.config.algorithm.filter_groups.fill_train_batch
-                        if len(kept_uids) > train_prompt_bsz or not fill_train_batch:
+                        fill_to_train_bsz = self.config.algorithm.filter_groups.fill_to_train_bsz
+                        if len(kept_uids) > train_prompt_bsz or not fill_to_train_bsz:
                             kept_uids = kept_uids[:train_prompt_bsz]
                         else:
                             for uid in uid2seq_reward_std.keys():
