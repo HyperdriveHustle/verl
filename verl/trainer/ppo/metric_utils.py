@@ -174,9 +174,6 @@ def bootstrap_metric(data: list[dict[str, Any]],
                      reduce_fns: list[Callable[[np.ndarray], float]],
                      n_bootstrap: int = 1000,
                      seed: int = 42) -> list[tuple[float, float]]:
-    """
-    Bootstrap the metric to get the confidence interval
-    """
     np.random.seed(seed)
 
     bootstrap_metric_lsts = [[] for _ in range(len(reduce_fns))]

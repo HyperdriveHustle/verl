@@ -952,6 +952,7 @@ class RayPPOTrainer(object):
 
                         world_size = self.actor_rollout_wg.world_size
                         kept_traj_idxs = kept_traj_idxs[:len(kept_traj_idxs) // world_size * world_size]
+                        # TODO: what if len(kept_traj_idxs) < world_size?
                         if self.config.algorithm.filter_groups.drop_last_mini_batch:
                             train_traj_mini_bsz = self.config.actor_rollout_ref.actor.ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n
                             if len(kept_traj_idxs) > train_traj_mini_bsz:
