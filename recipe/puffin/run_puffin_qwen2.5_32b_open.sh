@@ -2,7 +2,9 @@
 set -euxo pipefail
 
 project_name='puffin'
-exp_name='Qwen2.5-32B-Puffin-NoFilter'
+exp_name='Qwen2.5-32B-Puffin-Open'
+use_token_level_loss=False
+enable_filter_groups=False
 
 # Ray
 export RAY_ADDRESS=${RAY_ADDRESS:-"http://localhost:8265"}
@@ -51,9 +53,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.actor.clip_ratio_high=0.28 \
     algorithm.adv_estimator=grpo \
     algorithm.kl_ctrl.kl_coef=0.0 \
-    algorithm.filter_groups.enable=False \
-    algorithm.filter_groups.fill_train_batch=True \
-    algorithm.filter_groups.drop_last_mini_batch=True \
+    algorithm.filter_groups.enable=${enable_filter_groups} \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.use_dynamic_bsz=${use_dynamic_bsz} \
     actor_rollout_ref.ref.log_prob_use_dynamic_bsz=${use_dynamic_bsz} \
@@ -74,6 +74,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=${offload} \
     actor_rollout_ref.actor.entropy_coeff=0 \
     actor_rollout_ref.actor.grad_clip=1.0 \
+    actor_rollout_ref.actor.use_token_level_loss=${use_token_level_loss} \
     actor_rollout_ref.actor.ulysses_sequence_parallel_size=${sp_size} \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.80 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${gen_tp} \
