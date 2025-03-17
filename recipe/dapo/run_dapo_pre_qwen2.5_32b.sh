@@ -14,15 +14,15 @@ use_token_level_loss=False
 enable_filter_groups=False
 
 # Ray
-export RAY_ADDRESS=${RAY_ADDRESS:-"http://localhost:8265"}
-export RUNTIME_ENV=${RUNTIME_ENV:-"./verl/trainer/runtime_env.yaml"}
-export NNODES=${NNODES:-16}
+RAY_ADDRESS=${RAY_ADDRESS:-"http://localhost:8265"}
+RUNTIME_ENV=${RUNTIME_ENV:-"./verl/trainer/runtime_env.yaml"}
+NNODES=${NNODES:-16}
 # Paths
-export RAY_DATA_HOME=${RAY_DATA_HOME:-"${HOME}/verl"}
-export MODEL_PATH=${MODEL_PATH:-"${RAY_DATA_HOME}/models/Qwen2.5-32B"}
-export CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
-export TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/dapo-math-17k.parquet"}
-export TEST_FILE=${TEST_FILE:-"${RAY_DATA_HOME}/data/aime-2024.parquet"}
+RAY_DATA_HOME=${RAY_DATA_HOME:-"${HOME}/verl"}
+MODEL_PATH=${MODEL_PATH:-"${RAY_DATA_HOME}/models/Qwen2.5-32B"}
+CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
+TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/dapo-math-17k.parquet"}
+TEST_FILE=${TEST_FILE:-"${RAY_DATA_HOME}/data/aime-2024.parquet"}
 
 # Algorithm
 ## Train
@@ -31,6 +31,7 @@ max_response_length=$((1024 * 20))
 gen_prompt_bsz=512 # NOTE: no filtering here
 train_prompt_bsz=512
 train_prompt_mini_bsz=32
+n_resp_per_prompt=16
 ## Validation
 val_top_k=-1 # 0 for HF rollout, -1 for vLLM rollout
 
@@ -54,7 +55,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     data.max_response_length=${max_response_length} \
     data.gen_batch_size=${gen_prompt_bsz} \
     data.train_batch_size=${train_prompt_bsz} \
-    actor_rollout_ref.rollout.n=16 \
+    actor_rollout_ref.rollout.n=${n_resp_per_prompt} \
     algorithm.adv_estimator=${adv_estimator} \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
