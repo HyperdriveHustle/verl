@@ -60,17 +60,35 @@ data:
   train_batch_size: 512
 algorithm:
   filter_groups:
-    enable: True
-    metric: acc # / reward / final_reward
-    fill_to_train_bsz: True
-    drop_last_mini_batch: True
+    enable: False # We try to avoid forgetting to set enable
+    metric: null # acc / score / seq_reward / seq_final_reward / ...
+    max_num_gen_batches: 0 # Non-positive values mean no upper limit
 ```
 
 Setting `filter_groups.enable` to `True` will filter out groups whose outputs' `metric` are all the same, e.g., for `acc`, groups whose outputs' accuracies are all 1 or 0.
 
-Setting `fill_to_train_bsz` to `True` will repeat sampling with `gen_batch_size` until there are enough qualified groups for `train_batch_size`.
+The trainer will repeat sampling with `gen_batch_size` until there are enough qualified groups for `train_batch_size` or reaching the upper limit specified by `max_num_gen_batches`.
 
-Seting `drop_last_mini_batch` to `True` might be helpful when `fill_to_train_bsz` is `False` since the last mini-batch might be incomplete due to possibly strong filteration.
+Core relevant code:
+
+```python
+prompt_bsz = self.config.data.train_batch_size
+if num_prompt_in_batch < prompt_bsz:
+    print(f'{num_prompt_in_batch=} < {prompt_bsz=}')
+    num_gen_batches += 1
+    max_num_gen_batches = self.config.algorithm.filter_groups.max_num_gen_batches
+    if max_num_gen_batches <= 0 or num_gen_batches < max_num_gen_batches:
+        print(f'{num_gen_batches=} < {max_num_gen_batches=}. Keep generating...')
+        continue
+    else:
+        raise ValueError(
+            f'{num_gen_batches=} >= {max_num_gen_batches=}. Generated too many. Please check your data.'
+        )
+else:
+    # Align the batch
+    traj_bsz = self.config.data.train_batch_size * self.config.actor_rollout_ref.rollout.n
+    batch = batch[:traj_bsz]
+```
 
 ### Token-level Policy Gradient Loss
 
@@ -102,10 +120,10 @@ An example configuration:
 data:
   max_response_length: 20480 # 16384 + 4096
 custom_reward_function:
-  overlong_buffer:
-    enable: True
-    len: 4096
-    penalty_factor: 1.0
+  overlong_buffer: 
+    enable: False # We try to avoid forgetting to set enable
+    len: 0
+    penalty_factor: 0.0
 ```
 
 Setting `overlong_buffer.enable` to `True` will penalize the outputs whose length entering the last `overlong_buffer.len` tokens before the `max_response_length`.

@@ -125,17 +125,16 @@ class NaiveRewardManager:
                 extra_info=extra_info,
             )
 
-            reward: float
+            score: float
             if isinstance(result, dict):
-                assert "reward" in result
-                reward = result["reward"]
+                score = result["score"]
                 # Store the information including original reward
                 for key, value in result.items():
                     reward_extra_info[key].append(value)
             else:
-                reward = result
+                score = result
 
-            final_reward = reward
+            reward = score
 
             if self.overlong_buffer_cfg.enable:
                 overlong_buffer_len = self.overlong_buffer_cfg.len
@@ -143,12 +142,12 @@ class NaiveRewardManager:
                 exceed_len = valid_response_length - expected_len
                 overlong_penalty_factor = self.overlong_buffer_cfg.penalty_factor
                 overlong_reward = min(-exceed_len / overlong_buffer_len * overlong_penalty_factor, 0)
-                final_reward += overlong_reward
+                reward += overlong_reward
                 if self.overlong_buffer_cfg.log:
                     reward_extra_info["overlong_reward"].append(overlong_reward)
                     reward_extra_info["overlong"].append(overlong_reward < 0)
 
-            reward_tensor[i, valid_response_length - 1] = final_reward
+            reward_tensor[i, valid_response_length - 1] = reward
 
             if data_source not in already_print_data_sources:
                 already_print_data_sources[data_source] = 0
@@ -162,7 +161,7 @@ class NaiveRewardManager:
                     for key, value in result.items():
                         print(f"[{key}]", value)
                 else:
-                    print(f"[reward]", result)
+                    print(f"[score]", score)
 
         if return_dict:
             return {

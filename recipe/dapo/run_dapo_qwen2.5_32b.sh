@@ -18,7 +18,7 @@ overlong_penalty_factor=1.0
 
 enable_filter_groups=True
 filter_groups_metric=acc
-fill_to_train_bsz=True
+max_num_gen_batches=10
 train_prompt_bsz=512
 gen_prompt_bsz=$((train_prompt_bsz * 3))
 n_resp_per_prompt=16
@@ -72,7 +72,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
     actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
     algorithm.filter_groups.enable=${enable_filter_groups} \
-    algorithm.filter_groups.fill_to_train_bsz=${fill_to_train_bsz} \
+    algorithm.filter_groups.max_num_gen_batches=${max_num_gen_batches} \
     algorithm.filter_groups.metric=${filter_groups_metric} \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.use_dynamic_bsz=${use_dynamic_bsz} \
