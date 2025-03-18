@@ -862,7 +862,7 @@ class RayPPOTrainer(object):
                 metrics = {}
 
                 new_batch: DataProto = DataProto.from_single_dict(batch_dict)
-
+                num_gen_batches += 1
                 # pop those keys for generation
                 if 'multi_modal_inputs' in new_batch.non_tensor_batch.keys():
                     gen_batch = new_batch.pop(
@@ -981,7 +981,6 @@ class RayPPOTrainer(object):
                         prompt_bsz = self.config.data.train_batch_size
                         if num_prompt_in_batch < prompt_bsz:
                             print(f'{num_prompt_in_batch=} < {prompt_bsz=}')
-                            num_gen_batches += 1
                             max_num_gen_batches = self.config.algorithm.filter_groups.max_num_gen_batches
                             if max_num_gen_batches <= 0 or num_gen_batches < max_num_gen_batches:
                                 print(f'{num_gen_batches=}. Keep generating...')
