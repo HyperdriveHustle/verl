@@ -128,12 +128,14 @@ if self.overlong_buffer_cfg.enable:
 
 ### DAPO w/o Token-level PG loss & Dynamic Sampling -> 44% on AIME 2024
 
-We achieve 44% accuracy on AIME 2024 with a early version of DAPO w/o Token-level PG loss & Dynamic Sampling.
+We achieved 44% accuracy on AIME 2024 with a early version of DAPO w/o Token-level PG loss & Dynamic Sampling.
 
 The training record will be available on WandB soon.
 
-The corresponding training script in [run_dapo_early_qwen2.5_32b.sh](./run_dapo_early_qwen2.5_32b.sh).
+The corresponding training script is [run_dapo_early_qwen2.5_32b.sh](./run_dapo_early_qwen2.5_32b.sh).
 
 ### DAPO -> 50% on AIME 2024
 
-Coming soon.
+The training record will be available on WandB soon.
+
+The corresponding training script is [run_dapo_qwen2.5_32b.sh](./run_dapo_qwen2.5_32b.sh).
