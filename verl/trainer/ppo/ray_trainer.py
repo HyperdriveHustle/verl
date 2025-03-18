@@ -243,7 +243,7 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
 def _timer(name: str, timing_raw: Dict[str, float]):
     with Timer(name=name, logger=None) as timer:
         yield
-    timing_raw[name] = timer.last
+    timing_raw[name] += timer.last # Allow to accumulate time
 
 
 class RayPPOTrainer(object):
@@ -845,10 +845,10 @@ class RayPPOTrainer(object):
         self.global_steps += 1
         last_val_metrics = None
 
+        timing_raw = defaultdict(float)
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 metrics = {}
-                timing_raw = {}
 
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
 
@@ -909,11 +909,13 @@ class RayPPOTrainer(object):
                             reward_tensor = reward_result['reward_tensor']
                             reward_extra_infos_dict = reward_result['extra_info']
                         except Exception as e:
+                            print(f'Error in reward_fn: {e}')
                             reward_tensor = self.reward_fn(batch)
                             reward_extra_infos_dict = {}
 
                         batch.batch['token_level_scores'] = reward_tensor
 
+                        print(f'{list(reward_extra_infos_dict.keys())=}')
                         if reward_extra_infos_dict:
                             batch.non_tensor_batch.update(reward_extra_infos_dict)
 
@@ -1051,6 +1053,7 @@ class RayPPOTrainer(object):
                 # TODO: implement actual tflpo and theoretical tflpo
                 n_gpus = self.resource_pool_manager.get_n_gpus()
                 metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+                timing_raw = defaultdict(float) # clear timing
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
