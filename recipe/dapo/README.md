@@ -60,9 +60,9 @@ data:
   train_batch_size: 512
 algorithm:
   filter_groups:
-    enable: False # We try to avoid forgetting to set enable
-    metric: null # acc / score / seq_reward / seq_final_reward / ...
-    max_num_gen_batches: 0 # Non-positive values mean no upper limit
+    enable: True
+    metric: acc # score / seq_reward / seq_final_reward / ...
+    max_num_gen_batches: 10 # Non-positive values mean no upper limit
 ```
 
 Setting `filter_groups.enable` to `True` will filter out groups whose outputs' `metric` are all the same, e.g., for `acc`, groups whose outputs' accuracies are all 1 or 0.
@@ -121,9 +121,9 @@ data:
   max_response_length: 20480 # 16384 + 4096
 custom_reward_function:
   overlong_buffer: 
-    enable: False # We try to avoid forgetting to set enable
-    len: 0
-    penalty_factor: 0.0
+    enable: True
+    len: 4096
+    penalty_factor: 1.0
 ```
 
 Setting `overlong_buffer.enable` to `True` will penalize the outputs whose length entering the last `overlong_buffer.len` tokens before the `max_response_length`.
