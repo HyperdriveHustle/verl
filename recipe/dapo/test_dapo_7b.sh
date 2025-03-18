@@ -4,6 +4,28 @@ set -euxo pipefail
 project_name='DAPO'
 exp_name='DAPO-Qwen2.5-7B-Math-Test'
 
+adv_estimator=grpo
+
+kl_coef=0.0
+kl_loss_coef=0.0
+
+clip_ratio_low=0.2
+clip_ratio_high=0.28
+
+enable_overlong_buffer=True
+overlong_buffer_len=512
+overlong_penalty_factor=1.0
+
+enable_filter_groups=True
+filter_groups_metric=acc
+fill_to_train_bsz=True
+train_prompt_bsz=512
+gen_prompt_bsz=$((train_prompt_bsz * 3))
+train_prompt_mini_bsz=32
+n_resp_per_prompt=16
+
+use_token_level_loss=True
+
 # Ray
 RAY_ADDRESS=${RAY_ADDRESS:-"http://localhost:8265"}
 WORKING_DIR=${WORKING_DIR:-"${PWD}"}
@@ -20,10 +42,6 @@ TEST_FILE=${TEST_FILE:-"${RAY_DATA_HOME}/data/aime-2024.parquet"}
 ## Train
 max_prompt_length=$((1024 * 1))
 max_response_length=$((1024 * 3))
-gen_prompt_bsz=512
-train_prompt_bsz=512
-train_prompt_mini_bsz=32
-n_resp_per_prompt=16
 ## Validation
 val_top_k=-1 # 0 for HF rollout, -1 for vLLM rollout
 
@@ -47,14 +65,14 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     data.train_batch_size=${train_prompt_bsz} \
     data.truncation='left' \
     actor_rollout_ref.rollout.n=${n_resp_per_prompt} \
-    actor_rollout_ref.actor.kl_loss_coef=0 \
-    actor_rollout_ref.actor.clip_ratio_low=0.2 \
-    actor_rollout_ref.actor.clip_ratio_high=0.25 \
-    algorithm.adv_estimator=grpo \
-    algorithm.kl_ctrl.kl_coef=0.0 \
-    algorithm.filter_groups.enable=True \
-    algorithm.filter_groups.fill_to_train_batch_size=True \
-    algorithm.filter_groups.drop_last_mini_batch=True \
+    actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
+    actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
+    actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
+    algorithm.adv_estimator=${adv_estimator} \
+    algorithm.kl_ctrl.kl_coef=${kl_coef} \
+    algorithm.filter_groups.enable=${enable_filter_groups} \
+    algorithm.filter_groups.metric=${filter_groups_metric} \
+    algorithm.filter_groups.fill_to_train_bsz=${fill_to_train_bsz} \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.use_dynamic_bsz=${use_dynamic_bsz} \
     actor_rollout_ref.ref.log_prob_use_dynamic_bsz=${use_dynamic_bsz} \
@@ -76,6 +94,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=${offload} \
     actor_rollout_ref.actor.entropy_coeff=0 \
     actor_rollout_ref.actor.grad_clip=1.0 \
+    actor_rollout_ref.actor.use_token_level_loss=${use_token_level_loss} \
     actor_rollout_ref.actor.use_token_level_loss=True \
     actor_rollout_ref.actor.ulysses_sequence_parallel_size=1 \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.85 \
@@ -92,9 +111,9 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.ref.fsdp_config.param_offload=${offload} \
     actor_rollout_ref.ref.ulysses_sequence_parallel_size=1 \
     actor_rollout_ref.actor.fsdp_config.fsdp_size=-1 \
-    custom_reward_function.overlong_buffer.enable=True \
-    custom_reward_function.overlong_buffer.len=512 \
-    custom_reward_function.overlong_buffer.penalty_factor=1.0 \
+    custom_reward_function.overlong_buffer.enable=${enable_overlong_buffer} \
+    custom_reward_function.overlong_buffer.len=${overlong_buffer_len} \
+    custom_reward_function.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
     trainer.logger=['console','wandb'] \
     trainer.project_name="${project_name}" \
     trainer.experiment_name="${exp_name}" \
