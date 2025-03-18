@@ -903,8 +903,19 @@ class RayPPOTrainer(object):
                             batch = batch.union(reward_tensor)
 
                         # we combine with rule-based rm
-                        reward_tensor = self.reward_fn(batch)
+                        reward_extra_infos_dict: dict[str, list]
+                        try:
+                            reward_result = self.reward_fn(batch, return_dict=True)
+                            reward_tensor = reward_result['reward_tensor']
+                            reward_extra_infos_dict = reward_result['extra_info']
+                        except Exception as e:
+                            reward_tensor = self.reward_fn(batch)
+                            reward_extra_infos_dict = {}
+
                         batch.batch['token_level_scores'] = reward_tensor
+
+                        if reward_extra_infos_dict:
+                            batch.non_tensor_batch.update(reward_extra_infos_dict)
 
                         # compute rewards. apply_kl_penalty if available
                         if not self.config.actor_rollout_ref.actor.get('use_kl_loss', False):
@@ -917,28 +928,32 @@ class RayPPOTrainer(object):
 
                     if self.config.algorithm.filter_groups.enable:
                         filter_metric_dict = {}
+                        metric_name = self.config.algorithm.filter_groups.metric
+                        if metric_name == "seq_final_reward":
+                            # Turn to numpy for easier filtering
+                            batch.non_tensor_batch["seq_final_reward"] = batch.batch['token_level_scores'].sum(
+                                dim=-1).tolist()
 
                         # Collect the sequence reward for each trajectory
-                        prompt_uid2seq_rewards = defaultdict(list)
-                        for uid, tok_rewards in zip(batch.non_tensor_batch['uid'], batch.batch['token_level_rewards']):
-                            seq_reward = torch.sum(tok_rewards).item()
-                            prompt_uid2seq_rewards[uid].append(seq_reward)
+                        prompt_uid2metric_vals = defaultdict(list)
+                        for uid, metric_val in zip(batch.non_tensor_batch['uid'], batch.batch[metric_name]):
+                            prompt_uid2metric_vals[uid].append(metric_val)
 
-                        prompt_uid2seq_reward_std = {}
-                        for prompt_uid, seq_rewards in prompt_uid2seq_rewards.items():
-                            prompt_uid2seq_reward_std[prompt_uid] = np.std(seq_rewards)
+                        prompt_uid2metric_std = {}
+                        for prompt_uid, metric_vals in prompt_uid2metric_vals.items():
+                            prompt_uid2metric_std[prompt_uid] = np.std(metric_vals)
 
-                        kept_prompt_uids = [uid for uid, std in prompt_uid2seq_reward_std.items() if std > 0]
-                        filter_metric_dict["non_uniform_reward_prompt_ratio"] = len(kept_prompt_uids) / len(
-                            prompt_uid2seq_rewards)
-                        filter_metric_dict["non_uniform_reward_prompt_bsz"] = len(kept_prompt_uids)
+                        kept_prompt_uids = [uid for uid, std in prompt_uid2metric_std.items() if std > 0]
+                        filter_metric_dict[f"qualified_prompt_ratio/{metric_name}"] = len(kept_prompt_uids) / len(
+                            prompt_uid2metric_vals)
+                        filter_metric_dict[f"qualified_prompt_bsz/{metric_name}"] = len(kept_prompt_uids)
 
                         train_prompt_bsz = self.config.data.train_batch_size
                         fill_to_train_bsz = self.config.algorithm.filter_groups.fill_to_train_bsz
                         if len(kept_prompt_uids) > train_prompt_bsz or not fill_to_train_bsz:
                             kept_prompt_uids = kept_prompt_uids[:train_prompt_bsz]
                         else:
-                            for prompt_uid in prompt_uid2seq_reward_std.keys():
+                            for prompt_uid in prompt_uid2metric_std.keys():
                                 if prompt_uid not in kept_prompt_uids:
                                     kept_prompt_uids.append(prompt_uid)
                                 if len(kept_prompt_uids) == train_prompt_bsz:
@@ -948,7 +963,7 @@ class RayPPOTrainer(object):
                         for traj_idx, traj_prompt_uid in enumerate(batch.non_tensor_batch['uid']):
                             if traj_prompt_uid in kept_prompt_uids:
                                 kept_traj_idxs.append(traj_idx)
-                        filter_metric_dict["non_uniform_reward_traj_bsz"] = len(kept_traj_idxs)
+                        filter_metric_dict[f"qualified_traj_bsz/{metric_name}"] = len(kept_traj_idxs)
 
                         world_size = self.actor_rollout_wg.world_size
                         kept_traj_idxs = kept_traj_idxs[:len(kept_traj_idxs) // world_size * world_size]

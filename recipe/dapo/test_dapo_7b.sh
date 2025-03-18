@@ -6,7 +6,8 @@ exp_name='DAPO-Qwen2.5-7B-Math-Test'
 
 # Ray
 RAY_ADDRESS=${RAY_ADDRESS:-"http://localhost:8265"}
-RUNTIME_ENV=${RUNTIME_ENV:-"./verl/trainer/runtime_env.yaml"}
+WORKING_DIR=${WORKING_DIR:-"${PWD}"}
+RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-4}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"${HOME}/verl"}
@@ -34,7 +35,7 @@ train_micro_batch_size=null
 offload=False
 
 ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
-    --working-dir "${PWD}" \
+    --working-dir "${WORKING_DIR}" \
     -- python3 -m verl.trainer.main_ppo \
     data.train_files="${TRAIN_FILE}" \
     data.val_files="${TEST_FILE}" \
@@ -52,7 +53,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     algorithm.adv_estimator=grpo \
     algorithm.kl_ctrl.kl_coef=0.0 \
     algorithm.filter_groups.enable=True \
-    algorithm.filter_groups.fill_train_batch=True \
+    algorithm.filter_groups.fill_to_train_batch_size=True \
     algorithm.filter_groups.drop_last_mini_batch=True \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.use_dynamic_bsz=${use_dynamic_bsz} \

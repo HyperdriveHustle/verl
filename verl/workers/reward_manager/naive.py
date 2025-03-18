@@ -139,7 +139,8 @@ class NaiveRewardManager:
 
             if self.overlong_buffer_cfg.enable:
                 overlong_buffer_len = self.overlong_buffer_cfg.len
-                exceed_len = valid_response_length - (self.max_resp_len - overlong_buffer_len)
+                expected_len = self.max_resp_len - overlong_buffer_len
+                exceed_len = valid_response_length - expected_len
                 overlong_penalty_factor = self.overlong_buffer_cfg.penalty_factor
                 overlong_reward = min(-exceed_len / overlong_buffer_len * overlong_penalty_factor, 0)
                 final_reward += overlong_reward

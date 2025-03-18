@@ -1,0 +1,155 @@
+# DAPO
+
+🏠 [Homepage](https://dapo-sia.github.io/) | 📝 [Paper](https://dapo-sia.github.io/static/pdf/dapo_paper.pdf) | 🤗 [Datasets&Models@HF](https://huggingface.co/collections/BytedTsinghua-SIA/dapo-67d7f1517ee33c8aed059da0) | 🐱 [Code@GitHub](https://github.com/volcengine/verl/tree/gm-tyx/puffin/main/recipe/dapo)
+
+🐶 [中文博客@机器之心](https://mp.weixin.qq.com/s/_w_HtjNQiG-yP5LEN85o0Q)
+
+> We propose the **D**ecoupled Clip and Dynamic s**A**mpling **P**olicy **O**ptimization (DAPO) algorithm. By making our work publicly available, we provide the broader research community and society with practical access to scalable reinforcement learning, enabling all to benefit from these advancements. Our system is based on the awesome [verl](https://github.com/volcengine/verl) framework. Thanks for their great work! Applying DAPO training to Qwen2.5-32B base model proves to outperform the previous state-of-the-art DeepSeek-R1-Zero-Qwen-32B on AIME 2024, achieving **50%** accuracy with **50%** less training steps.
+>
+> ![dapo-main-result](https://dapo-sia.github.io/static/images/score.png)
+>
+> DAPO samples a group of outputs $\left\{o_i\right\}_{i=1}^G$ for each question $q$ paired with the answer $a$, and optimizes the policy via the following objective:
+
+$$
+\begin{aligned}
+\mathcal{J}_{\text {DAPO }}(\theta)= & \mathbb{E}_{(q, a) \sim \mathcal{D},\left\{o_i \mid\right\}_{i=1}^G \sim \pi_{\theta_{\text {old }}}(\mid q)} \\
+& {\left[\frac{1}{\sum_{i=1}^G\left|o_i\right|} \sum_{i=1}^G \sum_{t=1}^{\left|o_i\right|} \min \left(r_{i, t}(\theta) \hat{A}_{i, t}, \operatorname{clip}\left(r_{i, t}(\theta), 1-\varepsilon_{\text {low }}, 1+\varepsilon_{\text {high }}\right) \hat{A}_{i, t}\right)\right] } \\
+\text { s.t. } & 0<\mid\left\{o_i \mid \text { is\_equivalent }\left(a, o_i\right)\right\} \mid<G,
+\end{aligned}
+$$
+
+> where
+
+$$
+r_{i, t}(\theta)=\frac{\pi_\theta\left(o_{i, t} \mid q, o_{i,<t}\right)}{\pi_{\theta_{\text {old }}}\left(o_{i, t} \mid q, o_{i,<t}\right)}, \quad \hat{A}_{i, t}=\frac{R_i-\operatorname{mean}\left(\left\{R_i\right\}_{i=1}^G\right)}{\operatorname{std}\left(\left\{R_i\right\}_{i=1}^G\right)} .
+$$
+
+## Quickstart
+
+1. Prepare the datasets **on the Ray cluster**:
+
+```bash
+bash prepare_dapo_data.sh # This downloads the datasets to ${HOME}/verl/data by default
+```
+
+2. Submit the job to the Ray cluster **from any machine**:
+
+```bash
+cd verl # Repo root
+export RAY_ADDRESS="http://${RAY_IP:-localhost}:8265" # The Ray cluster address to connect to
+export WORKING_DIR="${PWD}" # The local directory to package to the Ray cluster
+# Set the runtime environment like env vars and pip packages for the Ray cluster in yaml
+export RUNTIME_ENV="./verl/trainer/runtime_env.yaml"
+bash recipe/dapo/run_dapo_qwen2.5_32b.sh
+```
+
+## Configuration
+
+### Separated Clip Episilons (-> Clip-Higher)
+
+An example configuration:
+
+```yaml
+actor_rollout_ref:
+  actor:
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.28
+```
+
+`clip_ratio_low` and `clip_ratio_high` specify the $\varepsilon_{\text {low }}$ and $\varepsilon_{\text {high }}$ in the DAPO objective.
+
+Core relevant code:
+
+```python
+pg_losses1 = -advantages * ratio
+pg_losses2 = -advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
+pg_losses = torch.maximum(pg_losses1, pg_losses2)
+```
+
+### Dynamic Sampling (with Group Filtering)
+
+An example configuration:
+
+```yaml
+data:
+  gen_batch_size: 1536
+  train_batch_size: 512
+algorithm:
+  filter_groups:
+    enable: True
+    metric: acc # / reward / final_reward
+    fill_to_train_bsz: True
+    drop_last_mini_batch: True
+```
+
+Setting `filter_groups.enable` to `True` will filter out groups whose outputs' `metric` are all the same, e.g., for `acc`, groups whose outputs' accuracies are all 1 or 0.
+
+Setting `fill_to_train_bsz` to `True` will repeat sampling with `gen_batch_size` until there are enough qualified groups for `train_batch_size`.
+
+Seting `drop_last_mini_batch` to `True` might be helpful when `fill_to_train_bsz` is `False` since the last mini-batch might be incomplete due to possibly strong filteration.
+
+### Token-level Policy Gradient Loss
+
+An example configuration:
+
+```yaml
+actor_rollout_ref:
+  actor:
+    use_token_level_loss: True
+```
+
+Setting `use_token_level_loss` to `True` will mean the policy gradient loss across all the tokens in all the sequences in a batch.
+
+Core relevant code:
+
+```python
+if use_token_level_loss:
+    pg_loss = verl_F.masked_mean(pg_losses, eos_mask)
+else:
+    pg_loss = torch.sum(pg_losses * eos_mask, dim=1) / seq_len_per_sample
+    pg_loss = torch.mean(pg_loss)
+```
+
+### Overlong Reward Shaping
+
+An example configuration:
+
+```yaml
+data:
+  max_response_length: 20480 # 16384 + 4096
+custom_reward_function:
+  overlong_buffer:
+    enable: True
+    len: 4096
+    penalty_factor: 1.0
+```
+
+Setting `overlong_buffer.enable` to `True` will penalize the outputs whose length entering the last `overlong_buffer.len` tokens before the `max_response_length`.
+
+The penalty increases linearly from 0 to `overlong_buffer.penalty_factor`.
+
+Core relevant code:
+
+```python
+if self.overlong_buffer_cfg.enable:
+    overlong_buffer_len = self.overlong_buffer_cfg.len
+    expected_len = self.max_resp_len - overlong_buffer_len
+    exceed_len = valid_response_length - expected_len
+    overlong_penalty_factor = self.overlong_buffer_cfg.penalty_factor
+    overlong_reward = min(-exceed_len / overlong_buffer_len * overlong_penalty_factor, 0)
+    final_reward += overlong_reward
+```
+
+## Reproduction Runs
+
+### DAPO w/o Token-level PG loss & Dynamic Sampling -> 44% on AIME 2024
+
+We achieve 44% accuracy on AIME 2024 with a early version of DAPO w/o Token-level PG loss & Dynamic Sampling.
+
+The training record will be available on WandB soon.
+
+The corresponding training script in [run_dapo_early_qwen2.5_32b.sh](./run_dapo_early_qwen2.5_32b.sh).
+
+### DAPO -> 50% on AIME 2024
+
+Coming soon.
