@@ -3,18 +3,28 @@ set -euxo pipefail
 
 project_name='DAPO'
 exp_name='DAPO-Qwen2.5-32B'
+
 adv_estimator=grpo
+
 kl_coef=0.0
 kl_loss_coef=0.0
+
 clip_ratio_low=0.2
 clip_ratio_high=0.28
+
+enable_overlong_buffer=True
 overlong_buffer_len=$((1024 * 4))
-use_token_level_loss=True
+overlong_penalty_factor=1.0
+
 enable_filter_groups=True
-gen_prompt_bsz=1024
+filter_groups_metric=acc
+fill_to_train_bsz=True
 train_prompt_bsz=512
-train_prompt_mini_bsz=32
+gen_prompt_bsz=$((train_prompt_bsz * 3))
 n_resp_per_prompt=16
+train_prompt_mini_bsz=32
+
+use_token_level_loss=True
 
 # Ray
 RAY_ADDRESS=${RAY_ADDRESS:-"http://localhost:8265"}
@@ -62,8 +72,8 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
     actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
     algorithm.filter_groups.enable=${enable_filter_groups} \
-    algorithm.filter_groups.fill_to_train_bsz=True \
-    algorithm.filter_groups.drop_last_mini_batch=True \
+    algorithm.filter_groups.fill_to_train_bsz=${fill_to_train_bsz} \
+    algorithm.filter_groups.metric=${filter_groups_metric} \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.use_dynamic_bsz=${use_dynamic_bsz} \
     actor_rollout_ref.ref.log_prob_use_dynamic_bsz=${use_dynamic_bsz} \
@@ -98,8 +108,9 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.ref.fsdp_config.param_offload=${offload} \
     actor_rollout_ref.ref.ulysses_sequence_parallel_size=${sp_size} \
     actor_rollout_ref.actor.fsdp_config.fsdp_size=-1 \
+    custom_reward_function.overlong_buffer.enable=${enable_overlong_buffer} \
     custom_reward_function.overlong_buffer.len=${overlong_buffer_len} \
-    custom_reward_function.overlong_buffer.penalty_factor=1.0 \
+    custom_reward_function.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
     trainer.logger=['console','wandb'] \
     trainer.project_name="${project_name}" \
     trainer.experiment_name="${exp_name}" \
