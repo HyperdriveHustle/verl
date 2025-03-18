@@ -7,22 +7,6 @@
 > We propose the **D**ecoupled Clip and Dynamic s**A**mpling **P**olicy **O**ptimization (DAPO) algorithm. By making our work publicly available, we provide the broader research community and society with practical access to scalable reinforcement learning, enabling all to benefit from these advancements. Our system is based on the awesome [verl](https://github.com/volcengine/verl) framework. Thanks for their great work! Applying DAPO training to Qwen2.5-32B base model proves to outperform the previous state-of-the-art DeepSeek-R1-Zero-Qwen-32B on AIME 2024, achieving **50%** accuracy with **50%** less training steps.
 >
 > ![dapo-main-result](https://dapo-sia.github.io/static/images/score.png)
->
-> DAPO samples a group of outputs $\left\{o_i\right\}_{i=1}^G$ for each question $q$ paired with the answer $a$, and optimizes the policy via the following objective:
-
-$$
-\begin{aligned}
-\mathcal{J}_{\text {DAPO }}(\theta)= & \mathbb{E}_{(q, a) \sim \mathcal{D},\left\{o_i \mid\right\}_{i=1}^G \sim \pi_{\theta_{\text {old }}}(\mid q)} \\
-& {\left[\frac{1}{\sum_{i=1}^G\left|o_i\right|} \sum_{i=1}^G \sum_{t=1}^{\left|o_i\right|} \min \left(r_{i, t}(\theta) \hat{A}_{i, t}, \operatorname{clip}\left(r_{i, t}(\theta), 1-\varepsilon_{\text {low }}, 1+\varepsilon_{\text {high }}\right) \hat{A}_{i, t}\right)\right] } \\
-\text { s.t. } & 0<\mid\left\{o_i \mid \text { is\_equivalent }\left(a, o_i\right)\right\} \mid<G,
-\end{aligned}
-$$
-
-> where
-
-$$
-r_{i, t}(\theta)=\frac{\pi_\theta\left(o_{i, t} \mid q, o_{i,<t}\right)}{\pi_{\theta_{\text {old }}}\left(o_{i, t} \mid q, o_{i,<t}\right)}, \quad \hat{A}_{i, t}=\frac{R_i-\operatorname{mean}\left(\left\{R_i\right\}_{i=1}^G\right)}{\operatorname{std}\left(\left\{R_i\right\}_{i=1}^G\right)} .
-$$
 
 ## Quickstart
 
