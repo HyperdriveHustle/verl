@@ -2,20 +2,25 @@
 set -euxo pipefail
 
 project_name='DAPO'
-exp_name='DAPO-Pre-Qwen2.5-32B'
+exp_name='DAPO-Early-Qwen2.5-32B'
 adv_estimator=grpo
 kl_coef=0.0
 kl_loss_coef=0.0
 clip_ratio_low=0.2
 clip_ratio_high=0.28
 overlong_buffer_len=$((1024 * 4))
-# Intermediate ablation for DAPO
+# An early version for DAPO
 use_token_level_loss=False
 enable_filter_groups=False
+gen_prompt_bsz=512 # NOTE: no filtering here
+train_prompt_bsz=512
+train_prompt_mini_bsz=32
+n_resp_per_prompt=16
 
 # Ray
 RAY_ADDRESS=${RAY_ADDRESS:-"http://localhost:8265"}
-RUNTIME_ENV=${RUNTIME_ENV:-"./verl/trainer/runtime_env.yaml"}
+WORKING_DIR=${WORKING_DIR:-"${PWD}"}
+RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-16}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"${HOME}/verl"}
@@ -23,15 +28,10 @@ MODEL_PATH=${MODEL_PATH:-"${RAY_DATA_HOME}/models/Qwen2.5-32B"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
 TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/dapo-math-17k.parquet"}
 TEST_FILE=${TEST_FILE:-"${RAY_DATA_HOME}/data/aime-2024.parquet"}
-
 # Algorithm
 ## Train
 max_prompt_length=$((1024 * 2))
 max_response_length=$((1024 * 20))
-gen_prompt_bsz=512 # NOTE: no filtering here
-train_prompt_bsz=512
-train_prompt_mini_bsz=32
-n_resp_per_prompt=16
 ## Validation
 val_top_k=-1 # 0 for HF rollout, -1 for vLLM rollout
 
@@ -45,7 +45,7 @@ offload=True
 gen_tp=4
 
 ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
-    --working-dir "${PWD}" \
+    --working-dir "${WORKING_DIR}" \
     -- python3 -m verl.trainer.main_ppo \
     data.train_files="${TRAIN_FILE}" \
     data.val_files="${TEST_FILE}" \
