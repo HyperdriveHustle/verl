@@ -936,7 +936,7 @@ class RayPPOTrainer(object):
 
                         # Collect the sequence reward for each trajectory
                         prompt_uid2metric_vals = defaultdict(list)
-                        for uid, metric_val in zip(batch.non_tensor_batch['uid'], batch.batch[metric_name]):
+                        for uid, metric_val in zip(batch.non_tensor_batch['uid'], batch.non_tensor_batch[metric_name]):
                             prompt_uid2metric_vals[uid].append(metric_val)
 
                         prompt_uid2metric_std = {}
