@@ -48,7 +48,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.project_name='verl_example' \
     trainer.experiment_name='Qwen2.5-7B-Instruct_function_rm' \
     trainer.n_gpus_per_node=8 \
-    trainer.nnodes=1 \
+    trainer.nnodes=2 \
     trainer.save_freq=-1 \
     trainer.test_freq=10 \
     trainer.total_epochs=5 $@
