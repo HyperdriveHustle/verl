@@ -29,8 +29,6 @@ bash recipe/dapo/run_dapo_qwen2.5_32b.sh
 
 ## Reproduction Runs
 
-### Reproduction Results
-
 | Setup | AIME 2024 Acc. | Training Script | Training Record |
 |-------|----------------------|-----------------|-----------------|
 | DAPO w/o Token-level PG Loss & Dynamic Sampling | 44% | [run_dapo_early_qwen2.5_32b.sh](./run_dapo_early_qwen2.5_32b.sh) | W&B (Coming soon) |
