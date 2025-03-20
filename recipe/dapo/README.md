@@ -36,6 +36,9 @@ bash recipe/dapo/run_dapo_qwen2.5_32b.sh
 
 ## Configuration
 
+> [!NOTE]
+> Most experiments in the paper, including the best-performant one, are run without Overlong Filtering because it's somehow overlapping with Overlong Reward Shaping in terms of properly learning from the longest outputs. So we don't implement it here.
+
 ### Separated Clip Epsilons (-> Clip-Higher)
 
 An example configuration:
