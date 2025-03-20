@@ -1,8 +1,8 @@
 # DAPO Open-Source Implementation
 
-> Open-Source Algorithm Implementation & Expriements Running: [Yuxuan Tong](https://tongyx361.github.io/), [Guangming Sheng](https://hk.linkedin.com/in/guangming-sheng-b50640211)
+> Open-Source Algorithm Implementation & Expriement Running: [Yuxuan Tong](https://tongyx361.github.io/), [Guangming Sheng](https://hk.linkedin.com/in/guangming-sheng-b50640211)
 
-🏠 [Homepage](https://dapo-sia.github.io/) | 📝 [Paper](https://dapo-sia.github.io/static/pdf/dapo_paper.pdf) | 🤗 [Datasets&Models@HF](https://huggingface.co/collections/BytedTsinghua-SIA/dapo-67d7f1517ee33c8aed059da0) | 🐱 [Code@GitHub](https://github.com/volcengine/verl/tree/gm-tyx/puffin/main/recipe/dapo)
+🏠 [Homepage](https://dapo-sia.github.io/) | 📝 [Paper](https://dapo-sia.github.io/static/pdf/dapo_paper.pdf) | 🤗 [Datasets&Models@HF](https://huggingface.co/collections/BytedTsinghua-SIA/dapo-67d7f1517ee33c8aed059da0) | 🐱 [Code@GitHub](https://github.com/volcengine/verl/tree/gm-tyx/puffin/main/recipe/dapo) | 🐱 [Repo@GitHub](https://github.com/BytedTsinghua-SIA/DAPO)
 
 > We propose the **D**ecoupled Clip and Dynamic s**A**mpling **P**olicy **O**ptimization (DAPO) algorithm. By making our work publicly available, we provide the broader research community and society with practical access to scalable reinforcement learning, enabling all to benefit from these advancements. Our system is based on the awesome [verl](https://github.com/volcengine/verl) framework. Thanks for their great work! Applying DAPO training to Qwen2.5-32B base model proves to outperform the previous state-of-the-art DeepSeek-R1-Zero-Qwen-32B on AIME 2024, achieving **50%** accuracy with **50%** less training steps.
 >
@@ -29,19 +29,12 @@ bash recipe/dapo/run_dapo_qwen2.5_32b.sh
 
 ## Reproduction Runs
 
-### DAPO w/o Token-level PG loss & Dynamic Sampling -> 44% on AIME 2024
+### Reproduction Results
 
-We achieved 44% accuracy on AIME 2024 with a early version of DAPO w/o Token-level PG Loss & Dynamic Sampling.
-
-The training record will be available on WandB soon.
-
-The corresponding training script is [run_dapo_early_qwen2.5_32b.sh](./run_dapo_early_qwen2.5_32b.sh).
-
-### DAPO -> 50% on AIME 2024
-
-The training record will be available on WandB soon.
-
-The corresponding training script is [run_dapo_qwen2.5_32b.sh](./run_dapo_qwen2.5_32b.sh).
+| Setup | AIME 2024 Acc. | Training Script | Training Record |
+|-------|----------------------|-----------------|-----------------|
+| DAPO w/o Token-level PG Loss & Dynamic Sampling | 44% | [run_dapo_early_qwen2.5_32b.sh](./run_dapo_early_qwen2.5_32b.sh) | W&B (Coming soon) |
+| DAPO | 50% | [run_dapo_qwen2.5_32b.sh](./run_dapo_qwen2.5_32b.sh) | W&B (Coming soon) |
 
 ## Configuration
 
@@ -142,9 +135,9 @@ custom_reward_function:
     penalty_factor: 1.0
 ```
 
-Setting `overlong_buffer.enable` to `True` will penalize the outputs whose length entering the last `overlong_buffer.len` tokens before the `max_response_length`.
+Setting `overlong_buffer.enable` to `True` will penalize the outputs whose lengths are overlong but still within the hard context limit.
 
-The penalty increases linearly from 0 to `overlong_buffer.penalty_factor`.
+Specifically, the penalty increases linearly from `0` to `overlong_buffer.penalty_factor` when the length of the output exceeds the `max_response_length` by `0` to `overlong_buffer.len` tokens.
 
 Core relevant code:
 
@@ -155,5 +148,5 @@ if self.overlong_buffer_cfg.enable:
     exceed_len = valid_response_length - expected_len
     overlong_penalty_factor = self.overlong_buffer_cfg.penalty_factor
     overlong_reward = min(-exceed_len / overlong_buffer_len * overlong_penalty_factor, 0)
-    final_reward += overlong_reward
+    reward += overlong_reward
 ```
