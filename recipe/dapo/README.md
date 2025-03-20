@@ -36,7 +36,7 @@ bash recipe/dapo/run_dapo_qwen2.5_32b.sh
 
 ## Configuration
 
-### Separated Clip Episilons (-> Clip-Higher)
+### Separated Clip Epsilons (-> Clip-Higher)
 
 An example configuration:
 
