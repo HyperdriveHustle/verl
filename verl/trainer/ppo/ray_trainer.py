@@ -415,6 +415,7 @@ class RayPPOTrainer(object):
         real_train_batch_size = config.data.train_batch_size * config.actor_rollout_ref.rollout.n
         assert real_train_batch_size % n_gpus == 0, \
             f"real_train_batch_size ({real_train_batch_size}) must be divisible by total n_gpus ({n_gpus})."
+        print(f"> real_train_batch_size = {real_train_batch_size}, config.data.train_batch_size = {config.data.train_batch_size}, config.actor_rollout_ref.rollout.n = {config.actor_rollout_ref.rollout.n}")
 
         # A helper function to check "micro_batch_size" vs "micro_batch_size_per_gpu"
         # We throw an error if the user sets both. The new convention is "..._micro_batch_size_per_gpu".
@@ -427,6 +428,7 @@ class RayPPOTrainer(object):
                 raise ValueError(f"[{name}] You have set both '{name}.micro_batch_size' AND "
                                  f"'{name}.micro_batch_size_per_gpu'. Please remove '{name}.micro_batch_size' "
                                  f"because only '*_micro_batch_size_per_gpu' is supported (the former is deprecated).")
+            print(f"> {name} mbs_per_gpu = {mbs_per_gpu}")
 
         if not config.actor_rollout_ref.actor.use_dynamic_bsz:
             # actor: ppo_micro_batch_size vs. ppo_micro_batch_size_per_gpu
@@ -463,7 +465,7 @@ class RayPPOTrainer(object):
             if config.actor_rollout_ref.actor.ppo_micro_batch_size is not None:
                 assert config.actor_rollout_ref.actor.ppo_mini_batch_size % config.actor_rollout_ref.actor.ppo_micro_batch_size == 0
                 assert config.actor_rollout_ref.actor.ppo_micro_batch_size * sp_size >= n_gpus
-
+        
         # critic
         if self.use_critic and not config.critic.use_dynamic_bsz:
             sp_size = config.critic.get('ulysses_sequence_parallel_size', 1)
@@ -734,26 +736,34 @@ class RayPPOTrainer(object):
             # keep the referece of WorkerDict to support ray >= 2.31. Ref: https://github.com/ray-project/ray/pull/45699
             self.wg_dicts.append(wg_dict)
 
+        print(f">> all_wg = {all_wg}")
         if self.use_critic:
+            print("="*30, f"self.use_critic = {self.use_critic}", "="*30)
             self.critic_wg = all_wg['critic']
             self.critic_wg.init_model()
-        print("Critic model initialized.")
-        print("="*100)
+            print("Critic model initialized.")
+            print("="*100)
+        
         if self.use_reference_policy:
+            print("="*30, f"self.use_reference_policy = {self.use_reference_policy}", "="*30)
             self.ref_policy_wg = all_wg['ref']
             self.ref_policy_wg.init_model()
-        print("Reference policy initialized.")
-        print("="*100)
+            print("Reference policy initialized.")
+            print("="*100)
+        
         if self.use_rm:
+            print("="*30, f"self.use_rm = {self.use_rm}", "="*30)
             self.rm_wg = all_wg['rm']
             self.rm_wg.init_model()
-        print("Reward model initialized.")
-        print("="*100)
+            print("Reward model initialized.")
+            print("="*100)
+        
         # we should create rollout at the end so that vllm can have a better estimation of kv cache memory
         self.actor_rollout_wg = all_wg['actor_rollout']
         self.actor_rollout_wg.init_model()
         print("Actor rollout initialized.")
         print("="*100)
+    
     def _save_checkpoint(self):
         # path: given_path + `/global_step_{global_steps}` + `/actor`
         local_global_step_folder = os.path.join(self.config.trainer.default_local_dir,
@@ -880,7 +890,7 @@ class RayPPOTrainer(object):
         # currently, we only support validation using the reward_function.
         if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
             val_metrics = self._validate()
-            pprint(f'Initial validation metrics: {val_metrics}')
+            print(f'Initial validation metrics: {val_metrics}')
             logger.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get('val_only', False):
                 return
@@ -890,8 +900,10 @@ class RayPPOTrainer(object):
         last_val_metrics = None
 
         for epoch in range(self.config.trainer.total_epochs):
-            print(f"now in {epoch}")
+            print("--"*10, f"> now in epoch = {epoch}", "--"*10)
+            # from ray.util import pdb; pdb.set_trace()
             for batch_dict in self.train_dataloader:
+                print("--"*10, f"> global_steps = {self.global_steps}", "--"*10)
                 metrics = {}
                 timing_raw = {}
 
@@ -908,6 +920,7 @@ class RayPPOTrainer(object):
                         batch_keys=['input_ids', 'attention_mask', 'position_ids'],
                         non_tensor_batch_keys=['raw_prompt_ids'],
                     )
+                print(f"> gen_batch: {len(gen_batch)}")
 
                 with _timer('step', timing_raw):
                     # generate a batch
@@ -1026,6 +1039,7 @@ class RayPPOTrainer(object):
                 logger.log(data=metrics, step=self.global_steps)
 
                 self.global_steps += 1
+                print("--"*10, f"> global_steps = {self.global_steps}", "--"*10)
 
                 if self.global_steps >= self.total_training_steps:
 
