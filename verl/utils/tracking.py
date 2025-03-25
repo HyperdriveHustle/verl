@@ -82,7 +82,8 @@ class Tracking(object):
             self.logger['vemlp_wandb'] = vemlp_wandb
 
         if 'tensorboard' in default_backend:
-            self.logger['tensorboard'] = _TensorboardAdapter()
+            print(f"init tensorboard with config = {config}")
+            self.logger['tensorboard'] = _TensorboardAdapter(config=config)
 
         if 'console' in default_backend:
             from verl.utils.logger.aggregate_logger import LocalLogger
@@ -107,10 +108,14 @@ class Tracking(object):
 
 class _TensorboardAdapter:
 
-    def __init__(self):
+    def __init__(self, config=None):
         from torch.utils.tensorboard import SummaryWriter
         import os
-        tensorboard_dir = os.environ.get("TENSORBOARD_DIR", "tensorboard_log")
+        if config is not None:
+            tensorboard_dir = os.path.join(config["trainer"]["default_local_dir"], "tensorboard_log")
+        else:
+            tensorboard_dir = os.environ.get("TENSORBOARD_DIR", "tensorboard_log")
+        
         os.makedirs(tensorboard_dir, exist_ok=True)
         print(f"Saving tensorboard log to {tensorboard_dir}.")
         self.writer = SummaryWriter(tensorboard_dir)
