@@ -78,7 +78,7 @@ class ActorRolloutRefWorker(Worker):
         self.config = config
         import torch.distributed
         if not torch.distributed.is_initialized():
-            torch.distributed.init_process_group(backend="nccl")
+            torch.distributed.init_process_group()
 
         # build device mesh for FSDP
         world_size = torch.distributed.get_world_size()
@@ -302,21 +302,18 @@ class ActorRolloutRefWorker(Worker):
         dp = self.world_size // infer_tp
         assert self.world_size % infer_tp == 0, f'rollout world_size: {self.world_size} is not divisible by infer_tp: {infer_tp}'
         rollout_device_mesh = init_device_mesh('cuda', mesh_shape=(dp, infer_tp), mesh_dim_names=['dp', 'infer_tp'])
-
-        if self.config.rollout.name == 'hf':
+        rollout_name = self.config.rollout.name
+        if rollout_name == 'hf':
             from verl.workers.rollout import HFRollout
             from verl.workers.sharding_manager import BaseShardingManager
             rollout = HFRollout(module=self.actor_module_fsdp, config=self.config.rollout)
             rollout_sharding_manager = BaseShardingManager()
             # TODO: a sharding manager that do nothing?
-        elif self.config.rollout.name == 'vllm':
-            if self.config.rollout.use_fire_sampling:
-                from verl.workers.rollout.vllm_rollout import FIREvLLMRollout as vLLMRollout
-                from verl.workers.rollout.vllm_rollout import vllm_mode
-            else:
-                from verl.workers.rollout.vllm_rollout import vLLMRollout, vllm_mode
+
+        elif rollout_name == 'vllm':
+            from verl.workers.rollout.vllm_rollout import vLLMRollout, vllm_mode
             from verl.workers.sharding_manager import FSDPVLLMShardingManager
-            log_gpu_memory_usage('Before building vllm rollout', logger=None)
+            log_gpu_memory_usage(f'Before building {rollout_name} rollout', logger=None)
             local_path = copy_to_local(self.config.model.path)
             if vllm_mode == 'customized':
                 rollout = vLLMRollout(actor_module=self.actor_module_fsdp,
@@ -331,7 +328,7 @@ class ActorRolloutRefWorker(Worker):
                                       device_mesh=rollout_device_mesh)
             else:
                 raise NotImplementedError("vllm_mode must be 'customized' or 'spmd'")
-            log_gpu_memory_usage('After building vllm rollout', logger=None)
+            log_gpu_memory_usage(f'After building {rollout_name} rollout', logger=None)
             if torch.distributed.get_world_size() == 1:
                 self.config.rollout.load_format = 'dummy_hf'
             rollout_sharding_manager = FSDPVLLMShardingManager(module=self.actor_module_fsdp,
@@ -339,6 +336,30 @@ class ActorRolloutRefWorker(Worker):
                                                                model_config=self.actor_model_config,
                                                                full_params='hf' in self.config.rollout.load_format,
                                                                device_mesh=rollout_device_mesh)
+            log_gpu_memory_usage('After building sharding manager', logger=None)
+
+        elif rollout_name == 'sglang':
+            from verl.workers.rollout.sglang_rollout import SGLangRollout
+            # NOTE(linjunrong): Due to recent fp8 support in SGLang. Now importing any symbol relate to SGLang's model_runner would check CUDA device capability.
+            # However, due to veRL's setting, the main process of ray can not find any CUDA device, which would potentially lead to:
+            # "RuntimeError: No CUDA GPUs are available".
+            # For this reason, sharding_manager.__init__ should not import FSDPSGLangShardingManager and we import it here use the abs path.
+            # check: https://github.com/sgl-project/sglang/blob/00f42707eaddfc2c0528e5b1e0094025c640b7a0/python/sglang/srt/layers/quantization/fp8_utils.py#L76
+            from verl.workers.sharding_manager.fsdp_sglang import FSDPSGLangShardingManager
+            log_gpu_memory_usage(f'Before building {rollout_name} rollout', logger=None)
+            rollout = SGLangRollout(actor_module=self.config.model.path,
+                                    config=self.config.rollout,
+                                    tokenizer=self.tokenizer,
+                                    model_hf_config=self.actor_model_config)
+            log_gpu_memory_usage(f'After building {rollout_name} rollout', logger=None)
+
+            if torch.distributed.get_world_size() == 1:
+                self.config.rollout.load_format = 'dummy_hf'
+            rollout_sharding_manager = FSDPSGLangShardingManager(module=self.actor_module_fsdp,
+                                                                 inference_engine=rollout.inference_engine,
+                                                                 model_config=self.actor_model_config,
+                                                                 full_params='hf' in self.config.rollout.load_format,
+                                                                 device_mesh=rollout_device_mesh)
             log_gpu_memory_usage('After building sharding manager', logger=None)
 
         return rollout, rollout_sharding_manager
@@ -412,7 +433,8 @@ class ActorRolloutRefWorker(Worker):
                 model=self.actor_module_fsdp,
                 optimizer=self.actor.actor_optimizer,
                 lr_scheduler=self.actor_lr_scheduler,
-                processing_class=self.processor if self.processor is not None else self.tokenizer)
+                processing_class=self.processor if self.processor is not None else self.tokenizer,
+                checkpoint_contents=self.config.actor.checkpoint.contents)
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def update_actor(self, data: DataProto):
@@ -490,7 +512,6 @@ class ActorRolloutRefWorker(Worker):
 
             prompts = self.rollout_sharding_manager.preprocess_data(prompts)
             output = self.rollout.generate_sequences(prompts=prompts)
-
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
             output = self.rollout_sharding_manager.postprocess_data(output)
@@ -580,11 +601,13 @@ class ActorRolloutRefWorker(Worker):
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
-    def load_checkpoint(self, path, del_local_after_load=False):
+    def load_checkpoint(self, local_path, hdfs_path=None, del_local_after_load=False):
         if self._is_offload_param:
             load_fsdp_model_to_gpu(self.actor_module_fsdp)
 
-        self.checkpoint_manager.load_checkpoint(path=path, del_local_after_load=del_local_after_load)
+        self.checkpoint_manager.load_checkpoint(local_path=local_path,
+                                                hdfs_path=hdfs_path,
+                                                del_local_after_load=del_local_after_load)
 
         if self._is_offload_param:
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
@@ -782,7 +805,8 @@ class CriticWorker(Worker):
             model=self.critic_module,
             optimizer=self.critic_optimizer,
             lr_scheduler=self.critic_lr_scheduler,
-            processing_class=self.processor if self.processor is not None else self.tokenizer)
+            processing_class=self.processor if self.processor is not None else self.tokenizer,
+            checkpoint_contents=self.config.checkpoint.contents)
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_values(self, data: DataProto):
@@ -860,12 +884,14 @@ class CriticWorker(Worker):
             offload_fsdp_model_to_cpu(self.critic_module)
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
-    def load_checkpoint(self, path, del_local_after_load=True):
+    def load_checkpoint(self, local_path, hdfs_path=None, del_local_after_load=True):
         import torch
         if self._is_offload_param:
             load_fsdp_model_to_gpu(self.critic_module)
 
-        self.checkpoint_manager.load_checkpoint(path=path, del_local_after_load=del_local_after_load)
+        self.checkpoint_manager.load_checkpoint(local_path=local_path,
+                                                hdfs_path=hdfs_path,
+                                                del_local_after_load=del_local_after_load)
 
         torch.distributed.barrier()
         if self._is_offload_param:
