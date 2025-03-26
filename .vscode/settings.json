@@ -1,0 +1,7 @@
+{
+    "python.analysis.extraPaths": [
+        "../venv/lib/python3.11/site-packages/",
+        "../../mlSYS/vllm",
+        "../venv/**"
+    ]
+}
