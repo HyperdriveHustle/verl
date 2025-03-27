@@ -106,15 +106,16 @@ def main():
             print(key)
             print(tensor.shape)
 
-    print(f'='*100)
-    chunks = tensordict.split(0, dim=0)
-    for idx, chunk in enumerate(chunks):
-        print(f'*'*100 + f' {idx}')
-        print(type(chunk), chunk.batch_size)
-        #print(chunk.keys())
-        for key, tensor in chunk.items():
-            print(key)
-            print(tensor.shape)
+    # print(f'='*100)
+    # chunks = tensordict.split(0, dim=0) # XXX: results in deadlock
+    # for idx, chunk in enumerate(chunks):
+    #     print(f'*'*100 + f' {idx}')
+    #     print(type(chunk), chunk.batch_size)
+    #     #print(chunk.keys())
+    #     for key, tensor in chunk.items():
+    #         print(key)
+    #         print(tensor.shape)
+
 
 
 
