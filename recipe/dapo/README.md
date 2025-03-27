@@ -104,26 +104,32 @@ else:
     batch = batch[:traj_bsz]
 ```
 
-### Token-level Policy Gradient Loss
+### Flexible Loss Aggregation Mode (-> Token-level Policy Gradient Loss)
 
 An example configuration:
 
 ```yaml
 actor_rollout_ref:
   actor:
-    use_token_level_loss: True
+    loss_agg_mode: "token-mean" # / "seq-mean-token-sum" / "seq-mean-token-mean"
+    # NOTE: "token-mean" is the default behavior
 ```
 
-Setting `use_token_level_loss` to `True` will mean the policy gradient loss across all the tokens in all the sequences in a batch.
+Setting `loss_agg_mode` to `token-mean` will mean the (policy gradient) loss across all the tokens in all the sequences in a mini-batch.
 
 Core relevant code:
 
 ```python
-if use_token_level_loss:
+if loss_agg_mode == "token-mean":
     pg_loss = verl_F.masked_mean(pg_losses, eos_mask)
-else:
-    pg_loss = torch.sum(pg_losses * eos_mask, dim=1) / seq_len_per_sample
+elif loss_agg_mode == "seq-mean-token-sum":
+    pg_loss = torch.sum(pg_losses * eos_mask, dim=-1) / torch.sum(eos_mask, dim=-1)
     pg_loss = torch.mean(pg_loss)
+elif loss_agg_mode == "seq-mean-token-mean":
+    pg_loss = torch.sum(pg_losses * eos_mask, dim=-1) / torch.sum(eos_mask, dim=-1)
+    pg_loss = torch.mean(pg_loss)
+else:
+    raise ValueError(f"Invalid loss_agg_mode: {loss_agg_mode}")
 ```
 
 ### Overlong Reward Shaping

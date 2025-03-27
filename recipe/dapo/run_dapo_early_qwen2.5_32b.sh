@@ -20,7 +20,7 @@ overlong_buffer_len=$((1024 * 4))
 overlong_penalty_factor=1.0
 
 # An early version for DAPO
-use_token_level_loss=False
+loss_agg_mode="seq-mean-token-sum"
 
 enable_filter_groups=False
 gen_prompt_bsz=512 # NOTE: no filtering here
@@ -94,7 +94,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=${offload} \
     actor_rollout_ref.actor.entropy_coeff=0 \
     actor_rollout_ref.actor.grad_clip=1.0 \
-    actor_rollout_ref.actor.use_token_level_loss=${use_token_level_loss} \
+    actor_rollout_ref.actor.loss_agg_mode=${loss_agg_mode} \
     actor_rollout_ref.actor.ulysses_sequence_parallel_size=${sp_size} \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.80 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${gen_tp} \

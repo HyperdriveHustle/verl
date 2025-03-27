@@ -33,7 +33,8 @@ actor_rollout_ref:
     clip_ratio: 0.2 # default value if clip_ratio_low and clip_ratio_high are not specified
     clip_ratio_low: 0.2
     clip_ratio_high: 0.2
-    use_token_level_loss: True
+    loss_agg_mode: "token-mean" # / "seq-mean-token-sum" / "seq-mean-token-mean"
+    # NOTE: "token-mean" is the default behavior
     entropy_coeff: 0.001
     use_kl_loss: False # True for GRPO
     kl_loss_coef: 0.001 # for grpo

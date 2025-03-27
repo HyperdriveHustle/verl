@@ -269,6 +269,34 @@ def compute_rewards(token_level_scores, old_log_prob, ref_log_prob, kl_ratio):
     return token_level_scores - kl * kl_ratio
 
 
+def agg_loss(loss_mat: torch.Tensor, loss_mask: torch.Tensor, loss_agg_mode: str):
+    """
+    Aggregate the loss matrix into a scalar.
+    Args:
+        loss_mat: `(torch.Tensor)`
+            shape: (bs, response_length)
+        loss_mask: `(torch.Tensor)`
+            shape: (bs, response_length)
+        loss_agg_mode: (str) choices: "token-mean" / "seq-mean-token-sum" / "seq-mean-token-mean"
+            "token-mean" is the default behavior
+    Returns:
+        loss: `a scalar torch.Tensor`
+            aggregated loss
+    """
+    if loss_agg_mode == "token-mean":
+        loss = verl_F.masked_mean(loss_mat, loss_mask)
+    elif loss_agg_mode == "seq-mean-token-sum":
+        seq_losses = torch.sum(loss_mat * loss_mask, dim=-1) / torch.sum(loss_mask, dim=-1)
+        loss = torch.mean(seq_losses)
+    elif loss_agg_mode == "seq-mean-token-mean":
+        seq_losses = torch.sum(loss_mat * loss_mask, dim=-1) / torch.sum(loss_mask, dim=-1)
+        loss = torch.mean(seq_losses)
+    else:
+        raise ValueError(f"Invalid loss_agg_mode: {loss_agg_mode}")
+
+    return loss
+
+
 def compute_policy_loss(old_log_prob,
                         log_prob,
                         advantages,
@@ -276,7 +304,7 @@ def compute_policy_loss(old_log_prob,
                         cliprange=None,
                         cliprange_low=None,
                         cliprange_high=None,
-                        use_token_level_loss=False):
+                        loss_agg_mode="token-mean"):
     """Adapted from https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py#L1122
     Args:
         old_log_prob: `(torch.Tensor)`
@@ -293,8 +321,8 @@ def compute_policy_loss(old_log_prob,
             The lower clip range used in PPO.
         cliprange_high: (float)
             The higher clip range used in PPO.
-        use_token_level_loss: (bool)
-            Whether to use token level loss
+        loss_agg_mode: (str) choices: "token-mean" / "seq-mean-token-sum" / "seq-mean-token-mean"
+            "token-mean" is the default behavior
     Returns:
         pg_loss: `a scalar torch.Tensor`
             policy gradient loss computed via PPO
@@ -317,11 +345,7 @@ def compute_policy_loss(old_log_prob,
                                            1 + cliprange_high)  # - clip(ratio, 1-cliprange, 1+cliprange) * A
     pg_losses = torch.maximum(pg_losses1, pg_losses2)  # max(-ratio * A, -clip(ratio, 1-cliprange, 1+cliprange) * A)
 
-    if use_token_level_loss:
-        pg_loss = verl_F.masked_mean(pg_losses, eos_mask)
-    else:
-        pg_loss = torch.sum(pg_losses * eos_mask, dim=1) / seq_len_per_sample
-        pg_loss = torch.mean(pg_loss)
+    pg_loss = agg_loss(loss_mat=pg_losses, loss_mask=eos_mask, loss_agg_mode=loss_agg_mode)
 
     pg_clipfrac = verl_F.masked_mean(torch.gt(pg_losses2, pg_losses1).float(), eos_mask)
     return pg_loss, pg_clipfrac, ppo_kl
