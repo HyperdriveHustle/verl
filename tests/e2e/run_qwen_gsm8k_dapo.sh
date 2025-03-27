@@ -18,7 +18,7 @@ enable_overlong_buffer=True
 overlong_buffer_len=128
 overlong_penalty_factor=1.0
 
-use_token_level_loss=True
+loss_agg_mode="token-mean"
 
 enable_filter_groups=True
 filter_groups_metric=acc
@@ -40,7 +40,7 @@ python3 -m recipe.dapo.src.main_dapo \
     custom_reward_function.overlong_buffer.enable=${enable_overlong_buffer} \
     custom_reward_function.overlong_buffer.len=${overlong_buffer_len} \
     custom_reward_function.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
-    actor_rollout_ref.actor.use_token_level_loss=${use_token_level_loss} \
+    actor_rollout_ref.actor.loss_agg_mode=${loss_agg_mode} \
     data.train_batch_size=${train_prompt_bsz} \
     data.gen_batch_size=${gen_prompt_bsz} \
     algorithm.filter_groups.enable=${enable_filter_groups} \
