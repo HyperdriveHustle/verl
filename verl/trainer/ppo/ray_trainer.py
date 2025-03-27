@@ -244,7 +244,7 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
 def _timer(name: str, timing_raw: Dict[str, float]):
     with Timer(name=name, logger=None) as timer:
         yield
-    timing_raw[name] += timer.last  # Allow to accumulate time
+    timing_raw[name] = timer.last
 
 
 class RayPPOTrainer(object):
