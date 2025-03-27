@@ -317,23 +317,6 @@ class RayPPOTrainer(object):
         # number of GPUs total
         n_gpus = config.trainer.n_gpus_per_node * config.trainer.nnodes
 
-        filter_cfg = config.algorithm.filter_groups
-        if filter_cfg.enable:
-            assert filter_cfg.max_num_gen_batches > 0, f"{filter_cfg.max_num_gen_batches=}"
-            assert filter_cfg.metric is not None, f"{filter_cfg.metric=}"
-        else:
-            assert config.data.train_batch_size == config.data.gen_batch_size, \
-                f"train_batch_size must be equal to gen_batch_size when filter_groups.enable is False, but got {config.data.train_batch_size =} and {config.data.gen_batch_size =}"
-
-        overlong_buffer_cfg = config.custom_reward_function.overlong_buffer
-        if overlong_buffer_cfg.enable:
-            assert config.data.max_response_length >= overlong_buffer_cfg.len > 0, \
-                f"{config.data.max_response_length=} / {overlong_buffer_cfg.len=}"
-        else:
-            assert overlong_buffer_cfg.len <= 0, f"{overlong_buffer_cfg.len=} > 0 but {overlong_buffer_cfg.enable=}"
-            assert overlong_buffer_cfg.penalty_factor <= 0, f"{overlong_buffer_cfg.penalty_factor=} > 0 but {overlong_buffer_cfg.enable=}"
-            assert overlong_buffer_cfg.log == False, f"{overlong_buffer_cfg.log=} == True but {overlong_buffer_cfg.enable=}"
-
         # 1. Check total batch size for data correctness
         real_train_batch_size = config.data.train_batch_size * config.actor_rollout_ref.rollout.n
         assert real_train_batch_size % n_gpus == 0, \
