@@ -30,6 +30,7 @@ gen_prompt_bsz=$((train_prompt_bsz * 3))
 python3 -m recipe.dapo.src.main_dapo \
     data.train_files="$HOME/data/gsm8k/train.parquet" \
     data.val_files="$HOME/data/gsm8k/test.parquet" \
+    reward_model.reward_manager=dapo \
     algorithm.adv_estimator=${adv_estimator} \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
