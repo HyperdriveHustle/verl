@@ -26,6 +26,7 @@ max_num_gen_batches=10
 train_prompt_bsz=32
 train_prompt_mini_bsz=$((train_prompt_bsz / 2))
 gen_prompt_bsz=$((train_prompt_bsz * 3))
+n_resp_per_prompt=4
 
 python3 -m recipe.dapo.src.main_dapo \
     data.train_files="$HOME/data/gsm8k/train.parquet" \
@@ -51,6 +52,7 @@ python3 -m recipe.dapo.src.main_dapo \
     actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
+    actor_rollout_ref.rollout.n=${n_resp_per_prompt} \
     actor_rollout_ref.actor.ppo_mini_batch_size=${train_prompt_mini_bsz} \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
