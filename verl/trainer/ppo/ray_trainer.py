@@ -551,12 +551,9 @@ class RayPPOTrainer(object):
 
             # evaluate using reward_function
             result = self.val_reward_fn(test_batch, return_dict=True)
-
-            # Store scores
+            reward_tensor = result["reward_tensor"]
             scores = reward_tensor.sum(-1).cpu().tolist()
             sample_scores.extend(scores)
-
-            reward_tensor = result["reward_tensor"]
             if "reward_extra_info" in result:
                 reward_extra_infos_dict["final_reward"].extend(scores)
                 for key, lst in result["reward_extra_info"].items():
