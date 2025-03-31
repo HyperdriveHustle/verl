@@ -139,7 +139,7 @@ An example configuration:
 ```yaml
 data:
   max_response_length: 20480 # 16384 + 4096
-custom_reward_function:
+reward_model:
   overlong_buffer: 
     enable: True
     len: 4096

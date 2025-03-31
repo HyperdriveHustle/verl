@@ -40,9 +40,9 @@ python3 -m recipe.dapo.src.main_dapo \
     actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
     data.max_prompt_length=${max_prompt_length} \
     data.max_response_length=${max_response_length} \
-    custom_reward_function.overlong_buffer.enable=${enable_overlong_buffer} \
-    custom_reward_function.overlong_buffer.len=${overlong_buffer_len} \
-    custom_reward_function.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
+    reward_model.overlong_buffer.enable=${enable_overlong_buffer} \
+    reward_model.overlong_buffer.len=${overlong_buffer_len} \
+    reward_model.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
     actor_rollout_ref.actor.loss_agg_mode=${loss_agg_mode} \
     data.train_batch_size=${train_prompt_bsz} \
     data.gen_batch_size=${gen_prompt_bsz} \
