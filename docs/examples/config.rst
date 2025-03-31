@@ -105,7 +105,7 @@ Actor/Rollout/Reference Policy
         optimizer_offload: False
         fsdp_size: -1
       checkpoint:
-        contents: ['model', 'hf_model', 'optimizer', 'extra']
+        contents: ['model', 'optimizer', 'extra']
     ref:
       fsdp_config:
         param_offload: False
@@ -177,6 +177,7 @@ Actor/Rollout/Reference Policy
 
 - ``actor_rollout_ref.actor.grad_clip``: Gradient clipping for actor
   updates
+- ``actor_rollout_ref.actor.use_kl_loss``: to use kl loss in actor. When used, we are not applying KL in the reward function.
 
 - ``actor_rollout_ref.actor.clip_ratio``: PPO clip ratio
 
@@ -210,8 +211,7 @@ Actor/Rollout/Reference Policy
 
   - ``contents``: The contents to save in the checkpoint. By default, we save model, optimizer and extra information in the checkpoint.
     The extra information includes Rng states currently, FSDP supported lr_scheduler, and Megatron opt_param_scheduler will coming soon.
-    Currently, we default store hf_model in checkpoint, but for future, we will only save sharded models for saving space, 
-    and we provide tools to convert checkpoint format to hf format.
+    We do not store hf_model in checkpoint by default, but we provide a tool in `scripts/model_merge.py` to convert checkpoint format to hf format.
 
 **Reference Model**
 
@@ -227,9 +227,7 @@ Actor/Rollout/Reference Policy
 
 **Rollout Model**
 
-- ``actor_rollout_ref.rollout.name``: hf/vllm. We use vLLM by default
-  because it's much efficient and our hybrid engine is implemented with
-  vLLM.
+- ``actor_rollout_ref.rollout.name``: hf/vllm/sglang.
 
 - Rollout (Auto-regressive) parameters. The key should be equal to the
   property name in vLLM's ``SamplingParams``.
@@ -382,8 +380,8 @@ Trainer
      critic_warmup: 0
      default_hdfs_dir: ~/experiments/gsm8k/ppo/${trainer.experiment_name} # hdfs checkpoint path
      default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name} # local checkpoint path
-     resume_mode: auto # or disable or resume_path if
-     resume_from_path: False
+     resume_mode: auto # or disable or resume_path if resume_from_path is set
+     resume_from_path: null
      remove_previous_ckpt_in_save: False
      del_local_ckpt_after_load: False
 
