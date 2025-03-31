@@ -17,7 +17,7 @@ Prerequisite:
 
 - the latest version of ``verl`` and its dependencies installed following the installation guide. Using the docker image is recommended.
 
-- an GPU with at least 24 GB HBM
+- a GPU with at least 24 GB HBM
 
 
 Dataset Introduction
@@ -70,7 +70,7 @@ answer from both the solution and model's output using regular
 expression matching. We assign a reward of 1 to correct
 answer, 0.1 to incorrect answer and 0 to no answer. 
 
-For mode details, please refer to `verl/utils/reward_score/gsm8k.py <https://github.com/volcengine/verl/blob/v0.1/verl/utils/reward_score/gsm8k.py>`_.
+For more details, please refer to `verl/utils/reward_score/gsm8k.py <https://github.com/volcengine/verl/blob/v0.1/verl/utils/reward_score/gsm8k.py>`_.
 
 **Training Script**
 
@@ -78,6 +78,7 @@ Now let's run PPO training with the dataset and model above. [2]_
 
 
 Set the ``data.train_files`` ,\ ``data.val_files``, ``actor_rollout_ref.model.path`` and ``critic.model.path`` based on your dataset and model names or paths.
+You may set ``VERL_USE_MODELSCOPE=True`` to download models from modelscope instead of huggingface.
 
 .. code-block:: bash
 
@@ -100,7 +101,7 @@ Set the ``data.train_files`` ,\ ``data.val_files``, ``actor_rollout_ref.model.pa
     critic.ppo_micro_batch_size_per_gpu=4 \
     algorithm.kl_ctrl.kl_coef=0.001 \
     trainer.logger=['console'] \
-    +trainer.val_before_train=False \
+    trainer.val_before_train=False \
     trainer.default_hdfs_dir=null \
     trainer.n_gpus_per_node=1 \
     trainer.nnodes=1 \
