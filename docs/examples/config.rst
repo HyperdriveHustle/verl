@@ -21,6 +21,10 @@ Data
      train_batch_size: 1024
      return_raw_input_ids: False  # This should be set to true when the tokenizer between policy and rm differs
      return_raw_chat: False
+     shuffle: True
+     filter_overlong_prompts: False # for large-scale dataset, filtering overlong prompts could be timeconsuming. You should disable this and set `truncation='left'
+     truncation: error
+     image_key: images
 
 - ``data.train_files``: Training set parquet. Can be a list or a single
   file. The program will read all files into memory, so it can't be too
@@ -45,10 +49,16 @@ Data
   chat template. If using a model-based RM, and the policy and RM
   chat_templates are different, this flag needs to be set
 - ``data.return_raw_chat``:
+- ``data.shuffle``: Whether to shuffle the data in the dataloader.
+- ``data.filter_overlong_prompts``: Default don't filter. You can filter for small-scale dataset. 
+  For large-scale dataset, filtering overlong prompts could be timeconsuming. 
+  You should disable this and set ``truncation='left``
 - ``data.truncation``: Truncate the input_ids or prompt length if they
   exceed max_prompt_length. Default is 'error', not allow exceed the
   max_prompt_length. The users should increase the max_prompt_length if
-  throwing the error.
+  throwing the error. You can also set ``left`` and ``right``.
+- ``data.image_key``: The field in the multi-modal dataset where the image is
+  located. Default is 'images'.
 
 Actor/Rollout/Reference Policy
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -74,6 +84,7 @@ Actor/Rollout/Reference Policy
       clip_ratio: 0.2
       entropy_coeff: 0.001
       use_kl_loss: False # True for GRPO
+      use_torch_compile: True # False to disable torch compile
       kl_loss_coef: 0.001 # for grpo
       kl_loss_type: low_var_kl # for grpo
       ppo_epochs: 1
@@ -81,6 +92,7 @@ Actor/Rollout/Reference Policy
       ulysses_sequence_parallel_size: 1 # sp size
       optim:
         lr: 1e-6
+        lr_warmup_steps: -1 # Prioritized. Negative values mean delegating to lr_warmup_steps_ratio.
         lr_warmup_steps_ratio: 0.  # the total steps will be injected during runtime
         min_lr_ratio: null   # only useful for warmup with cosine
         warmup_style: constant  # select from constant/cosine
@@ -92,6 +104,8 @@ Actor/Rollout/Reference Policy
         param_offload: False
         optimizer_offload: False
         fsdp_size: -1
+      checkpoint:
+        contents: ['model', 'optimizer', 'extra']
     ref:
       fsdp_config:
         param_offload: False
@@ -163,8 +177,11 @@ Actor/Rollout/Reference Policy
 
 - ``actor_rollout_ref.actor.grad_clip``: Gradient clipping for actor
   updates
+- ``actor_rollout_ref.actor.use_kl_loss``: to use kl loss in actor. When used, we are not applying KL in the reward function.
 
 - ``actor_rollout_ref.actor.clip_ratio``: PPO clip ratio
+
+- ``actor_rollout_ref.actor.use_torch_compile``: Whether to use torch compile in actor
 
 - ``actor_rollout_ref.actor.entropy_coeff``: The weight of entropy when
   calculating PPO loss
@@ -190,6 +207,12 @@ Actor/Rollout/Reference Policy
 
     - Trading speed for GPU memory.
 
+- ``actor_rollout_ref.actor.checkpoint``: The configurations of checkpoint function in actor
+
+  - ``contents``: The contents to save in the checkpoint. By default, we save model, optimizer and extra information in the checkpoint.
+    The extra information includes Rng states currently, FSDP supported lr_scheduler, and Megatron opt_param_scheduler will coming soon.
+    We do not store hf_model in checkpoint by default, but we provide a tool in `scripts/model_merge.py` to convert checkpoint format to hf format.
+
 **Reference Model**
 
 - ``actor_rollout_ref.ref``: FSDP config same as actor. **For models
@@ -204,9 +227,7 @@ Actor/Rollout/Reference Policy
 
 **Rollout Model**
 
-- ``actor_rollout_ref.rollout.name``: hf/vllm. We use vLLM by default
-  because it's much efficient and our hybrid engine is implemented with
-  vLLM.
+- ``actor_rollout_ref.rollout.name``: hf/vllm/sglang.
 
 - Rollout (Auto-regressive) parameters. The key should be equal to the
   property name in vLLM's ``SamplingParams``.
@@ -309,6 +330,18 @@ Reward Model
   if ``naive``. If all verification functions are multiprocessing-safe, the reward
   manager can be set to ``prime`` for parallel verification.
 
+Customized Reward Function
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: yaml
+  
+   custom_reward_function:
+     path: null
+     name: compute_score
+
+- ``custom_reward_function.path``: The path to the file containing your customized reward function. If not specified, pre-implemented reward functions will be used.
+- ``custom_reward_function.name`` (Optional) : The name of the reward function within the specified file. Default is 'compute_score'.
+
 Algorithm
 ~~~~~~~~~
 
@@ -347,11 +380,15 @@ Trainer
      critic_warmup: 0
      default_hdfs_dir: ~/experiments/gsm8k/ppo/${trainer.experiment_name} # hdfs checkpoint path
      default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name} # local checkpoint path
+     resume_mode: auto # or disable or resume_path if resume_from_path is set
+     resume_from_path: null
+     remove_previous_ckpt_in_save: False
+     del_local_ckpt_after_load: False
 
 - ``trainer.total_epochs``: Number of epochs in training.
-- ``trainer.project_name``: For wandb
-- ``trainer.experiment_name``: For wandb
-- ``trainer.logger``: Support console and wandb
+- ``trainer.project_name``: For wandb, swanlab
+- ``trainer.experiment_name``: For wandb, swanlab
+- ``trainer.logger``: Support console and wandb, swanlab, mlflow, tensorboard
 - ``trainer.nnodes``: Number of nodes used in the training.
 - ``trainer.n_gpus_per_node``: Number of GPUs per node.
 - ``trainer.save_freq``: The frequency (by iteration) to save checkpoint
@@ -359,3 +396,14 @@ Trainer
 - ``trainer.test_freq``: The validation frequency (by iteration).
 - ``trainer.critic_warmup``: The number of iteration to train the critic
   model before actual policy learning.
+- ``trainer.resume_mode``: The mode of resuming training. Support
+  ``disable``, ``auto`` and ``resume_path``. If set to ``auto`` as default, the
+  program will automatically resume from the latest checkpoint in the
+  default_hdfs_dir. If set to ``resume_path``, the program will resume
+  from the path specified in ``resume_from_path``.
+- ``trainer.resume_from_path``: The path to resume training from. Only
+  effective when ``resume_mode`` is set to ``resume_path``.
+- ``trainer.remove_previous_ckpt_in_save``: Whether to remove previous
+  checkpoints in the save directory. Default is False.
+- ``trainer.del_local_ckpt_after_load``: Whether to delete local
+  checkpoints after loading them. Default is False.

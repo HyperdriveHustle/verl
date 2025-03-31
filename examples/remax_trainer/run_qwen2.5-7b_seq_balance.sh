@@ -12,6 +12,8 @@ python3 -m verl.trainer.main_ppo \
     data.train_batch_size=1024 \
     data.max_prompt_length=512 \
     data.max_response_length=1024 \
+    data.filter_overlong_prompts=True \
+    data.truncation='error' \
     actor_rollout_ref.model.path=Qwen/Qwen2.5-7B-Instruct \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
@@ -34,7 +36,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_remax_example_gsm8k' \
     trainer.experiment_name='qwen2.5_7b_function_rm_kl1e-3' \
-    +trainer.val_before_train=False \
+    trainer.val_before_train=False \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \

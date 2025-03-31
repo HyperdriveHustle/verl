@@ -119,7 +119,13 @@ class DataParallelPPOCritic(BasePPOCritic):
             grad_norm = self.critic_module.clip_grad_norm_(self.config.grad_clip)
         else:
             grad_norm = torch.nn.utils.clip_grad_norm_(self.critic_module.parameters(), max_norm=self.config.grad_clip)
-        self.critic_optimizer.step()
+
+        # if grad_norm is not finite, skip the update
+        if not torch.isfinite(grad_norm):
+            print(f"WARN: grad_norm is not finite: {grad_norm}")
+            self.critic_optimizer.zero_grad()
+        else:
+            self.critic_optimizer.step()
         return grad_norm
 
     def compute_values(self, data: DataProto) -> torch.Tensor:
@@ -198,11 +204,11 @@ class DataParallelPPOCritic(BasePPOCritic):
                 self.critic_optimizer.zero_grad()
 
                 for data in micro_batches:
+                    #Support all devices
                     if isinstance(data, DataProto):
-                        data = {**data.batch.cuda(), **data.non_tensor_batch}
+                        data = {**data.batch.to(torch.cuda.current_device()), **data.non_tensor_batch}
                     else:
-                        data = data.cuda()  # critic device is cpu when using offload
-
+                        data = data.to(torch.cuda.current_device())  # critic device is cpu when using offload
                     input_ids = data['input_ids']
                     responses = data['responses']
                     attention_mask = data['attention_mask']

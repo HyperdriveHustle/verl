@@ -197,7 +197,8 @@ class DataProto:
     def __getitem__(self, item):
         tensor_data = self.batch[item]
         non_tensor_data = {key: val[item] for key, val in self.non_tensor_batch.items()}
-        return DataProtoItem(batch=tensor_data, non_tensor_batch=non_tensor_data, meta_info=self.meta_info)
+        return_type = DataProto if isinstance(item, slice) else DataProtoItem
+        return return_type(batch=tensor_data, non_tensor_batch=non_tensor_data, meta_info=self.meta_info)
 
     def __getstate__(self):
         import io
@@ -603,7 +604,7 @@ import ray
 class DataProtoFuture:
     """
     DataProtoFuture aims to eliminate actual data fetching on driver. By doing so, the driver doesn't have to wait
-    for data so that asynchronous execution becomes possible. 
+    for data so that asynchronous execution becomes possible.
     DataProtoFuture contains a list of futures from another WorkerGroup of size world_size.
     - collect_fn is a Callable that reduces the list of futures to a DataProto
     - dispatch_fn is a Callable that partitions the DataProto into a list of DataProto of size world_size and then select
@@ -644,3 +645,21 @@ class DataProtoFuture:
         if self.dispatch_fn is not None:
             output = self.dispatch_fn(output)  # split in batch dim, select using dp
         return output
+
+
+from verl.utils.torch_functional import allgather_dict_tensors
+import torch.distributed
+
+
+def all_gather_data_proto(data: DataProto, process_group):
+    # Note that this is an inplace operator just like torch.distributed.all_gather
+    group_size = torch.distributed.get_world_size(group=process_group)
+    assert isinstance(data, DataProto)
+    prev_device = data.batch.device
+    data.batch = data.batch.cuda(device=torch.cuda.current_device())
+    data.batch = allgather_dict_tensors(data.batch.contiguous(), size=group_size, group=process_group, dim=0)
+    data.batch = data.batch.to(prev_device)
+    # all gather non_tensor_batch
+    all_non_tensor_batch = [None for _ in range(group_size)]
+    torch.distributed.all_gather_object(all_non_tensor_batch, data.non_tensor_batch, group=process_group)
+    data.non_tensor_batch = {k: np.concatenate([d[k] for d in all_non_tensor_batch]) for k in data.non_tensor_batch}
