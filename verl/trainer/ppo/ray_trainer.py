@@ -624,13 +624,20 @@ class RayPPOTrainer(object):
 
         metric_dict = {}
         for data_source, var2metric2prompt_vals in data_src2var2metric2prompt_vals.items():
+            core_var = "acc" if "acc" in var2metric2prompt_vals else "final_reward"
             for var_name, metric2prompt_vals in var2metric2prompt_vals.items():
+                n_max = max([int(name.split("@")[-1].split("/")[0]) for name in metric2prompt_vals.keys()])
                 for metric_name, prompt_vals in metric2prompt_vals.items():
-                    pfx = f"{data_source}/{var_name}/{metric_name}"
+                    if var_name == core_var and any(
+                            metric_name.startswith(pfx)
+                            for pfx in ["mean", "std", "maj", "best"]) and f"@{n_max}/" in metric_name:
+                        metric_sec = "val-core"
+                    else:
+                        metric_sec = "val-aux"
+                    pfx = f"{metric_sec}/{data_source}/{var_name}/{metric_name}"
                     metric_dict[pfx] = np.mean(prompt_vals)
 
-        val_metric_dict = {f"val/{key}": value for key, value in metric_dict.items()}
-        return val_metric_dict
+        return metric_dict
 
     def init_workers(self):
         """Init resource pool and worker group"""
