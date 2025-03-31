@@ -161,7 +161,7 @@ class TaskRunner:
                                        compute_score=compute_score,
                                        reward_fn_key=config.data.reward_fn_key,
                                        max_resp_len=config.data.max_response_length,
-                                       overlong_buffer_cfg=config.custom_reward_function.overlong_buffer)
+                                       overlong_buffer_cfg=config.reward_model.overlong_buffer)
 
         # Note that we always use function-based RM for validation
         val_reward_fn = reward_manager_cls(tokenizer=tokenizer,
@@ -169,7 +169,7 @@ class TaskRunner:
                                            compute_score=compute_score,
                                            reward_fn_key=config.data.reward_fn_key,
                                            max_resp_len=config.data.max_response_length,
-                                           overlong_buffer_cfg=config.custom_reward_function.overlong_buffer)
+                                           overlong_buffer_cfg=config.reward_model.overlong_buffer)
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
         trainer = RayDAPOTrainer(config=config,

@@ -170,15 +170,15 @@ reward_model:
   use_dynamic_bsz: ${critic.use_dynamic_bsz}
   forward_max_token_len_per_gpu: ${critic.forward_max_token_len_per_gpu}
   reward_manager: naive
-
-custom_reward_function:
-  path: null
-  name: compute_score
   overlong_buffer: 
     enable: False # We try to avoid forgetting to set enable
     len: 0
     penalty_factor: 0.0
     log: False
+
+custom_reward_function:
+  path: null
+  name: compute_score
 
 algorithm:
   gamma: 1.0
@@ -200,16 +200,18 @@ trainer:
   project_name: verl_examples
   experiment_name: gsm8k
   logger: [ 'console', 'wandb' ]
-  val_generations_to_log_to_wandb: 0
+  log_val_generations: 0
   nnodes: 1
   n_gpus_per_node: 8
   save_freq: -1
   # auto: find the last ckpt to resume. If can't find, start from scratch
   resume_mode: auto # or disable or resume_path if 
-  resume_from_path: False
+  resume_from_path: null
   test_freq: -1
   critic_warmup: 0
   default_hdfs_dir: null
   remove_previous_ckpt_in_save: False
   del_local_ckpt_after_load: False
   default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
+  max_actor_ckpt_to_keep: null
+  max_critic_ckpt_to_keep: null
