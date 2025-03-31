@@ -38,7 +38,7 @@ from verl.single_controller.base import Worker
 from verl.single_controller.ray import RayResourcePool, RayWorkerGroup, RayClassWithInitArgs
 from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.ppo import core_algos
-from verl.trainer.ppo.metric_utils import compute_data_metrics, compute_throughout_metrics, compute_timing_metrics, reduce_metrics, bootstrap_metric, calc_maj_val
+from verl.trainer.ppo.metric_utils import compute_data_metrics, compute_throughout_metrics, compute_timing_metrics, reduce_metrics, bootstrap_metric, calc_maj_val, process_validation_metrics
 from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance
 from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path
 from verl.utils.dataset.rl_dataset import RLHFDataset, collate_fn
@@ -551,14 +551,16 @@ class RayPPOTrainer(object):
 
             # evaluate using reward_function
             result = self.val_reward_fn(test_batch, return_dict=True)
-            reward_tensor = result["reward_tensor"]
-            if "reward_extra_info" in result:
-                for key, lst in result["reward_extra_info"].items():
-                    reward_extra_infos_dict[key].extend(lst)
 
             # Store scores
             scores = reward_tensor.sum(-1).cpu().tolist()
             sample_scores.extend(scores)
+
+            reward_tensor = result["reward_tensor"]
+            if "reward_extra_info" in result:
+                reward_extra_infos_dict["final_reward"].extend(scores)
+                for key, lst in result["reward_extra_info"].items():
+                    reward_extra_infos_dict[key].extend(lst)
 
             data_source_lst.append(test_batch.non_tensor_batch.get('data_source', ['unknown'] * reward_tensor.shape[0]))
 
@@ -569,65 +571,14 @@ class RayPPOTrainer(object):
 
         data_sources = np.concatenate(data_source_lst, axis=0)
 
-        data_src2prompt2var2vals = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-        for sample_idx, data_source in enumerate(data_sources):
-            prompt = sample_inputs[sample_idx]
-
-            var2vals = data_src2prompt2var2vals[data_source][prompt]
-            var2vals["final_reward"].append(sample_scores[sample_idx])
-            for metric_name, metric_vals in reward_extra_infos_dict.items():
-                var2vals[metric_name].append(metric_vals[sample_idx])
-
-        data_src2prompt2var2metric = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
-        for data_source, prompt2var2vals in data_src2prompt2var2vals.items():
-            for prompt, var2vals in prompt2var2vals.items():
-                n_resps = len(var2vals["final_reward"])
-                preds = var2vals["pred"]
-                for var_name, var_vals in var2vals.items():
-                    if var_name in ["pred", "final_reward"]:
-                        continue
-                    metric = {}
-
-                    metric[f"mean@{n_resps}"] = np.mean(var_vals)
-                    metric[f"std@{n_resps}"] = np.std(var_vals)
-
-                    ns = []
-                    n = 2
-                    while n < n_resps:
-                        ns.append(n)
-                        n *= 2
-                    ns.append(n_resps)
-
-                    data = [{"val": val, "pred": pred} for val, pred in zip(var_vals, preds)]
-                    for n in ns:
-
-                        (bon_mean, bon_std), (won_mean, won_std), (maj_n_mean, maj_n_std) = bootstrap_metric(
-                            data,
-                            subset_size=n,
-                            reduce_fns=[
-                                lambda arr: np.max([d["val"] for d in arr]),
-                                lambda arr: np.min([d["val"] for d in arr]),
-                                partial(calc_maj_val, vote_key="pred", val_key="val")
-                            ])
-                        metric[f"best@{n}/mean"], metric[f"best@{n}/std"] = bon_mean, bon_std
-                        metric[f"worst@{n}/mean"], metric[f"worst@{n}/std"] = won_mean, won_std
-                        metric[f"maj@{n}/mean"], metric[f"maj@{n}/std"] = maj_n_mean, maj_n_std
-
-                    data_src2prompt2var2metric[data_source][prompt][var_name] = metric
-
-        data_src2var2metric2prompt_vals = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-        for data_source, prompt2var2metric in data_src2prompt2var2metric.items():
-            for prompt, var2metric in prompt2var2metric.items():
-                for var_name, metric in var2metric.items():
-                    for metric_name, metric_val in metric.items():
-                        data_src2var2metric2prompt_vals[data_source][var_name][metric_name].append(metric_val)
+        data_src2var2metric2val = process_validation_metrics(data_sources, sample_inputs, reward_extra_infos_dict)
 
         metric_dict = {}
-        for data_source, var2metric2prompt_vals in data_src2var2metric2prompt_vals.items():
-            core_var = "acc" if "acc" in var2metric2prompt_vals else "final_reward"
-            for var_name, metric2prompt_vals in var2metric2prompt_vals.items():
-                n_max = max([int(name.split("@")[-1].split("/")[0]) for name in metric2prompt_vals.keys()])
-                for metric_name, prompt_vals in metric2prompt_vals.items():
+        for data_source, var2metric2val in data_src2var2metric2val.items():
+            core_var = "acc" if "acc" in var2metric2val else "final_reward"
+            for var_name, metric2val in var2metric2val.items():
+                n_max = max([int(name.split("@")[-1].split("/")[0]) for name in metric2val.keys()])
+                for metric_name, metric_val in metric2val.items():
                     if var_name == core_var and any(
                             metric_name.startswith(pfx)
                             for pfx in ["mean", "std", "maj", "best"]) and f"@{n_max}/" in metric_name:
@@ -635,7 +586,7 @@ class RayPPOTrainer(object):
                     else:
                         metric_sec = "val-aux"
                     pfx = f"{metric_sec}/{data_source}/{var_name}/{metric_name}"
-                    metric_dict[pfx] = np.mean(prompt_vals)
+                    metric_dict[pfx] = metric_val
 
         return metric_dict
 
