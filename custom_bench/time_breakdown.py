@@ -13,6 +13,8 @@ time_breakdown = {
     "collecting": (0.09991906676441431, 0.011415995609689549)
 }
 
+model = 'llama7b'
+
 # Define the time breakdown components
 # labels = ["gen", "post_processing", "old_log_prob", "ref", "values", "adv", "update_critic", "update_actor", "collecting"]
 # values = [291.37, 0.0619, 20.94, 42.72, 19.56, 0.77, 85.13, 90.31, 0.0939]
@@ -36,5 +38,5 @@ wedges, texts, autotexts = plt.pie(
 for text in texts + autotexts:
     text.set_fontsize(10)
 
-plt.title("Time Breakdown in Step Execution")
+plt.title(f"Epoch time breakdown for {model}")
 plt.show()

@@ -15,6 +15,8 @@ from datetime import timedelta
 #     nccl.py \
 #     --op send-recv
 
+# torchrun --nproc_per_node=8 --nnodes=2 --node_rank=0 --master_addr=10.0.0.1 --master_port=29500 nccl.py --op send-recv
+
 def format_size(size_in_bytes):
     """Convert bytes into a human-readable format (KB, MB, GB, etc.)."""
     units = ["B", "KB", "MB", "GB", "TB", "PB"]

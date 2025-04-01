@@ -7,6 +7,13 @@ from torch.distributed.fsdp import CPUOffload
 from torch.distributed.tensor.parallel import parallelize_module
 from torch.distributed.tensor.parallel.style import ColwiseParallel, RowwiseParallel
 
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-e", type=int, default=0)
+    return parser.parse_args()
+
 
 # Example 1: 2D Mesh for hybrid data and tensor parallelism
 def example_2d_mesh(rank, world_size):
@@ -253,31 +260,31 @@ def example_pipeline_parallel_mesh(rank, world_size):
 
     return model_stage, pp_mesh
 
+# Function to run on each process
+def run_example(rank, world_size, example_num):
+    if example_num == 1:
+        mesh = example_2d_mesh(rank, world_size)
+    elif example_num == 2:
+        mesh = example_multiple_meshes(rank, world_size)
+    elif example_num == 3:
+        mesh = example_3d_mesh(rank, world_size)
+    elif example_num == 4:
+        model, mesh = example_tensor_parallel_with_mesh(rank, world_size)
+    elif example_num == 5:
+        model, mesh = example_nested_parallelism(rank, world_size)
+    elif example_num == 6:
+        model, mesh = example_pipeline_parallel_mesh(rank, world_size)
+
+    # Cleanup
+    dist.destroy_process_group()
 
 # Usage example
 if __name__ == "__main__":
     import torch.multiprocessing as mp
-
-    # Function to run on each process
-    def run_example(rank, world_size, example_num):
-        if example_num == 1:
-            mesh = example_2d_mesh(rank, world_size)
-        elif example_num == 2:
-            mesh = example_multiple_meshes(rank, world_size)
-        elif example_num == 3:
-            mesh = example_3d_mesh(rank, world_size)
-        elif example_num == 4:
-            model, mesh = example_tensor_parallel_with_mesh(rank, world_size)
-        elif example_num == 5:
-            model, mesh = example_nested_parallelism(rank, world_size)
-        elif example_num == 6:
-            model, mesh = example_pipeline_parallel_mesh(rank, world_size)
-
-        # Cleanup
-        dist.destroy_process_group()
+    args = parse_args()
 
     # Example to run (choose from 1-6)
-    example_to_run = 1
+    example_to_run = args.e
 
     # Number of processes needed for each example
     processes_needed = {1: 4, 2: 4, 3: 8, 4: 4, 5: 4, 6: 4}
