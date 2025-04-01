@@ -243,6 +243,11 @@ class DataParallelPPOActor(BasePPOActor):
             dataloader = data.select(select_keys, non_tensor_select_keys).chunk(num_mini_batches)
         else:
             dataloader = batch.split(self.config.ppo_mini_batch_size)
+        
+        print(f'update actor: {self.config.ppo_mini_batch_size=} {self.config.ppo_epochs=} {has_multi_modal_inputs=} {self.config.use_dynamic_bsz=} {self.config.ppo_micro_batch_size_per_gpu=} {batch.batch_size=}')
+        # for key, tensor in dataloader[0].items():
+        #     print(key)
+        #     print(tensor.shape)
 
         metrics = {}
         for epoch in range(self.config.ppo_epochs):
