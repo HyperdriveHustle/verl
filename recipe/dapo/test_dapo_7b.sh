@@ -6,6 +6,7 @@ exp_name='DAPO-Qwen2.5-7B-Math-Test'
 
 adv_estimator=grpo
 
+use_kl_in_reward=False
 kl_coef=0.0
 use_kl_loss=False
 kl_loss_coef=0.0
@@ -69,7 +70,9 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
     actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
+    actor_rollout_ref.actor.clip_ratio_c=10.0 \
     algorithm.adv_estimator=${adv_estimator} \
+    algorithm.use_kl_in_reward=${use_kl_in_reward} \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
     algorithm.filter_groups.enable=${enable_filter_groups} \
     algorithm.filter_groups.metric=${filter_groups_metric} \
@@ -124,7 +127,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     trainer.experiment_name="${exp_name}" \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes="${NNODES}" \
-    +trainer.val_before_train=True \
+    trainer.val_before_train=True \
     trainer.test_freq=2 \
     trainer.save_freq=2 \
     trainer.total_epochs=1 \

@@ -6,6 +6,7 @@ export VLLM_ATTENTION_BACKEND=XFORMERS
 adv_estimator=grpo
 
 kl_coef=0.0
+use_kl_in_reward=False
 use_kl_loss=False
 kl_loss_coef=0.0
 
@@ -33,6 +34,7 @@ python3 -m recipe.dapo.src.main_dapo \
     data.val_files="$HOME/data/gsm8k/test.parquet" \
     reward_model.reward_manager=dapo \
     algorithm.adv_estimator=${adv_estimator} \
+    algorithm.use_kl_in_reward=${use_kl_in_reward} \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
@@ -63,7 +65,6 @@ python3 -m recipe.dapo.src.main_dapo \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.4 \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=16 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
-    trainer.critic_warmup=0 \
     trainer.logger=['console'] \
     trainer.project_name='verl_example_gsm8k' \
     trainer.experiment_name='qwen2.5_0.5b_e2e_ci_dapo' \
