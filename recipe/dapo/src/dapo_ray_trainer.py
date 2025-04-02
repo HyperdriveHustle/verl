@@ -150,9 +150,9 @@ class RayDAPOTrainer(RayPPOTrainer):
                             })
 
                         # compute rewards. apply_kl_penalty if available
-                        if not self.config.actor_rollout_ref.actor.get('use_kl_loss', False):
+                        if self.config.algorithm.use_kl_in_reward:
                             new_batch, kl_metrics = apply_kl_penalty(new_batch,
-                                                                     kl_ctrl=self.kl_ctrl,
+                                                                     kl_ctrl=self.kl_ctrl_in_reward,
                                                                      kl_penalty=self.config.algorithm.kl_penalty)
                             metrics.update(
                                 kl_metrics)  # TODO: This will be cleared if we use multiple genenration batches
