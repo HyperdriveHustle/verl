@@ -53,18 +53,14 @@ class FixedKLController:
         pass
 
 
-def get_kl_controller(config):
-    if config.critic.kl_ctrl.type == 'fixed':
-        kl_ctrl = FixedKLController(kl_coef=config.critic.kl_ctrl.kl_coef)
-    elif config.critic.kl_ctrl.type == 'adaptive':
-        assert config.kl_ctrl.horizon > 0, f'horizon must be larger than 0. Got {config.critic.kl_ctrl.horizon}'
-        kl_ctrl = AdaptiveKLController(init_kl_coef=config.critic.kl_ctrl.kl_coef,
-                                       target_kl=config.critic.kl_ctrl.target_kl,
-                                       horizon=config.critic.kl_ctrl.horizon)
+def get_kl_controller(kl_ctrl):
+    if kl_ctrl.type == 'fixed':
+        return FixedKLController(kl_coef=kl_ctrl.kl_coef)
+    elif kl_ctrl.type == 'adaptive':
+        assert kl_ctrl.horizon > 0, f'horizon must be larger than 0. Got {kl_ctrl.horizon}'
+        return AdaptiveKLController(init_kl_coef=kl_ctrl.kl_coef, target_kl=kl_ctrl.target_kl, horizon=kl_ctrl.horizon)
     else:
-        raise ValueError('Unknown kl_ctrl type')
-
-    return kl_ctrl
+        raise NotImplementedError
 
 
 def compute_gae_advantage_return(token_level_rewards: torch.Tensor, values: torch.Tensor, eos_mask: torch.Tensor,
@@ -304,6 +300,7 @@ def compute_policy_loss(old_log_prob,
                         cliprange=None,
                         cliprange_low=None,
                         cliprange_high=None,
+                        clip_ratio_c=3.0,
                         loss_agg_mode="token-mean"):
     """Adapted from https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py#L1122
     Args:
@@ -321,8 +318,11 @@ def compute_policy_loss(old_log_prob,
             The lower clip range used in PPO.
         cliprange_high: (float)
             The higher clip range used in PPO.
+        clip_ratio_c: (float) default: 3.0
+            The lower bound of the ratio for dual-clip PPO, See https://arxiv.org/pdf/1912.09729
         loss_agg_mode: (str) choices: "token-mean" / "seq-mean-token-sum" / "seq-mean-token-mean"
-            "token-mean" is the default behavior
+            "token-mean" is the default behavior        
+
     Returns:
         pg_loss: `a scalar torch.Tensor`
             policy gradient loss computed via PPO
@@ -330,8 +330,11 @@ def compute_policy_loss(old_log_prob,
             the fraction of policy gradient loss being clipped
         ppo_kl: (float)
             the estimated KL divergence between the latest updating policy and the old sampling policy
+        pg_clipfrac_lower: (float)
+            the fraction of policy gradient loss being clipped when the advantage is negative
     """
-    seq_len_per_sample = torch.clamp(torch.sum(eos_mask, dim=1), min=1.0)
+    assert clip_ratio_c > 1.0, f"The lower bound of the clip_ratio_c for dual-clip PPO should be greater than 1.0, but get the value: {clip_ratio_c}."
+
     negative_approx_kl = log_prob - old_log_prob
     ratio = torch.exp(negative_approx_kl)
     ppo_kl = verl_F.masked_mean(-negative_approx_kl, eos_mask)
@@ -343,12 +346,18 @@ def compute_policy_loss(old_log_prob,
         cliprange_high = cliprange
     pg_losses2 = -advantages * torch.clamp(ratio, 1 - cliprange_low,
                                            1 + cliprange_high)  # - clip(ratio, 1-cliprange, 1+cliprange) * A
-    pg_losses = torch.maximum(pg_losses1, pg_losses2)  # max(-ratio * A, -clip(ratio, 1-cliprange, 1+cliprange) * A)
+    clip_pg_losses1 = torch.maximum(pg_losses1,
+                                    pg_losses2)  # max(-ratio * A, -clip(ratio, 1-cliprange, 1+cliprange) * A)
+    pg_clipfrac = verl_F.masked_mean(torch.gt(pg_losses2, pg_losses1).float(), eos_mask)
 
+    pg_losses3 = -advantages * clip_ratio_c
+    clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
+    pg_clipfrac_lower = verl_F.masked_mean(torch.gt(clip_pg_losses2, pg_losses3) * (advantages < 0).float(), eos_mask)
+
+    pg_losses = torch.where(advantages < 0, clip_pg_losses2, clip_pg_losses1)
     pg_loss = agg_loss(loss_mat=pg_losses, loss_mask=eos_mask, loss_agg_mode=loss_agg_mode)
 
-    pg_clipfrac = verl_F.masked_mean(torch.gt(pg_losses2, pg_losses1).float(), eos_mask)
-    return pg_loss, pg_clipfrac, ppo_kl
+    return pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower
 
 
 def compute_entropy_loss(logits, eos_mask):
