@@ -63,7 +63,7 @@ def get_kl_controller(kl_ctrl):
         raise NotImplementedError
 
 
-def compute_gae_advantage_return(token_level_rewards: torch.Tensor, values: torch.Tensor, eos_mask: torch.Tensor,
+def compute_gae_advantage_return(token_level_rewards: torch.Tensor, values: torch.Tensor, response_mask: torch.Tensor,
                                  gamma: torch.Tensor, lam: torch.Tensor):
     """Adapted from https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py
 
@@ -72,7 +72,7 @@ def compute_gae_advantage_return(token_level_rewards: torch.Tensor, values: torc
             shape: (bs, response_length)
         values: `(torch.Tensor)`
             shape: (bs, response_length)
-        eos_mask: `(torch.Tensor)`
+        response_mask: `(torch.Tensor)`
             shape: (bs, response_length). [EOS] mask. The token after [EOS] have mask zero.
         gamma: `(float)`
             discounted factor used in RL
@@ -99,13 +99,13 @@ def compute_gae_advantage_return(token_level_rewards: torch.Tensor, values: torc
         advantages = torch.stack(advantages_reversed[::-1], dim=1)
 
         returns = advantages + values
-        advantages = verl_F.masked_whiten(advantages, eos_mask)
+        advantages = verl_F.masked_whiten(advantages, response_mask)
     return advantages, returns
 
 
 # NOTE(sgm): this implementation only consider outcome supervision, where the reward is a scalar.
 def compute_grpo_outcome_advantage(token_level_rewards: torch.Tensor,
-                                   eos_mask: torch.Tensor,
+                                   response_mask: torch.Tensor,
                                    index: torch.Tensor,
                                    epsilon: float = 1e-6):
     """
@@ -114,7 +114,7 @@ def compute_grpo_outcome_advantage(token_level_rewards: torch.Tensor,
     Args:
         token_level_rewards: `(torch.Tensor)`
             shape: (bs, response_length)
-        eos_mask: `(torch.Tensor)`
+        response_mask: `(torch.Tensor)`
             shape: (bs, response_length)
     
     Returns:
@@ -145,13 +145,13 @@ def compute_grpo_outcome_advantage(token_level_rewards: torch.Tensor,
                 raise ValueError(f"no score in prompt index: {idx}")
         for i in range(bsz):
             scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
-        scores = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
+        scores = scores.unsqueeze(-1).tile([1, response_length]) * response_mask
 
     return scores, scores
 
 
 def compute_rloo_outcome_advantage(token_level_rewards: torch.Tensor,
-                                   eos_mask: torch.Tensor,
+                                   response_mask: torch.Tensor,
                                    index: torch.Tensor,
                                    epsilon: float = 1e-6):
     """
@@ -159,7 +159,7 @@ def compute_rloo_outcome_advantage(token_level_rewards: torch.Tensor,
     Args:
         token_level_rewards: `(torch.Tensor)`
             shape: (bs, response_length)
-        eos_mask: `(torch.Tensor)`
+        response_mask: `(torch.Tensor)`
             shape: (bs, response_length)
 
     Returns:
@@ -190,12 +190,12 @@ def compute_rloo_outcome_advantage(token_level_rewards: torch.Tensor,
             if response_num > 1:
                 scores[i] = scores[i] * response_num / (response_num -
                                                         1) - id2mean[index[i]] * response_num / (response_num - 1)
-        scores = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
+        scores = scores.unsqueeze(-1).tile([1, response_length]) * response_mask
 
     return scores, scores
 
 
-def compute_reinforce_plus_plus_outcome_advantage(token_level_rewards: torch.Tensor, eos_mask: torch.Tensor,
+def compute_reinforce_plus_plus_outcome_advantage(token_level_rewards: torch.Tensor, response_mask: torch.Tensor,
                                                   gamma: torch.Tensor):
     """
     Compute advantage for REINFORCE++. 
@@ -203,7 +203,7 @@ def compute_reinforce_plus_plus_outcome_advantage(token_level_rewards: torch.Ten
     Args:
         token_level_rewards: `(torch.Tensor)`
             shape: (bs, response_length)
-        eos_mask: `(torch.Tensor)`
+        response_mask: `(torch.Tensor)`
             shape: (bs, response_length)
     
     Returns:
@@ -221,16 +221,16 @@ def compute_reinforce_plus_plus_outcome_advantage(token_level_rewards: torch.Ten
             running_return = token_level_rewards[:, t] + gamma * running_return
             returns[:, t] = running_return
             # Reset after EOS
-            running_return = running_return * eos_mask[:, t]
+            running_return = running_return * response_mask[:, t]
 
-        advantages = verl_F.masked_whiten(returns, eos_mask)
-        advantages = advantages * eos_mask
+        advantages = verl_F.masked_whiten(returns, response_mask)
+        advantages = advantages * response_mask
 
     return advantages, returns
 
 
 def compute_remax_outcome_advantage(token_level_rewards: torch.Tensor, reward_baselines: torch.Tensor,
-                                    eos_mask: torch.Tensor):
+                                    response_mask: torch.Tensor):
     """
     Compute advantage for ReMax, operating only on Outcome reward 
     This implementation is based on the paper: https://arxiv.org/abs/2310.10505
@@ -241,7 +241,7 @@ def compute_remax_outcome_advantage(token_level_rewards: torch.Tensor, reward_ba
             shape: (bs, response_length)
         reward_baselines: `(torch.Tensor)`
             shape: (bs,)
-        eos_mask: `(torch.Tensor)`
+        response_mask: `(torch.Tensor)`
             shape: (bs, response_length)
     
     Returns:
@@ -254,8 +254,8 @@ def compute_remax_outcome_advantage(token_level_rewards: torch.Tensor, reward_ba
     scores = token_level_rewards.sum(dim=-1)
 
     with torch.no_grad():
-        returns = (token_level_rewards * eos_mask).flip(dims=[-1]).cumsum(dim=-1).flip(dims=[-1])
-        advantages = returns - reward_baselines.unsqueeze(-1).tile([1, response_length]) * eos_mask
+        returns = (token_level_rewards * response_mask).flip(dims=[-1]).cumsum(dim=-1).flip(dims=[-1])
+        advantages = returns - reward_baselines.unsqueeze(-1).tile([1, response_length]) * response_mask
 
     return advantages, returns
 
@@ -296,7 +296,7 @@ def agg_loss(loss_mat: torch.Tensor, loss_mask: torch.Tensor, loss_agg_mode: str
 def compute_policy_loss(old_log_prob,
                         log_prob,
                         advantages,
-                        eos_mask,
+                        response_mask,
                         cliprange=None,
                         cliprange_low=None,
                         cliprange_high=None,
@@ -310,7 +310,7 @@ def compute_policy_loss(old_log_prob,
             shape: (bs, response_length)
         advantages: `(torch.Tensor)`
             shape: (bs, response_length)
-        eos_mask: `(torch.Tensor)`
+        response_mask: `(torch.Tensor)`
             shape: (bs, response_length)
         cliprange: (float)
             The clip range used in PPO. See https://arxiv.org/abs/1707.06347
@@ -337,7 +337,7 @@ def compute_policy_loss(old_log_prob,
 
     negative_approx_kl = log_prob - old_log_prob
     ratio = torch.exp(negative_approx_kl)
-    ppo_kl = verl_F.masked_mean(-negative_approx_kl, eos_mask)
+    ppo_kl = verl_F.masked_mean(-negative_approx_kl, response_mask)
 
     pg_losses1 = -advantages * ratio
     if cliprange_low is None:
@@ -348,25 +348,26 @@ def compute_policy_loss(old_log_prob,
                                            1 + cliprange_high)  # - clip(ratio, 1-cliprange, 1+cliprange) * A
     clip_pg_losses1 = torch.maximum(pg_losses1,
                                     pg_losses2)  # max(-ratio * A, -clip(ratio, 1-cliprange, 1+cliprange) * A)
-    pg_clipfrac = verl_F.masked_mean(torch.gt(pg_losses2, pg_losses1).float(), eos_mask)
+    pg_clipfrac = verl_F.masked_mean(torch.gt(pg_losses2, pg_losses1).float(), response_mask)
 
     pg_losses3 = -advantages * clip_ratio_c
     clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
-    pg_clipfrac_lower = verl_F.masked_mean(torch.gt(clip_pg_losses2, pg_losses3) * (advantages < 0).float(), eos_mask)
+    pg_clipfrac_lower = verl_F.masked_mean(
+        torch.gt(clip_pg_losses2, pg_losses3) * (advantages < 0).float(), response_mask)
 
     pg_losses = torch.where(advantages < 0, clip_pg_losses2, clip_pg_losses1)
-    pg_loss = agg_loss(loss_mat=pg_losses, loss_mask=eos_mask, loss_agg_mode=loss_agg_mode)
+    pg_loss = agg_loss(loss_mat=pg_losses, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
 
     return pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower
 
 
-def compute_entropy_loss(logits, eos_mask):
+def compute_entropy_loss(logits, response_mask):
     """Compute Categorical entropy loss
 
     Args:
         logits: `(torch.Tensor)`
             shape: (bs, response_length, vocab_size)
-        eos_mask: `(torch.Tensor)`
+        response_mask: `(torch.Tensor)`
             shape: (bs, response_length)
 
     Returns:
@@ -375,11 +376,11 @@ def compute_entropy_loss(logits, eos_mask):
     """
     # compute entropy
     entropy = verl_F.entropy_from_logits(logits)  # (bs, response_len)
-    entropy_loss = verl_F.masked_mean(entropy, mask=eos_mask)
+    entropy_loss = verl_F.masked_mean(entropy, mask=response_mask)
     return entropy_loss
 
 
-def compute_value_loss(vpreds, returns, values, eos_mask, cliprange_value):
+def compute_value_loss(vpreds, returns, values, response_mask, cliprange_value):
     """Compute the value loss. Copied from https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py#L1151
 
     Args:
@@ -400,8 +401,8 @@ def compute_value_loss(vpreds, returns, values, eos_mask, cliprange_value):
     vpredclipped = verl_F.clip_by_value(vpreds, values - cliprange_value, values + cliprange_value)
     vf_losses1 = (vpreds - returns)**2
     vf_losses2 = (vpredclipped - returns)**2
-    vf_loss = 0.5 * verl_F.masked_mean(torch.max(vf_losses1, vf_losses2), eos_mask)
-    vf_clipfrac = verl_F.masked_mean(torch.gt(vf_losses2, vf_losses1).float(), eos_mask)
+    vf_loss = 0.5 * verl_F.masked_mean(torch.max(vf_losses1, vf_losses2), response_mask)
+    vf_clipfrac = verl_F.masked_mean(torch.gt(vf_losses2, vf_losses1).float(), response_mask)
     return vf_loss, vf_clipfrac
 
 

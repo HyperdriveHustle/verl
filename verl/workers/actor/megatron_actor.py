@@ -291,7 +291,7 @@ class MegatronPPOActor(BasePPOActor):
             pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower = compute_policy_loss(old_log_prob=old_log_prob,
                                                                                   log_prob=log_prob,
                                                                                   advantages=advantages,
-                                                                                  eos_mask=response_mask,
+                                                                                  response_mask=response_mask,
                                                                                   cliprange=clip_ratio,
                                                                                   cliprange_low=clip_ratio_low,
                                                                                   cliprange_high=clip_ratio_high,
