@@ -18,33 +18,49 @@ This trainer supports model-agonistic model initialization with huggingface
 
 import os
 import uuid
+from collections import defaultdict
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
-from pprint import pprint
-from typing import Type, Dict
-from copy import deepcopy
-from collections import defaultdict
 from functools import partial
-from tqdm import tqdm
+from pprint import pprint
+from typing import Dict, Type
 
-import ray
 import numpy as np
+import ray
 from codetiming import Timer
 from omegaconf import OmegaConf, open_dict
+from torch.utils.data import RandomSampler, SequentialSampler
+from torchdata.stateful_dataloader import StatefulDataLoader
+from tqdm import tqdm
+
 from verl import DataProto
 from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.single_controller.base import Worker
-from verl.single_controller.ray import RayResourcePool, RayWorkerGroup, RayClassWithInitArgs
+from verl.single_controller.ray import (
+    RayClassWithInitArgs,
+    RayResourcePool,
+    RayWorkerGroup,
+)
 from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.ppo import core_algos
-from verl.trainer.ppo.metric_utils import compute_data_metrics, compute_throughout_metrics, compute_timing_metrics, reduce_metrics, bootstrap_metric, calc_maj_val, process_validation_metrics
-from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance
+from verl.trainer.ppo.metric_utils import (
+    bootstrap_metric,
+    calc_maj_val,
+    compute_data_metrics,
+    compute_throughout_metrics,
+    compute_timing_metrics,
+    process_validation_metrics,
+    reduce_metrics,
+)
 from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path
 from verl.utils.dataset.rl_dataset import RLHFDataset, collate_fn
+from verl.utils.seqlen_balancing import (
+    get_seqlen_balanced_partitions,
+    log_seqlen_unbalance,
+)
 from verl.utils.tracking import ValidationGenerationsLogger
-from torch.utils.data import RandomSampler, SequentialSampler
-from torchdata.stateful_dataloader import StatefulDataLoader
 
 WorkerType = Type[Worker]
 
@@ -133,6 +149,7 @@ class ResourcePoolManager:
 
 
 import torch
+
 from verl.utils.torch_functional import masked_mean
 
 
@@ -422,7 +439,7 @@ class RayPPOTrainer(object):
             sampler = SequentialSampler(data_source=self.train_dataset)
 
         self.train_dataloader = StatefulDataLoader(dataset=self.train_dataset,
-                                                   batch_size=self.config.data.train_batch_size,
+                                                   batch_size=self.config.data.get("gen_batch_size", self.config.data.train_batch_size),
                                                    num_workers=8,
                                                    drop_last=True,
                                                    collate_fn=collate_fn,
@@ -784,8 +801,9 @@ class RayPPOTrainer(object):
         The driver process only need to call the compute functions of the worker group through RPC to construct the PPO dataflow.
         The light-weight advantage computation is done on the driver process.
         """
-        from verl.utils.tracking import Tracking
         from omegaconf import OmegaConf
+
+        from verl.utils.tracking import Tracking
 
         logger = Tracking(project_name=self.config.trainer.project_name,
                           experiment_name=self.config.trainer.experiment_name,
