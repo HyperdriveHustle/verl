@@ -15,6 +15,7 @@ from verl.single_controller.ray.base import RayResourcePool, RayClassWithInitArg
 from omegaconf import OmegaConf
 
 import ray
+from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy, NodeAffinitySchedulingStrategy
 import torch
 
 import pandas as pd
@@ -22,10 +23,7 @@ import time
 
 
 def query_ray_cluster():
-    """
-    Query Ray cluster for node information and available resources.
-    Returns a formatted table of nodes and their resources.
-    """
+    print('*'*100)
     # Connect to the Ray cluster if not already connected
     if not ray.is_initialized():
         # Connect to an existing Ray cluster
@@ -69,6 +67,7 @@ def query_ray_cluster():
             gpu_info[key] = value
 
     print(f"All cluster GPU resources: {gpu_info}")
+    print('*'*100)
 
 
 @ray.remote
@@ -93,8 +92,9 @@ class MLPLayerWorker(MegatronWorker):
         torch.cuda.set_device(rank)
         world_size = torch.distributed.get_world_size()
 
+        device = torch.cuda.current_device()
         print(f"Ray node ID: {node_id}; CUDA_VISIBLE_DEVICES: {worker_gpus}")
-        print(f'ray worker: {global_rank=} {rank=} {world_size=} {torch.cuda.current_device()=}')
+        print(f'ray worker: {global_rank=} {rank=} {world_size=} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}')
 
         mpu.initialize_model_parallel(
             tensor_model_parallel_size=4,
@@ -158,6 +158,51 @@ class MLPLayerWorker(MegatronWorker):
         return y
 
 
+class RayClassWithInitArgsAndSched(RayClassWithInitArgs):
+    def __init__(self, cls, *args, **kwargs) -> None:
+
+        self.target_node_id = kwargs.pop('target_node_id', None)
+        self.cuda_visible_devices = kwargs.pop('cuda_visible_devices', None)
+
+        # assume visible devices start from 0
+        self.cnt = 0
+
+        assert self.target_node_id is not None, f'target node must specify'
+        assert self.cuda_visible_devices is not None, f'visible device must specify'
+
+        super().__init__(cls, *args, **kwargs)
+
+    def __call__(self,
+                 placement_group,
+                 placement_group_bundle_idx,
+                 use_gpu: bool,
+                 num_gpus=1,
+                ):
+        # the signature stay the same
+        options = {
+            "scheduling_strategy": NodeAffinitySchedulingStrategy(node_id=self.target_node_id,
+            soft=False,
+            )
+        }
+        options.update(self._options)
+        if use_gpu:
+            options["num_gpus"] = num_gpus
+
+        if len(self._additional_resource) > 1:
+            for k, v in self._additional_resource.items():
+                options[k] = v
+
+        # cuda_visible_devices = self.cuda_visible_devices[self.cnt]
+        # self.cnt+=1
+
+        return self.cls.options(
+                **options).remote(
+                    *self.args,
+                    #cuda_visible_devices=cuda_visible_devices,
+                    **self.kwargs,
+                )
+
+
 if __name__ == '__main__':
     warnings.filterwarnings("ignore", category=FutureWarning)
     warnings.filterwarnings("ignore", category=UserWarning)
@@ -169,6 +214,8 @@ if __name__ == '__main__':
     resource_pool = RayResourcePool([4], use_gpu=True, max_colocate_count=1)
     # resource_pool = RayResourcePool([1,1,1,1], use_gpu=True, max_colocate_count=1)
 
+    # just inspect
+    print('*'*100)
     print('resource pool: ')
     print(resource_pool.store)
     print(resource_pool.max_collocate_count, resource_pool.use_gpu, resource_pool.world_size)
@@ -181,26 +228,38 @@ if __name__ == '__main__':
     print('pg scheme: ')
     print(pg_scheme)
 
-    layer_cls = RayClassWithInitArgs(cls=MLPLayerWorker)
-    layer_worker_group = NVMegatronRayWorkerGroup(
+    # RayClassWithInitArgs
+    #layer_cls = RayClassWithInitArgs(cls=MLPLayerWorker)
+
+    nodes = ray.nodes()
+    target_node_id = nodes[-1]["NodeID"]
+    print(f'{type(target_node_id)=}, {target_node_id=}')
+    kwargs = {
+        'target_node_id': target_node_id,
+        'cuda_visible_devices': [0,1,2,3],
+    }
+    layer_cls = RayClassWithInitArgsAndSched(cls=MLPLayerWorker, **kwargs)
+
+    # worker group
+    wg = NVMegatronRayWorkerGroup(
         resource_pool=resource_pool,
         ray_cls_with_init=layer_cls,
     )
-
     print('placement Group: ', len(resource_pool.pgs))
 
     # NOTE: sync all worker
     # print('sync all worker')
-    # layer_worker_group.execute_all_sync('worker_sync')
+    # wg.execute_all_sync('worker_sync')
 
     # barrier = ray.get(ray.remote(ray.util.wait.Barrier).remote(3))
 
     print('parallel sizes: ')
-    print(layer_worker_group.world_size, 
-          layer_worker_group.tp_size, 
-          layer_worker_group.pp_size,
-          layer_worker_group.dp_size,
+    print(wg.world_size, 
+          wg.tp_size, 
+          wg.pp_size,
+          wg.dp_size,
     )
+    print('*'*100)
 
     ffn_hidden_size = 11008
     batch_size = 16
@@ -212,13 +271,12 @@ if __name__ == '__main__':
         'intermediate_size': ffn_hidden_size,
         'hidden_act': 'silu',
         'pretraining_tp': 1,
-        'tp': layer_worker_group.tp_size,
+        'tp': wg.tp_size,
     })
     x = torch.rand(size=(seq_len, batch_size, hidden_size), dtype=torch.float32)
 
-    layer_worker_group.init_model(config)
-
-    output = layer_worker_group.run_layer(
+    wg.init_model(config)
+    output = wg.run_layer(
         [x])  # This must be a list of size 1, ensuring that the input equals the data parallel (dp).
 
     print('model output: ')

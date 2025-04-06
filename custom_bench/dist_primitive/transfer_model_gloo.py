@@ -134,7 +134,6 @@ def main():
         dist.recv(this_out, src=7)
         print(f"Rank 0: Received final output from rank 7")
 
-        print(f"Rank 0: send to external")
         dist.send(input_tensor, dst=8)
 
         t1 = time.time()
@@ -145,8 +144,6 @@ def main():
         # # Run validation
         extern_out = torch.zeros(4, HIDDEN, device=f'cuda:{local_rank}')
         dist.recv(extern_out, src=8)
-        #extern_out = torch.zeros(4, HIDDEN, device=f'cpu')
-        #dist.recv(extern_out, src=8, group=GLOO_GROUP)
         
         # # Compare results
         print("Rank 0: Running validation")
@@ -199,7 +196,6 @@ def main():
         model.recv_layer()
 
         # last input and forward
-        #input_tensor = torch.zeros(4, HIDDEN, device=f'cuda:{local_rank}')
         input_tensor = torch.zeros(4, HIDDEN, )
         dist.recv(input_tensor, src=rank - 1,group=GLOO_GROUP)
 
