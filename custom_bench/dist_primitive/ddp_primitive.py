@@ -25,7 +25,9 @@ class CustomDDP:
 
         def hook(grad):
             # Allreduce gradients
-            dist.all_reduce(grad, op=dist.ReduceOp.SUM, group=self.process_group)
+            dist.all_reduce(grad,
+                            op=dist.ReduceOp.SUM,
+                            group=self.process_group)
             # Average the gradients
             grad.div_(self.world_size)
             return grad

@@ -49,6 +49,7 @@ def pad_to_sequence_parallel(unpad_tokens: torch.Tensor):
         elif unpad_tokens.ndim == 2:
             unpad_tokens = F.pad(unpad_tokens, (0, 0, 0, pad_size))
         else:
-            raise NotImplementedError(f'Padding dim {unpad_tokens.ndim()} is not supported')
+            raise NotImplementedError(
+                f'Padding dim {unpad_tokens.ndim()} is not supported')
 
     return unpad_tokens

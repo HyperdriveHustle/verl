@@ -14,26 +14,35 @@
 # from . import gsm8k, math, prime_math, prime_code
 
 
-def _default_compute_score(data_source, solution_str, ground_truth, extra_info=None):
+def _default_compute_score(data_source,
+                           solution_str,
+                           ground_truth,
+                           extra_info=None):
     if data_source == 'openai/gsm8k':
         from . import gsm8k
         res = gsm8k.compute_score(solution_str, ground_truth)
-    elif data_source in ['lighteval/MATH', 'DigitalLearningGmbH/MATH-lighteval']:
+    elif data_source in [
+            'lighteval/MATH', 'DigitalLearningGmbH/MATH-lighteval'
+    ]:
         from . import math
         res = math.compute_score(solution_str, ground_truth)
     elif data_source in [
-            'numina_aops_forum', 'numina_synthetic_math', 'numina_amc_aime', 'numina_synthetic_amc', 'numina_cn_k12',
-            'numina_olympiads'
+            'numina_aops_forum', 'numina_synthetic_math', 'numina_amc_aime',
+            'numina_synthetic_amc', 'numina_cn_k12', 'numina_olympiads'
     ]:
         from . import prime_math
         res = prime_math.compute_score(solution_str, ground_truth)
     elif data_source in ['codecontests', 'apps', 'codeforces', 'taco']:
         from . import prime_code
-        res = prime_code.compute_score(solution_str, ground_truth, continuous=True)
+        res = prime_code.compute_score(solution_str,
+                                       ground_truth,
+                                       continuous=True)
     elif data_source in ['hiyouga/geometry3k']:
         from . import geo3k
         res = geo3k.compute_score(solution_str, ground_truth)
-    elif data_source in ['/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/math_train/reinforce_step150_wrong_answer/train_sample20_less_than_0d8.jsonl']:
+    elif data_source in [
+            '/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/math_train/reinforce_step150_wrong_answer/train_sample20_less_than_0d8.jsonl'
+    ]:
         from . import self_developed
         res = self_developed.compute_score(solution_str, ground_truth)
     else:

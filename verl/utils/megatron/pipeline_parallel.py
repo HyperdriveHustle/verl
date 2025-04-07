@@ -26,17 +26,22 @@ def compute_transformers_input_shapes(batches, meta_info):
     for model_inputs in batches:
         input_ids = model_inputs['input_ids']
         attention_mask = model_inputs['attention_mask']
-        input_ids_rmpad = unpad_input(input_ids.unsqueeze(dim=-1), attention_mask)[0]  # (total_nnz, 1)
+        input_ids_rmpad = unpad_input(input_ids.unsqueeze(dim=-1),
+                                      attention_mask)[0]  # (total_nnz, 1)
         if meta_info['sequence_parallel']:
             input_ids_rmpad = pad_to_sequence_parallel(input_ids_rmpad)
             # compute shapes for model_inputs
             input_shapes.append(
                 torch.Size([
-                    input_ids_rmpad.shape[0] // mpu.get_tensor_model_parallel_world_size(), 1, meta_info['hidden_size']
+                    input_ids_rmpad.shape[0] //
+                    mpu.get_tensor_model_parallel_world_size(), 1,
+                    meta_info['hidden_size']
                 ]))
         else:
             # compute shapes for model_inputs
-            input_shapes.append(torch.Size([input_ids_rmpad.shape[0], 1, meta_info['hidden_size']]))
+            input_shapes.append(
+                torch.Size(
+                    [input_ids_rmpad.shape[0], 1, meta_info['hidden_size']]))
     return input_shapes
 
 

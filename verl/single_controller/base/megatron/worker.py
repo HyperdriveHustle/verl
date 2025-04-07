@@ -25,7 +25,9 @@ class MegatronWorker(Worker):
         tp_size = mpu.get_tensor_model_parallel_world_size()
         dp_size = mpu.get_data_parallel_world_size()
         pp_size = mpu.get_pipeline_model_parallel_world_size()
-        info = DistGlobalInfo(tp_size=tp_size, dp_size=dp_size, pp_size=pp_size)
+        info = DistGlobalInfo(tp_size=tp_size,
+                              dp_size=dp_size,
+                              pp_size=pp_size)
         return info
 
     def get_megatron_rank_info(self):

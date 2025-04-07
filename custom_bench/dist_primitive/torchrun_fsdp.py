@@ -18,7 +18,9 @@ class SimpleModel(nn.Module):
 
     def __init__(self):
         super(SimpleModel, self).__init__()
-        self.layers = nn.Sequential(nn.Linear(10, 100), nn.ReLU(), nn.Linear(100, 100), nn.ReLU(), nn.Linear(100, 5))
+        self.layers = nn.Sequential(nn.Linear(10, 100), nn.ReLU(),
+                                    nn.Linear(100, 100), nn.ReLU(),
+                                    nn.Linear(100, 5))
 
     def forward(self, x):
         return self.layers(x)
@@ -46,12 +48,14 @@ def train():
     rank, world_size, local_rank = setup_dist()
 
     # Create mesh from CPU devices
-    mesh_shape = (world_size,)
+    mesh_shape = (world_size, )
     # Define mesh axes
-    mesh_axes = (0,)
+    mesh_axes = (0, )
 
     # Create CPU device mesh
-    device_mesh = torch.distributed.device_mesh.DeviceMesh("cpu", torch.arange(world_size).reshape(*mesh_shape))
+    device_mesh = torch.distributed.device_mesh.DeviceMesh(
+        "cpu",
+        torch.arange(world_size).reshape(*mesh_shape))
 
     print(f"Rank {rank}: Device mesh created: {device_mesh}")
 
@@ -71,7 +75,7 @@ def train():
     # Create dummy data
     batch_size = 8
     input_data = torch.randn(batch_size, 10)
-    target = torch.randint(0, 5, (batch_size,))
+    target = torch.randint(0, 5, (batch_size, ))
 
     # Define loss function
     criterion = nn.CrossEntropyLoss()

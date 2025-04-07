@@ -10,7 +10,7 @@ class RandomDataset(Dataset):
 
     def __init__(self, size=100):
         self.data = torch.randn(size, 10)  # 100 samples, each with 10 features
-        self.labels = torch.randint(0, 2, (size,))  # Binary labels
+        self.labels = torch.randint(0, 2, (size, ))  # Binary labels
 
     def __len__(self):
         return len(self.data)
@@ -95,9 +95,13 @@ def demo_dataloader():
     # Create weights for samples based on class frequencies
     class_weights = 1.0 / class_counts.float()
     sample_weights = class_weights[dataset.labels]
-    weighted_sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+    weighted_sampler = WeightedRandomSampler(weights=sample_weights,
+                                             num_samples=len(sample_weights),
+                                             replacement=True)
 
-    weighted_loader = DataLoader(dataset, batch_size=32, sampler=weighted_sampler)
+    weighted_loader = DataLoader(dataset,
+                                 batch_size=32,
+                                 sampler=weighted_sampler)
 
     # Check class distribution in weighted loader
     weighted_classes = []
@@ -105,10 +109,13 @@ def demo_dataloader():
         weighted_classes.extend(labels.tolist())
 
     weighted_class_counts = torch.bincount(torch.tensor(weighted_classes))
-    print(f"Class distribution with weighted sampling: {weighted_class_counts}")
+    print(
+        f"Class distribution with weighted sampling: {weighted_class_counts}")
 
     print("\n3. DataLoader with Batch Sampler")
-    batch_sampler = BatchSampler(torch.randperm(len(dataset)).tolist(), batch_size=32, drop_last=False)
+    batch_sampler = BatchSampler(torch.randperm(len(dataset)).tolist(),
+                                 batch_size=32,
+                                 drop_last=False)
 
     batch_sampler_loader = DataLoader(dataset, batch_sampler=batch_sampler)
 
@@ -158,7 +165,9 @@ def demo_dataloader():
     print(f"Dataset size: {len(small_dataset)}")
 
     # With drop_last=False (default)
-    keep_last_loader = DataLoader(small_dataset, batch_size=32, drop_last=False)
+    keep_last_loader = DataLoader(small_dataset,
+                                  batch_size=32,
+                                  drop_last=False)
     print("With drop_last=False:")
     batch_sizes = [batch[0].shape[0] for batch in keep_last_loader]
     print(f"Batch sizes: {batch_sizes}")
@@ -181,11 +190,15 @@ def demo_dataloader():
 
         return features, labels, norms
 
-    custom_loader = DataLoader(dataset, batch_size=32, collate_fn=custom_collate)
+    custom_loader = DataLoader(dataset,
+                               batch_size=32,
+                               collate_fn=custom_collate)
 
     # Get the first batch with custom collate function
     features, labels, norms = next(iter(custom_loader))
-    print(f"Custom batch: features {features.shape}, labels {labels.shape}, norms {norms.shape}")
+    print(
+        f"Custom batch: features {features.shape}, labels {labels.shape}, norms {norms.shape}"
+    )
 
 
 def main():

@@ -43,7 +43,8 @@ class WorkerHelper:
                 import ray
                 return ray._private.services.get_node_ip_address()
             else:
-                raise NotImplementedError("WG_BACKEND now just support ray mode.")
+                raise NotImplementedError(
+                    "WG_BACKEND now just support ray mode.")
 
         host_ipv4 = os.getenv("MY_HOST_IP", None)
         host_ipv6 = os.getenv("MY_HOST_IPV6", None)
@@ -67,14 +68,18 @@ class WorkerHelper:
 
 class WorkerMeta:
     keys = [
-        "WORLD_SIZE", "RANK", "LOCAL_WORLD_SIZE", "LOCAL_RANK", "MASTER_ADDR", "MASTER_PORT", "CUDA_VISIBLE_DEVICES"
+        "WORLD_SIZE", "RANK", "LOCAL_WORLD_SIZE", "LOCAL_RANK", "MASTER_ADDR",
+        "MASTER_PORT", "CUDA_VISIBLE_DEVICES"
     ]
 
     def __init__(self, store) -> None:
         self._store = store
 
     def to_dict(self):
-        return {f"_{key.lower()}": self._store.get(f"_{key.lower()}", None) for key in WorkerMeta.keys}
+        return {
+            f"_{key.lower()}": self._store.get(f"_{key.lower()}", None)
+            for key in WorkerMeta.keys
+        }
 
 
 # we assume that in each WorkerGroup, there is a Master Worker
@@ -93,13 +98,16 @@ class Worker(WorkerHelper):
         worker_group_prefix = os.environ.get("WG_PREFIX", None)
 
         # when decorator @ray.remote applies, __new__ will be called while we don't want to apply _configure_before_init
-        if None not in [rank, worker_group_prefix] and 'ActorClass(' not in cls.__name__:
-            instance._configure_before_init(f"{worker_group_prefix}_register_center", int(rank))
+        if None not in [rank, worker_group_prefix
+                        ] and 'ActorClass(' not in cls.__name__:
+            instance._configure_before_init(
+                f"{worker_group_prefix}_register_center", int(rank))
 
         return instance
 
     def _configure_before_init(self, register_center_name: str, rank: int):
-        assert isinstance(rank, int), f"rank must be int, instead of {type(rank)}"
+        assert isinstance(rank,
+                          int), f"rank must be int, instead of {type(rank)}"
 
         if rank == 0:
             master_addr, master_port = self.get_availale_master_addr_port()
@@ -110,8 +118,8 @@ class Worker(WorkerHelper):
 
             if os.getenv("WG_BACKEND", None) == "ray":
                 from verl.single_controller.base.register_center.ray import create_worker_group_register_center
-                self.register_center = create_worker_group_register_center(name=register_center_name,
-                                                                           info=rank_zero_info)
+                self.register_center = create_worker_group_register_center(
+                    name=register_center_name, info=rank_zero_info)
 
             os.environ.update(rank_zero_info)
 
@@ -155,15 +163,16 @@ class Worker(WorkerHelper):
             if val is not None:
                 # print(f"set {key} to {val}")
                 os.environ[key] = str(val)
-        os.environ["REDIS_STORE_SERVER_HOST"] = str(self._master_addr).replace("[", "").replace(
-            "]", "") if self._master_addr else ""
+        os.environ["REDIS_STORE_SERVER_HOST"] = str(self._master_addr).replace(
+            "[", "").replace("]", "") if self._master_addr else ""
 
     def get_master_addr_port(self):
         return self._master_addr, self._master_port
 
     def get_cuda_visible_devices(self):
         import os
-        cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "not set")
+        cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES",
+                                              "not set")
         return cuda_visible_devices
 
     @property
@@ -179,7 +188,8 @@ class Worker(WorkerHelper):
         ret_proto = func(self, *args, **kwargs)
         return ret_proto
 
-    @register(dispatch_mode=Dispatch.ALL_TO_ALL, execute_mode=Execute.RANK_ZERO)
+    @register(dispatch_mode=Dispatch.ALL_TO_ALL,
+              execute_mode=Execute.RANK_ZERO)
     def execute_func_rank_zero(self, func, *args, **kwargs):
         result = func(*args, **kwargs)
         return result

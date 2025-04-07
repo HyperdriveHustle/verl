@@ -48,8 +48,10 @@ from transformers import PretrainedConfig
 
 def apply_monkey_patch(config: PretrainedConfig, verbose=True):
     if not is_transformers_version_in_range("4.45.0", "4.49.0"):
-        raise AssertionError("The installed `transformers` version doesn't support ulysses patch. "
-                             "Please install a version between 4.45.0 and 4.49.0 to use this ulysses feature.")
+        raise AssertionError(
+            "The installed `transformers` version doesn't support ulysses patch. "
+            "Please install a version between 4.45.0 and 4.49.0 to use this ulysses feature."
+        )
     success_apply_monkey_patch = False
     if config.model_type in _PATCH_NAME_TO_FUNC:
         _PATCH_NAME_TO_FUNC[config.model_type]()
@@ -58,8 +60,10 @@ def apply_monkey_patch(config: PretrainedConfig, verbose=True):
     if success_apply_monkey_patch and verbose:
         print(f'Applying monkey patch to model {config.model_type}')
     elif not success_apply_monkey_patch:
-        raise NotImplementedError(f'Ulysses for model {config.model_type} is not implemented, \
-                                   please set `ulysses_sequence_parallel_size=1`')
+        raise NotImplementedError(
+            f'Ulysses for model {config.model_type} is not implemented, \
+                                   please set `ulysses_sequence_parallel_size=1`'
+        )
 
     return success_apply_monkey_patch
 
@@ -70,12 +74,15 @@ import importlib.metadata
 
 
 @lru_cache()
-def is_transformers_version_in_range(min_version: str, max_version: str) -> bool:
+def is_transformers_version_in_range(min_version: str,
+                                     max_version: str) -> bool:
     try:
         # Get the installed version of the transformers library
         transformers_version = importlib.metadata.version("transformers")
     except importlib.metadata.PackageNotFoundError:
-        raise ModuleNotFoundError("The `transformers` package is not installed.")
+        raise ModuleNotFoundError(
+            "The `transformers` package is not installed.")
 
     # Check if the version is within the specified range
-    return version.parse(min_version) <= version.parse(transformers_version) <= version.parse(max_version)
+    return version.parse(min_version) <= version.parse(
+        transformers_version) <= version.parse(max_version)

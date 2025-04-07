@@ -63,17 +63,20 @@ def gemma_load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
             if "norm.weight" in name:
                 norm_weight = loaded_weight + 1.0  # prevent inplace modify actor weights
                 param = params_dict[name]
-                weight_loader = getattr(param, "weight_loader", default_weight_loader)
+                weight_loader = getattr(param, "weight_loader",
+                                        default_weight_loader)
                 weight_loader(param, norm_weight)
             else:
                 param = params_dict[name]
-                weight_loader = getattr(param, "weight_loader", default_weight_loader)
+                weight_loader = getattr(param, "weight_loader",
+                                        default_weight_loader)
                 weight_loader(param, loaded_weight)
         loaded_params.add(name)
     unloaded_params = params_dict.keys() - loaded_params
     if unloaded_params:
-        raise RuntimeError("Some weights are not initialized from checkpoints: "
-                           f"{unloaded_params}")
+        raise RuntimeError(
+            "Some weights are not initialized from checkpoints: "
+            f"{unloaded_params}")
 
 
 def load_hf_weights(actor_weights: Dict, vllm_model: nn.Module):

@@ -41,7 +41,8 @@ from megatron.core.optimizer import DistributedOptimizer
 
 from omegaconf import OmegaConf
 from verl.utils.megatron.tensor_parallel import vocab_parallel_compute_entropy_loss, vocab_parallel_log_probs_from_logits
-from verl.utils.megatron.pipeline_parallel import (compute_transformers_input_shapes, make_batch_generator)
+from verl.utils.megatron.pipeline_parallel import (
+    compute_transformers_input_shapes, make_batch_generator)
 from verl import DataProto
 from verl.trainer.ppo import core_algos
 from verl.workers.actor import BasePPOActor
@@ -53,8 +54,11 @@ __all__ = ['MegatronPPOActor']
 
 class MegatronPPOActor(BasePPOActor):
 
-    def __init__(self, config, model_config, megatron_config: ModelParallelConfig, actor_module: nn.ModuleList,
-                 actor_optimizer: DistributedOptimizer, actor_optimizer_config: OptimizerConfig):
+    def __init__(self, config, model_config,
+                 megatron_config: ModelParallelConfig,
+                 actor_module: nn.ModuleList,
+                 actor_optimizer: DistributedOptimizer,
+                 actor_optimizer_config: OptimizerConfig):
         """MeagtronPPOActor class. This class implements the simple PPO logics when the model is built with Megatron.
 
         Args:
@@ -122,15 +126,24 @@ class MegatronPPOActor(BasePPOActor):
         self.actor_optimizer_config = actor_optimizer_config
 
         self.optimizer_step_args = OmegaConf.create({
-            'skip_grad': None,
-            'overlap_dp_param_comm': False,
-            'overlap_dp_grad_comm': False,
-            'gradient_accumulation_steps': 1,
-            'sequence_parallel': self.megatron_config.sequence_parallel,
-            'DDP_impl': 'local',
-            'layernorm_allreduce_bucket_threshold': 0,
-            'pipeline_model_parallel_split_rank': None,
-            'reduce_grads_use_alltoall': False
+            'skip_grad':
+            None,
+            'overlap_dp_param_comm':
+            False,
+            'overlap_dp_grad_comm':
+            False,
+            'gradient_accumulation_steps':
+            1,
+            'sequence_parallel':
+            self.megatron_config.sequence_parallel,
+            'DDP_impl':
+            'local',
+            'layernorm_allreduce_bucket_threshold':
+            0,
+            'pipeline_model_parallel_split_rank':
+            None,
+            'reduce_grads_use_alltoall':
+            False
         })
 
         config = get_model_config(self.actor_module[0])
@@ -170,20 +183,27 @@ class MegatronPPOActor(BasePPOActor):
 
         # We make recompute_old_log_prob by default here.
         # TODO (zhangchi.usc1992): actually, this function should only return log_prob and this logic should be handled by user outside
-        recompute_old_log_prob = self.config.get('recompute_old_log_prob', True)
+        recompute_old_log_prob = self.config.get('recompute_old_log_prob',
+                                                 True)
 
         if recompute_old_log_prob or 'old_log_probs' not in data.batch.keys():
-            select_keys = ['responses', 'input_ids', 'attention_mask', 'position_ids']
+            select_keys = [
+                'responses', 'input_ids', 'attention_mask', 'position_ids'
+            ]
             batch = data.select(batch_keys=select_keys).batch
             input_ids = batch['input_ids']
             batch_size = input_ids.size(0)
             response = batch['responses']
             response_length = response.size(1)
             with torch.no_grad():
-                output = self.forward_backward_batch(data, forward_only=True, post_process_fn=compute_logprobs_fn)
+                output = self.forward_backward_batch(
+                    data,
+                    forward_only=True,
+                    post_process_fn=compute_logprobs_fn)
                 if mpu.is_pipeline_last_stage(ignore_virtual=True):
                     # only on last rank. It should be on every tp rank
-                    log_probs = torch.cat([o['log_probs'] for o in output], dim=0)  # (bs, seq_size)
+                    log_probs = torch.cat([o['log_probs'] for o in output],
+                                          dim=0)  # (bs, seq_size)
                     log_probs = log_probs.to(torch.float32)
                 else:
                     log_probs = torch.empty(size=(batch_size, response_length),
@@ -191,10 +211,11 @@ class MegatronPPOActor(BasePPOActor):
                                             device=input_ids.device)
 
                 # broadcast across pp ranks
-                torch.distributed.broadcast(tensor=log_probs,
-                                            src=mpu.get_pipeline_model_parallel_last_rank(),
-                                            group=mpu.get_pipeline_model_parallel_group(),
-                                            async_op=False)
+                torch.distributed.broadcast(
+                    tensor=log_probs,
+                    src=mpu.get_pipeline_model_parallel_last_rank(),
+                    group=mpu.get_pipeline_model_parallel_group(),
+                    async_op=False)
 
         # add empty cache after each compute
         torch.cuda.empty_cache()
@@ -223,13 +244,20 @@ class MegatronPPOActor(BasePPOActor):
         Returns:
 
         """
-        select_keys = ['responses', 'input_ids', 'attention_mask', 'position_ids', 'old_log_probs', 'advantages']
+        select_keys = [
+            'responses', 'input_ids', 'attention_mask', 'position_ids',
+            'old_log_probs', 'advantages'
+        ]
         data = data.select(batch_keys=select_keys)
-        return data.make_iterator(mini_batch_size=self.config.ppo_mini_batch_size,
-                                  epochs=self.config.ppo_epochs,
-                                  dataloader_kwargs={'shuffle': self.config.shuffle})
+        return data.make_iterator(
+            mini_batch_size=self.config.ppo_mini_batch_size,
+            epochs=self.config.ppo_epochs,
+            dataloader_kwargs={'shuffle': self.config.shuffle})
 
-    def forward_backward_batch(self, data: DataProto, forward_only=False, post_process_fn=None):
+    def forward_backward_batch(self,
+                               data: DataProto,
+                               forward_only=False,
+                               post_process_fn=None):
         """
         We assume:
         - The model takes input: (input_ids, attention_mask, position_ids). No rmpad for the input
@@ -247,7 +275,8 @@ class MegatronPPOActor(BasePPOActor):
             batch_size = data.meta_info['micro_batch_size']
         else:
             batch_size = self.config.ppo_micro_batch_size_per_gpu
-        batches = split_dict_tensor_into_batches(data.batch, batch_size=batch_size)
+        batches = split_dict_tensor_into_batches(data.batch,
+                                                 batch_size=batch_size)
         # compute input shapes for pp stages
         input_shapes = compute_transformers_input_shapes(
             batches,
@@ -283,12 +312,14 @@ class MegatronPPOActor(BasePPOActor):
             logits_back = logits.clone()
             log_prob = vocab_parallel_log_probs_from_logits(logits, responses)
             logits = logits_back
-            pg_loss, pg_clipfrac, ppo_kl = core_algos.compute_policy_loss(old_log_prob=old_log_prob,
-                                                                          log_prob=log_prob,
-                                                                          advantages=advantages,
-                                                                          eos_mask=response_mask,
-                                                                          cliprange=clip_ratio)
-            entropy_loss = vocab_parallel_compute_entropy_loss(logits, eos_mask=response_mask)
+            pg_loss, pg_clipfrac, ppo_kl = core_algos.compute_policy_loss(
+                old_log_prob=old_log_prob,
+                log_prob=log_prob,
+                advantages=advantages,
+                eos_mask=response_mask,
+                cliprange=clip_ratio)
+            entropy_loss = vocab_parallel_compute_entropy_loss(
+                logits, eos_mask=response_mask)
             policy_loss = pg_loss - entropy_loss * entropy_coeff
             # return loss and stats
             stats = {
@@ -304,15 +335,21 @@ class MegatronPPOActor(BasePPOActor):
             input_ids = batch['input_ids']
             attention_mask = batch['attention_mask']
             position_ids = batch['position_ids']
-            output = model(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids)
+            output = model(input_ids=input_ids,
+                           attention_mask=attention_mask,
+                           position_ids=position_ids)
             if forward_only:
                 meta_info = None
             else:
-                meta_info = {'clip_ratio': self.config.clip_ratio, 'entropy_coeff': self.config.entropy_coeff}
+                meta_info = {
+                    'clip_ratio': self.config.clip_ratio,
+                    'entropy_coeff': self.config.entropy_coeff
+                }
             return output, partial(loss_func, data=batch, meta_info=meta_info)
 
         # batch should be a list of batches inside micro-batches
-        batch_generator = make_batch_generator(batches, vpp_size=len(self.actor_module))
+        batch_generator = make_batch_generator(batches,
+                                               vpp_size=len(self.actor_module))
 
         # TODO: we may use the new schedule instead
         # for flash-attn: (seq_len, batch_size, hidden_size) = (mbs*seq_len, 1, hidden_size)
@@ -322,7 +359,8 @@ class MegatronPPOActor(BasePPOActor):
                 data_iterator=batch_generator,
                 model=self.actor_module,
                 num_microbatches=n_micro_batch,
-                seq_length=batch_size * seq_len,  # no use when input_shapes was set
+                seq_length=batch_size *
+                seq_len,  # no use when input_shapes was set
                 micro_batch_size=1,  # no use when input_shapes was set
                 forward_only=forward_only,
             )
@@ -362,9 +400,12 @@ class MegatronPPOActor(BasePPOActor):
 
             metric_micro_batch = self.forward_backward_batch(data)
             for metric in metric_micro_batch:
-                append_to_dict(metrics, metric)  # append the metric from this micro-batch to global metrics.
+                append_to_dict(
+                    metrics, metric
+                )  # append the metric from this micro-batch to global metrics.
 
-            update_successful, grad_norm, num_zeros_in_grad = self.actor_optimizer.step()
+            update_successful, grad_norm, num_zeros_in_grad = self.actor_optimizer.step(
+            )
 
             if update_successful:
                 # allgather already execute in optimizer.step in new megatron

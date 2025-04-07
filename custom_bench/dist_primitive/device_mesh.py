@@ -9,6 +9,7 @@ from torch.distributed.tensor.parallel.style import ColwiseParallel, RowwisePara
 
 import argparse
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", type=int, default=0)
@@ -27,7 +28,10 @@ def example_2d_mesh(rank, world_size):
     if not dist.is_initialized():
         os.environ['MASTER_ADDR'] = 'localhost'
         os.environ['MASTER_PORT'] = '12355'
-        dist.init_process_group("nccl" if torch.cuda.is_available() else "gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(
+            "nccl" if torch.cuda.is_available() else "gloo",
+            rank=rank,
+            world_size=world_size)
 
     # Create a 2D mesh layout (2x2)
     device_type = "cuda" if torch.cuda.is_available() else "cpu"
@@ -35,7 +39,8 @@ def example_2d_mesh(rank, world_size):
 
     # Convert the flat process rank to 2D mesh coordinates
     mesh_2d = torch.arange(world_size).reshape(*mesh_shape)
-    device_mesh = torch.distributed.device_mesh.DeviceMesh(device_type, mesh_2d)
+    device_mesh = torch.distributed.device_mesh.DeviceMesh(
+        device_type, mesh_2d)
 
     print(f"Rank {rank}: Created 2D device mesh: {device_mesh}")
     return device_mesh
@@ -52,7 +57,10 @@ def example_multiple_meshes(rank, world_size):
     if not dist.is_initialized():
         os.environ['MASTER_ADDR'] = 'localhost'
         os.environ['MASTER_PORT'] = '12355'
-        dist.init_process_group("nccl" if torch.cuda.is_available() else "gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(
+            "nccl" if torch.cuda.is_available() else "gloo",
+            rank=rank,
+            world_size=world_size)
 
     device_type = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -61,8 +69,10 @@ def example_multiple_meshes(rank, world_size):
     decoder_ranks = torch.tensor([2, 3])
 
     # Create the meshes
-    encoder_mesh = torch.distributed.device_mesh.DeviceMesh(device_type, encoder_ranks.reshape(2))
-    decoder_mesh = torch.distributed.device_mesh.DeviceMesh(device_type, decoder_ranks.reshape(2))
+    encoder_mesh = torch.distributed.device_mesh.DeviceMesh(
+        device_type, encoder_ranks.reshape(2))
+    decoder_mesh = torch.distributed.device_mesh.DeviceMesh(
+        device_type, decoder_ranks.reshape(2))
 
     if rank < 2:
         print(f"Rank {rank}: Part of encoder mesh: {encoder_mesh}")
@@ -85,14 +95,18 @@ def example_3d_mesh(rank, world_size):
     if not dist.is_initialized():
         os.environ['MASTER_ADDR'] = 'localhost'
         os.environ['MASTER_PORT'] = '12355'
-        dist.init_process_group("nccl" if torch.cuda.is_available() else "gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(
+            "nccl" if torch.cuda.is_available() else "gloo",
+            rank=rank,
+            world_size=world_size)
 
     device_type = "cuda" if torch.cuda.is_available() else "cpu"
     mesh_shape = (2, 2, 2)  # 2x2x2 3D mesh
 
     # Convert flat rank to 3D mesh coordinates
     mesh_3d = torch.arange(world_size).reshape(*mesh_shape)
-    device_mesh = torch.distributed.device_mesh.DeviceMesh(device_type, mesh_3d)
+    device_mesh = torch.distributed.device_mesh.DeviceMesh(
+        device_type, mesh_3d)
 
     print(f"Rank {rank}: Created 3D device mesh: {device_mesh}")
     # Get mesh coordinates for this rank
@@ -110,7 +124,8 @@ class SimpleTransformerBlock(nn.Module):
         self.attention = nn.MultiheadAttention(input_dim, num_heads)
         self.norm1 = nn.LayerNorm(input_dim)
         self.norm2 = nn.LayerNorm(input_dim)
-        self.ff = nn.Sequential(nn.Linear(input_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, input_dim))
+        self.ff = nn.Sequential(nn.Linear(input_dim, hidden_dim), nn.ReLU(),
+                                nn.Linear(hidden_dim, input_dim))
 
     def forward(self, x):
         attn_output, _ = self.attention(x, x, x)
@@ -128,12 +143,17 @@ def example_tensor_parallel_with_mesh(rank, world_size):
     if not dist.is_initialized():
         os.environ['MASTER_ADDR'] = 'localhost'
         os.environ['MASTER_PORT'] = '12355'
-        dist.init_process_group("nccl" if torch.cuda.is_available() else "gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(
+            "nccl" if torch.cuda.is_available() else "gloo",
+            rank=rank,
+            world_size=world_size)
 
     device_type = "cuda" if torch.cuda.is_available() else "cpu"
     # For tensor parallelism, we'll use a 1D mesh across all processes
-    mesh_shape = (world_size,)
-    device_mesh = torch.distributed.device_mesh.DeviceMesh(device_type, torch.arange(world_size).reshape(*mesh_shape))
+    mesh_shape = (world_size, )
+    device_mesh = torch.distributed.device_mesh.DeviceMesh(
+        device_type,
+        torch.arange(world_size).reshape(*mesh_shape))
 
     print(f"Rank {rank}: Created tensor parallel mesh: {device_mesh}")
 
@@ -146,10 +166,14 @@ def example_tensor_parallel_with_mesh(rank, world_size):
     tp_model = parallelize_module(module=model,
                                   device_mesh=device_mesh,
                                   parallelize_plan={
-                                      "attention.in_proj_weight": ColwiseParallel(),
-                                      "attention.out_proj.weight": RowwiseParallel(),
-                                      "ff.0.weight": ColwiseParallel(),
-                                      "ff.2.weight": RowwiseParallel(),
+                                      "attention.in_proj_weight":
+                                      ColwiseParallel(),
+                                      "attention.out_proj.weight":
+                                      RowwiseParallel(),
+                                      "ff.0.weight":
+                                      ColwiseParallel(),
+                                      "ff.2.weight":
+                                      RowwiseParallel(),
                                   })
 
     print(f"Rank {rank}: Model parallelized with tensor parallelism")
@@ -180,14 +204,18 @@ def example_nested_parallelism(rank, world_size):
     if not dist.is_initialized():
         os.environ['MASTER_ADDR'] = 'localhost'
         os.environ['MASTER_PORT'] = '12355'
-        dist.init_process_group("nccl" if torch.cuda.is_available() else "gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(
+            "nccl" if torch.cuda.is_available() else "gloo",
+            rank=rank,
+            world_size=world_size)
 
     device_type = "cuda" if torch.cuda.is_available() else "cpu"
 
     # For a total of 4 processes, create a 2x2 mesh
     mesh_shape = (2, 2)  # 2 data parallel, 2 tensor parallel
     mesh_2d = torch.arange(world_size).reshape(*mesh_shape)
-    device_mesh = torch.distributed.device_mesh.DeviceMesh(device_type, mesh_2d)
+    device_mesh = torch.distributed.device_mesh.DeviceMesh(
+        device_type, mesh_2d)
 
     # Get submeshes for different parallel dimensions
     # First dimension for data parallelism
@@ -208,8 +236,10 @@ def example_nested_parallelism(rank, world_size):
             parallelize_module(module=submodule,
                                device_mesh=tp_mesh,
                                parallelize_plan={
-                                   "attention.in_proj_weight": ColwiseParallel(),
-                                   "attention.out_proj.weight": RowwiseParallel(),
+                                   "attention.in_proj_weight":
+                                   ColwiseParallel(),
+                                   "attention.out_proj.weight":
+                                   RowwiseParallel(),
                                    "ff.0.weight": ColwiseParallel(),
                                    "ff.2.weight": RowwiseParallel(),
                                })
@@ -233,11 +263,15 @@ def example_pipeline_parallel_mesh(rank, world_size):
     if not dist.is_initialized():
         os.environ['MASTER_ADDR'] = 'localhost'
         os.environ['MASTER_PORT'] = '12355'
-        dist.init_process_group("nccl" if torch.cuda.is_available() else "gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(
+            "nccl" if torch.cuda.is_available() else "gloo",
+            rank=rank,
+            world_size=world_size)
 
     # For pipeline parallelism we'll use a 1D mesh
     device_type = "cuda" if torch.cuda.is_available() else "cpu"
-    pp_mesh = torch.distributed.device_mesh.DeviceMesh(device_type, torch.arange(world_size))
+    pp_mesh = torch.distributed.device_mesh.DeviceMesh(
+        device_type, torch.arange(world_size))
 
     print(f"Rank {rank}: Created pipeline parallel mesh: {pp_mesh}")
 
@@ -245,10 +279,12 @@ def example_pipeline_parallel_mesh(rank, world_size):
     # For demonstration, assign different layers to different ranks
     if rank == 0:
         # First stage: embedding and first transformer block
-        model_stage = nn.Sequential(nn.Embedding(10000, 512), SimpleTransformerBlock(512, 2048, 8))
+        model_stage = nn.Sequential(nn.Embedding(10000, 512),
+                                    SimpleTransformerBlock(512, 2048, 8))
     elif rank == world_size - 1:
         # Last stage: last transformer block and output
-        model_stage = nn.Sequential(SimpleTransformerBlock(512, 2048, 8), nn.Linear(512, 1000))
+        model_stage = nn.Sequential(SimpleTransformerBlock(512, 2048, 8),
+                                    nn.Linear(512, 1000))
     else:
         # Middle stages: transformer blocks
         model_stage = SimpleTransformerBlock(512, 2048, 8)
@@ -259,6 +295,7 @@ def example_pipeline_parallel_mesh(rank, world_size):
     # code for microbatching and synchronization between stages
 
     return model_stage, pp_mesh
+
 
 # Function to run on each process
 def run_example(rank, world_size, example_num):
@@ -277,6 +314,7 @@ def run_example(rank, world_size, example_num):
 
     # Cleanup
     dist.destroy_process_group()
+
 
 # Usage example
 if __name__ == "__main__":

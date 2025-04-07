@@ -86,8 +86,9 @@ class LLM:
 
     def __init__(
         self,
-        model: Union[nn.Module, Dict], # model itself or its parameter dict
-        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast, HybridEngineBaseTokenizer],
+        model: Union[nn.Module, Dict],  # model itself or its parameter dict
+        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast,
+                         HybridEngineBaseTokenizer],
         model_hf_config: PretrainedConfig,
         tokenizer_mode: str = "auto",
         trust_remote_code: bool = False,
@@ -121,13 +122,15 @@ class LLM:
             disable_custom_all_reduce=disable_custom_all_reduce,
             **kwargs,
         )
-        tokenizer_cls = (PreTrainedTokenizer, PreTrainedTokenizerFast, HybridEngineBaseTokenizer)
+        tokenizer_cls = (PreTrainedTokenizer, PreTrainedTokenizerFast,
+                         HybridEngineBaseTokenizer)
         if not isinstance(tokenizer, tokenizer_cls):
             raise ValueError(
                 f"Unexpected tokenizer type: {type(tokenizer)}. Must be"
                 "one of the following: PreTrainedTokenizer, PreTrainedTokenizerFast, verl.workers.rollout.HybridEngineBaseTokenizer"
             )
-        self.llm_engine = LLMEngine.from_engine_args(model, tokenizer, engine_args)
+        self.llm_engine = LLMEngine.from_engine_args(model, tokenizer,
+                                                     engine_args)
         self.request_counter = Counter()
 
     def init_cache_engine(self):
@@ -136,7 +139,8 @@ class LLM:
     def free_cache_engine(self):
         self.llm_engine.free_cache_engine()
 
-    def get_tokenizer(self) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
+    def get_tokenizer(
+            self) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
         return self.llm_engine.tokenizer
 
     def set_tokenizer(
@@ -187,15 +191,21 @@ class LLM:
             sampling_params = SamplingParams()
 
         # Add requests to the engine.
-        num_requests = len(prompts) if prompts is not None else len(prompt_token_ids)
+        num_requests = len(prompts) if prompts is not None else len(
+            prompt_token_ids)
         for i in range(num_requests):
             prompt = prompts[i] if prompts is not None else None
             prefix_pos_i = prefix_pos[i] if prefix_pos is not None else None
-            token_ids = None if prompt_token_ids is None else prompt_token_ids[i]
+            token_ids = None if prompt_token_ids is None else prompt_token_ids[
+                i]
             if not isinstance(token_ids, list):
                 # NOTE(shengguangming): convert the rollout input into List[str]
                 token_ids = self._pre_process_inputs(token_ids)
-            self._add_request(prompt, sampling_params, token_ids, lora_request=lora_request, prefix_pos=prefix_pos_i)
+            self._add_request(prompt,
+                              sampling_params,
+                              token_ids,
+                              lora_request=lora_request,
+                              prefix_pos=prefix_pos_i)
         return self._run_engine(use_tqdm)
 
     def _add_request(
@@ -242,12 +252,15 @@ class LLM:
     def _pre_process_inputs(self, prompt_token_ids: torch.Tensor) -> List[int]:
         # remove the left padding in the prompt token_id
         pad_token_id = self.llm_engine.tokenizer.pad_token_id if self.llm_engine.tokenizer.pad_token_id is not None else self.llm_engine.tokenizer.eos_token_id
-        non_pad_index = torch.nonzero(prompt_token_ids != pad_token_id, as_tuple=False)[0][0]
+        non_pad_index = torch.nonzero(prompt_token_ids != pad_token_id,
+                                      as_tuple=False)[0][0]
         token_ids = prompt_token_ids[non_pad_index:].tolist()
         return token_ids
 
     # NOTE(shengguangming): add for verl
-    def _post_process_outputs(self, outputs: List[RequestOutput]) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _post_process_outputs(
+            self,
+            outputs: List[RequestOutput]) -> Tuple[torch.Tensor, torch.Tensor]:
         output_token_ids = []
         logprobs = []
         for output in outputs:  # List[RequestOutput]
@@ -258,17 +271,23 @@ class LLM:
                 logprobs_dicts = output.logprobs
                 if logprobs_dicts is not None:
                     logprob = []
-                    for logprobs_dict, id in zip(logprobs_dicts, output.token_ids):
+                    for logprobs_dict, id in zip(logprobs_dicts,
+                                                 output.token_ids):
                         logprob.append(logprobs_dict[id])
                     logprobs.append(torch.tensor(logprob))
 
         pad_token_id = self.llm_engine.tokenizer.pad_token_id if self.llm_engine.tokenizer.pad_token_id is not None else self.llm_engine.tokenizer.eos_token_id
-        output_token_ids = pad_sequence(output_token_ids, batch_first=True, padding_value=pad_token_id)
+        output_token_ids = pad_sequence(output_token_ids,
+                                        batch_first=True,
+                                        padding_value=pad_token_id)
         if len(logprobs) > 0:
-            logprobs = pad_sequence(logprobs, batch_first=True, padding_value=pad_token_id)
+            logprobs = pad_sequence(logprobs,
+                                    batch_first=True,
+                                    padding_value=pad_token_id)
         return output_token_ids, logprobs
 
-    def sync_model_weights(self, actor_weights: Dict[str, torch.Tensor]) -> None:
+    def sync_model_weights(self, actor_weights: Dict[str,
+                                                     torch.Tensor]) -> None:
         self.llm_engine.sync_model_weights(actor_weights=actor_weights)
 
     def offload_model_weights(self) -> None:

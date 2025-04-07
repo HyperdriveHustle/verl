@@ -40,7 +40,8 @@ from verl.single_controller.ray import RayClassWithInitArgs, RayResourcePool, Ra
 def main(config):
     from pprint import pprint
     from omegaconf import OmegaConf
-    pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
+    pprint(OmegaConf.to_container(
+        config, resolve=True))  # resolve=True will eval symbol values
     OmegaConf.resolve(config)
     local_path = copy_to_local(config.model.path)
     from verl.utils import hf_tokenizer
@@ -59,9 +60,15 @@ def main(config):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    ray_cls_with_init = RayClassWithInitArgs(cls=ray.remote(ActorRolloutRefWorker), config=config, role='actor_rollout')
-    resource_pool = RayResourcePool(process_on_nodes=[config.trainer.n_gpus_per_node] * config.trainer.nnodes)
-    wg = RayWorkerGroup(resource_pool=resource_pool, ray_cls_with_init=ray_cls_with_init)
+    ray_cls_with_init = RayClassWithInitArgs(
+        cls=ray.remote(ActorRolloutRefWorker),
+        config=config,
+        role='actor_rollout')
+    resource_pool = RayResourcePool(
+        process_on_nodes=[config.trainer.n_gpus_per_node] *
+        config.trainer.nnodes)
+    wg = RayWorkerGroup(resource_pool=resource_pool,
+                        ray_cls_with_init=ray_cls_with_init)
     wg.init_model()
 
     total_samples = len(dataset)
@@ -73,20 +80,27 @@ def main(config):
 
     for batch_idx in range(num_batch):
         print(f'[{batch_idx+1}/{num_batch}] Start to process.')
-        batch_chat_lst = chat_lst[batch_idx * config_batch_size:(batch_idx + 1) * config_batch_size]
-        inputs = tokenizer.apply_chat_template(batch_chat_lst,
-                                               add_generation_prompt=True,
-                                               padding=True,
-                                               truncation=True,
-                                               max_length=config.rollout.prompt_length,
-                                               return_tensors='pt',
-                                               return_dict=True,
-                                               tokenize=True)
+        batch_chat_lst = chat_lst[batch_idx *
+                                  config_batch_size:(batch_idx + 1) *
+                                  config_batch_size]
+        inputs = tokenizer.apply_chat_template(
+            batch_chat_lst,
+            add_generation_prompt=True,
+            padding=True,
+            truncation=True,
+            max_length=config.rollout.prompt_length,
+            return_tensors='pt',
+            return_dict=True,
+            tokenize=True)
         input_ids = inputs['input_ids']
         attention_mask = inputs['attention_mask']
         position_ids = compute_position_id_with_mask(attention_mask)
 
-        batch_dict = {'input_ids': input_ids, 'attention_mask': attention_mask, 'position_ids': position_ids}
+        batch_dict = {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'position_ids': position_ids
+        }
 
         data = DataProto.from_dict(batch_dict)
         real_batch_size = data.batch['input_ids'].shape[0]
@@ -107,8 +121,9 @@ def main(config):
             output = wg.generate_sequences(data)
             # remove dummy data
             output = output[:real_batch_size]
-            output_text = tokenizer.batch_decode(output.batch['input_ids'][:, -config.rollout.response_length:],
-                                                 skip_special_tokens=False)
+            output_text = tokenizer.batch_decode(
+                output.batch['input_ids'][:, -config.rollout.response_length:],
+                skip_special_tokens=False)
 
             # remove the padding
             pad_token = tokenizer.pad_token

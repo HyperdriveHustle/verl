@@ -18,7 +18,9 @@ def setup_distributed():
     rank = int(os.environ.get('RANK', 0))
     world_size = int(os.environ.get('WORLD_SIZE', 1))
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
-    print(f"Process RANK={rank}, LOCAL_RANK={local_rank}, WORLD_SIZE={world_size}")
+    print(
+        f"Process RANK={rank}, LOCAL_RANK={local_rank}, WORLD_SIZE={world_size}"
+    )
     return local_rank, rank, world_size
 
 
@@ -58,7 +60,8 @@ def main():
             _DATA_PARALLEL_GROUP = group
             _DATA_PARALLEL_GLOBAL_RANKS = group_ranks
     print(
-        f'Worker: {rank=}, {_DATA_PARALLEL_GROUP=}, {_DATA_PARALLEL_GLOBAL_RANKS}, dp-rank: {get_data_parallel_rank()}')
+        f'Worker: {rank=}, {_DATA_PARALLEL_GROUP=}, {_DATA_PARALLEL_GLOBAL_RANKS}, dp-rank: {get_data_parallel_rank()}'
+    )
 
     # train
     model = nn.Linear(10, 10)

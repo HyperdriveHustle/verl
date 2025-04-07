@@ -47,17 +47,20 @@ from vllm import SamplingParams
 
 
 # NOTE(sgm): add for verl. We can optimize it by making the dataloader yield List[int] without padding.
-def _pre_process_inputs(pad_token_id, prompt_token_ids: torch.Tensor) -> List[int]:
+def _pre_process_inputs(pad_token_id,
+                        prompt_token_ids: torch.Tensor) -> List[int]:
     # remove the left padding in the prompt token_id
     # pad_token_id = self.llm_engine.tokenizer.pad_token_id if self.llm_engine.tokenizer.pad_token_id is not None else self.llm_engine.tokenizer.eos_token_id
-    non_pad_index = torch.nonzero(prompt_token_ids != pad_token_id, as_tuple=False)[0][0]
+    non_pad_index = torch.nonzero(prompt_token_ids != pad_token_id,
+                                  as_tuple=False)[0][0]
     token_ids = prompt_token_ids[non_pad_index:].tolist()
     return token_ids
 
 
 class FIREvLLMRollout(vLLMRollout):
 
-    def __init__(self, actor_module: nn.Module, config: DictConfig, tokenizer, model_hf_config, **kwargs):
+    def __init__(self, actor_module: nn.Module, config: DictConfig, tokenizer,
+                 model_hf_config, **kwargs):
         """A vLLM rollout. It requires the module is supported by the vllm.
 
         Args:
@@ -67,7 +70,8 @@ class FIREvLLMRollout(vLLMRollout):
             model_hf_config: the huggingface config to initiallize the generating model in vllm
             **kwargs: train_tp, for Megatron Backend to initialize hybrid engine (zero redundancy) process group
         """
-        super().__init__(actor_module, config, tokenizer, model_hf_config, **kwargs)
+        super().__init__(actor_module, config, tokenizer, model_hf_config,
+                         **kwargs)
 
         self.use_fire_sampling = config.get('use_fire_sampling', False)
         if self.use_fire_sampling:
@@ -142,7 +146,8 @@ class FIREvLLMRollout(vLLMRollout):
             # users can customize different sampling_params at different run
             with self.update_sampling_params(**kwargs):
                 output = self.inference_engine.generate(
-                    prompts=None,  # because we have already convert it to prompt token id
+                    prompts=
+                    None,  # because we have already convert it to prompt token id
                     sampling_params=self.sampling_params,
                     prompt_token_ids=idx_list,
                     use_tqdm=False)
@@ -152,7 +157,8 @@ class FIREvLLMRollout(vLLMRollout):
         else:
             with self.update_sampling_params(**kwargs):
                 output_0 = self.inference_engine.generate(
-                    prompts=None,  # because we have already convert it to prompt token id
+                    prompts=
+                    None,  # because we have already convert it to prompt token id
                     sampling_params=self.sampling_params_0,
                     prompt_token_ids=idx_list,
                     use_tqdm=False)
@@ -160,28 +166,39 @@ class FIREvLLMRollout(vLLMRollout):
                 for i in range(batch_size):
                     new_idx_list.append(idx_list[i] + output_0[0][i].tolist())
                 output = self.inference_engine.generate(
-                    prompts=None,  # because we have already convert it to prompt token id
+                    prompts=
+                    None,  # because we have already convert it to prompt token id
                     sampling_params=self.sampling_params,
                     prompt_token_ids=new_idx_list,
                     use_tqdm=False)
 
-            response = torch.cat([output_0[0], output[0]], dim=1).to(idx.device)  # (bs, response_length)
-            log_probs = torch.cat([output_0[1], output[1]], dim=1).to(idx.device)  # (bs, response_length)
+            response = torch.cat([output_0[0], output[0]],
+                                 dim=1).to(idx.device)  # (bs, response_length)
+            log_probs = torch.cat([output_0[1], output[1]], dim=1).to(
+                idx.device)  # (bs, response_length)
 
         if response.shape[1] < self.config.response_length:
-            response = pad_sequence_to_length(response, self.config.response_length, self.pad_token_id)
-            log_probs = pad_sequence_to_length(log_probs, self.config.response_length, self.pad_token_id)
+            response = pad_sequence_to_length(response,
+                                              self.config.response_length,
+                                              self.pad_token_id)
+            log_probs = pad_sequence_to_length(log_probs,
+                                               self.config.response_length,
+                                               self.pad_token_id)
 
         if self.config.n > 1 and do_sample:
             idx = idx.repeat_interleave(self.config.n, dim=0)
-            attention_mask = attention_mask.repeat_interleave(self.config.n, dim=0)
+            attention_mask = attention_mask.repeat_interleave(self.config.n,
+                                                              dim=0)
             position_ids = position_ids.repeat_interleave(self.config.n, dim=0)
             batch_size = batch_size * self.config.n
         seq = torch.cat([idx, response], dim=-1)
 
         response_length = response.size(1)
-        delta_position_id = torch.arange(1, response_length + 1, device=position_ids.device)
-        delta_position_id = delta_position_id.unsqueeze(0).repeat(batch_size, 1)
+        delta_position_id = torch.arange(1,
+                                         response_length + 1,
+                                         device=position_ids.device)
+        delta_position_id = delta_position_id.unsqueeze(0).repeat(
+            batch_size, 1)
 
         # TODO(sgm): fix position_ids on right_pad
         # prompt: left pad + response: right pad
@@ -189,8 +206,11 @@ class FIREvLLMRollout(vLLMRollout):
         # position_ids:   [0,0,0,0,0,1,2,3, | 4,5,6,7,8,9,10,11]
         response_position_ids = position_ids[:, -1:] + delta_position_id
         position_ids = torch.cat([position_ids, response_position_ids], dim=-1)
-        response_attention_mask = get_eos_mask(response_id=response, eos_token=eos_token_id, dtype=attention_mask.dtype)
-        attention_mask = torch.cat((attention_mask, response_attention_mask), dim=-1)
+        response_attention_mask = get_eos_mask(response_id=response,
+                                               eos_token=eos_token_id,
+                                               dtype=attention_mask.dtype)
+        attention_mask = torch.cat((attention_mask, response_attention_mask),
+                                   dim=-1)
 
         # all the tp ranks should contain the same data here. data in all ranks are valid
         batch = TensorDict(

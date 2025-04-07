@@ -22,15 +22,23 @@ from typing import List, Union, Dict, Any
 
 
 class Tracking(object):
-    supported_backend = ["wandb", "mlflow", "swanlab", "vemlp_wandb", "tensorboard", "console"]
+    supported_backend = [
+        "wandb", "mlflow", "swanlab", "vemlp_wandb", "tensorboard", "console"
+    ]
 
-    def __init__(self, project_name, experiment_name, default_backend: Union[str, List[str]] = 'console', config=None):
+    def __init__(self,
+                 project_name,
+                 experiment_name,
+                 default_backend: Union[str, List[str]] = 'console',
+                 config=None):
         if isinstance(default_backend, str):
             default_backend = [default_backend]
         for backend in default_backend:
             if backend == 'tracking':
                 import warnings
-                warnings.warn("`tracking` logger is deprecated. use `wandb` instead.", DeprecationWarning)
+                warnings.warn(
+                    "`tracking` logger is deprecated. use `wandb` instead.",
+                    DeprecationWarning)
             else:
                 assert backend in self.supported_backend, f'{backend} is not supported'
 
@@ -38,7 +46,9 @@ class Tracking(object):
 
         if 'tracking' in default_backend or 'wandb' in default_backend:
             import wandb
-            wandb.init(project=project_name, name=experiment_name, config=config)
+            wandb.init(project=project_name,
+                       name=experiment_name,
+                       config=config)
             self.logger['wandb'] = wandb
 
         if 'mlflow' in default_backend:
@@ -55,7 +65,9 @@ class Tracking(object):
             SWANLAB_LOG_DIR = os.environ.get("SWANLAB_LOG_DIR", "swanlog")
             SWANLAB_MODE = os.environ.get("SWANLAB_MODE", "cloud")
             if SWANLAB_API_KEY:
-                swanlab.login(SWANLAB_API_KEY)  # NOTE: previous login information will be overwritten
+                swanlab.login(
+                    SWANLAB_API_KEY
+                )  # NOTE: previous login information will be overwritten
             swanlab.init(project=project_name,
                          experiment_name=experiment_name,
                          config=config,
@@ -134,11 +146,14 @@ def _compute_mlflow_params_from_objects(params) -> Dict[str, Any]:
     if params is None:
         return {}
 
-    return _flatten_dict(_transform_params_to_json_serializable(params, convert_list_to_dict=True), sep='/')
+    return _flatten_dict(_transform_params_to_json_serializable(
+        params, convert_list_to_dict=True),
+                         sep='/')
 
 
 def _transform_params_to_json_serializable(x, convert_list_to_dict: bool):
-    _transform = partial(_transform_params_to_json_serializable, convert_list_to_dict=convert_list_to_dict)
+    _transform = partial(_transform_params_to_json_serializable,
+                         convert_list_to_dict=convert_list_to_dict)
 
     if dataclasses.is_dataclass(x):
         return _transform(dataclasses.asdict(x))
@@ -146,7 +161,12 @@ def _transform_params_to_json_serializable(x, convert_list_to_dict: bool):
         return {k: _transform(v) for k, v in x.items()}
     if isinstance(x, list):
         if convert_list_to_dict:
-            return {'list_len': len(x)} | {f'{i}': _transform(v) for i, v in enumerate(x)}
+            return {
+                'list_len': len(x)
+            } | {
+                f'{i}': _transform(v)
+                for i, v in enumerate(x)
+            }
         else:
             return [_transform(v) for v in x]
     if isinstance(x, Path):

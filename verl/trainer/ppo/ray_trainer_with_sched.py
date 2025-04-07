@@ -44,6 +44,49 @@ from verl.utils.dataset.rl_dataset import RLHFDataset, collate_fn
 from torch.utils.data import RandomSampler, SequentialSampler
 from torchdata.stateful_dataloader import StatefulDataLoader
 
+import ray
+from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy, NodeAffinitySchedulingStrategy
+
+
+class RayClassWithInitArgsAndSched(RayClassWithInitArgs):
+
+    def __init__(self, cls, *args, **kwargs) -> None:
+        # sched
+        self.target_node_id = kwargs.pop('target_node_id', None)
+        assert self.target_node_id is not None, f'target node must specify'
+
+        super().__init__(cls, *args, **kwargs)
+
+    def __call__(
+        self,
+        placement_group,
+        placement_group_bundle_idx,
+        use_gpu: bool,
+        num_gpus=1,
+    ):
+        # the signature stay the same
+        options = {
+            "scheduling_strategy":
+            NodeAffinitySchedulingStrategy(
+                node_id=self.target_node_id,
+                soft=False,
+            )
+        }
+        options.update(self._options)
+        if use_gpu:
+            options["num_gpus"] = num_gpus
+
+        if len(self._additional_resource) > 1:
+            for k, v in self._additional_resource.items():
+                options[k] = v
+
+        return self.cls.options(**options).remote(
+            *self.args,
+            #cuda_visible_devices=cuda_visible_devices,
+            **self.kwargs,
+        )
+
+
 WorkerType = Type[Worker]
 
 
@@ -779,14 +822,26 @@ class RayPPOTrainer(object):
             pool: {}
             for pool in self.resource_pool_manager.resource_pool_dict.values()
         }
+
+        # gh512; sched
+        nodes = ray.nodes()
+        target_node_id = nodes[-1]["NodeID"]
+        print(f'{type(target_node_id)=}, {target_node_id=}')
+
         # create actor and rollout
         if self.hybrid_engine:
             resource_pool = self.resource_pool_manager.get_resource_pool(
                 Role.ActorRollout)
-            actor_rollout_cls = RayClassWithInitArgs(
+            #actor_rollout_cls = RayClassWithInitArgs(cls=self.role_worker_mapping[Role.ActorRollout],
+            #                                         config=self.config.actor_rollout_ref,
+            #                                         role='actor_rollout',
+            #                                        )
+            actor_rollout_cls = RayClassWithInitArgsAndSched(
                 cls=self.role_worker_mapping[Role.ActorRollout],
                 config=self.config.actor_rollout_ref,
-                role='actor_rollout')
+                role='actor_rollout',
+                target_node_id=target_node_id,
+            )
             self.resource_pool_to_cls[resource_pool][
                 'actor_rollout'] = actor_rollout_cls
         else:
@@ -796,19 +851,30 @@ class RayPPOTrainer(object):
         if self.use_critic:
             resource_pool = self.resource_pool_manager.get_resource_pool(
                 Role.Critic)
-            critic_cls = RayClassWithInitArgs(
+            #critic_cls = RayClassWithInitArgs(
+            #    cls=self.role_worker_mapping[Role.Critic],
+            #    config=self.config.critic)
+            critic_cls = RayClassWithInitArgsAndSched(
                 cls=self.role_worker_mapping[Role.Critic],
-                config=self.config.critic)
+                config=self.config.critic,
+                target_node_id=target_node_id,
+            )
             self.resource_pool_to_cls[resource_pool]['critic'] = critic_cls
 
         # create reference policy if needed
         if self.use_reference_policy:
             resource_pool = self.resource_pool_manager.get_resource_pool(
                 Role.RefPolicy)
-            ref_policy_cls = RayClassWithInitArgs(
+            #ref_policy_cls = RayClassWithInitArgs(
+            #    self.role_worker_mapping[Role.RefPolicy],
+            #    config=self.config.actor_rollout_ref,
+            #    role='ref')
+            ref_policy_cls = RayClassWithInitArgsAndSched(
                 self.role_worker_mapping[Role.RefPolicy],
                 config=self.config.actor_rollout_ref,
-                role='ref')
+                role='ref',
+                target_node_id=target_node_id,
+            )
             self.resource_pool_to_cls[resource_pool]['ref'] = ref_policy_cls
 
         # create a reward model if reward_fn is None
@@ -845,21 +911,25 @@ class RayPPOTrainer(object):
             self.critic_wg.init_model()
         print("Critic model initialized.")
         print("=" * 100)
+        print('*' * 100)
         if self.use_reference_policy:
             self.ref_policy_wg = all_wg['ref']
             self.ref_policy_wg.init_model()
         print("Reference policy initialized.")
         print("=" * 100)
+        print('*' * 100)
         if self.use_rm:
             self.rm_wg = all_wg['rm']
             self.rm_wg.init_model()
         print("Reward model initialized.")
         print("=" * 100)
+        print('*' * 100)
         # we should create rollout at the end so that vllm can have a better estimation of kv cache memory
         self.actor_rollout_wg = all_wg['actor_rollout']
         self.actor_rollout_wg.init_model()
         print("Actor rollout initialized.")
         print("=" * 100)
+        print('*' * 100)
 
     def _save_checkpoint(self):
         # path: given_path + `/global_step_{global_steps}` + `/actor`

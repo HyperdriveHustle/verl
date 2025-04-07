@@ -29,10 +29,15 @@ def concat_dict_to_str(dict: Dict, step):
 
 class LocalLogger:
 
-    def __init__(self, remote_logger=None, enable_wandb=False, print_to_console=False):
+    def __init__(self,
+                 remote_logger=None,
+                 enable_wandb=False,
+                 print_to_console=False):
         self.print_to_console = print_to_console
         if print_to_console:
-            print('Using LocalLogger is deprecated. The constructor API will change ')
+            print(
+                'Using LocalLogger is deprecated. The constructor API will change '
+            )
 
     def flush(self):
         pass

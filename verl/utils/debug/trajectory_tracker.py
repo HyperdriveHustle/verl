@@ -58,7 +58,8 @@ class TrajectoryTracker():
 
     def dump(self, data: io.BytesIO, name):
         # get a temp file and write to it
-        self.handle.append(save_to_hdfs.remote(data, name, self.hdfs_dir, self.verbose))
+        self.handle.append(
+            save_to_hdfs.remote(data, name, self.hdfs_dir, self.verbose))
 
     def wait_for_hdfs(self):
         while len(self.handle) != 0:
@@ -80,8 +81,10 @@ def get_trajectory_tracker():
     hdfs_dir = os.getenv('VERL_TRACKER_HDFS_DIR', default=None)
     verbose = os.getenv('VERL_TRACKER_VERBOSE', default='0') == '1'
     assert hdfs_dir is not None
-    tracker = TrajectoryTracker.options(name="global_tracker", get_if_exists=True,
-                                        lifetime="detached").remote(hdfs_dir, verbose)
+    tracker = TrajectoryTracker.options(name="global_tracker",
+                                        get_if_exists=True,
+                                        lifetime="detached").remote(
+                                            hdfs_dir, verbose)
     return tracker
 
 

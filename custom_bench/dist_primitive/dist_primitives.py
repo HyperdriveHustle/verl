@@ -24,7 +24,7 @@ def main():
     print(f'worker: {rank=}, {local_rank=}, {world_size=}')
     dist.barrier()
 
-    x = torch.arange(rank*10, (rank+1)*10, dtype=torch.float32)
+    x = torch.arange(rank * 10, (rank + 1) * 10, dtype=torch.float32)
     if rank == 0:
         print('init')
         print(x)
@@ -36,7 +36,7 @@ def main():
         print(x)
     dist.barrier()
 
-    x = torch.arange(rank*10, (rank+1)*10, dtype=torch.float32)
+    x = torch.arange(rank * 10, (rank + 1) * 10, dtype=torch.float32)
     out_buf = [torch.zeros((10, )) for _ in range(4)]
     dist.all_gather(out_buf, x)
     if rank == 0 or rank == 1:
@@ -53,8 +53,9 @@ def main():
     #     print(x)
     # dist.barrier()
 
-    x = torch.arange(rank*4, (rank+1)*4, dtype=torch.float32)
-    out_buf = torch.zeros(1, dtype=torch.float32)  # each rank has 4 elem, reduce to 1
+    x = torch.arange(rank * 4, (rank + 1) * 4, dtype=torch.float32)
+    out_buf = torch.zeros(
+        1, dtype=torch.float32)  # each rank has 4 elem, reduce to 1
     dist.reduce_scatter_tensor(out_buf, x)
     if rank == 0:
         print('rs-tensor')
@@ -75,24 +76,21 @@ def main():
     #     print(out_buf)
 
     x = torch.arange(4) + rank * 4
-    out_buf = torch.zeros(4, dtype=torch.int64)  
+    out_buf = torch.zeros(4, dtype=torch.int64)
     dist.all_to_all_single(out_buf, x)
-    if rank == 0 :
+    if rank == 0:
         print('all to all single')
         print(x)
         print(out_buf)
 
-
     # 2D tensor all-to-all single make sense?
-    x = torch.arange(0,12).reshape(4, 3)
+    x = torch.arange(0, 12).reshape(4, 3)
     out_buf = torch.zeros_like(x)
     dist.all_to_all_single(out_buf, x)
-    if rank == 0 :
+    if rank == 0:
         print('all to all single2')
         print(x)
         print(out_buf)
-    
-    
 
     dist.destroy_process_group()
 

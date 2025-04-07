@@ -21,12 +21,14 @@ import torch
 import torch.distributed
 import torch.nn as nn
 
-from vllm.config import (CacheConfig, DeviceConfig, LoRAConfig, ParallelConfig, SchedulerConfig, VisionLanguageConfig)
+from vllm.config import (CacheConfig, DeviceConfig, LoRAConfig, ParallelConfig,
+                         SchedulerConfig, VisionLanguageConfig)
 from vllm.model_executor import set_random_seed
 from vllm.sequence import SamplerOutput, ExecuteModelRequest
 from vllm.worker.cache_engine import CacheEngine
 from vllm.distributed.device_communicators import pynccl_utils
-from vllm.distributed.device_communicators.custom_all_reduce import (init_custom_ar)
+from vllm.distributed.device_communicators.custom_all_reduce import (
+    init_custom_ar)
 # TODO(sgm): check why vllm has similar file in vllm.model_executor.parallel_utils.parallel_state
 from vllm.distributed import get_tensor_model_parallel_cpu_group, init_distributed_environment, get_tensor_model_parallel_group
 from vllm.worker.worker import Worker, _check_if_gpu_supports_dtype
@@ -49,7 +51,7 @@ class Worker(Worker):
 
     def __init__(
         self,
-        model: Union[nn.Module, Dict], # model itself or its parameter dict
+        model: Union[nn.Module, Dict],  # model itself or its parameter dict
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
@@ -80,7 +82,8 @@ class Worker(Worker):
 
         self.vision_language_config = vision_language_config
         if self.vision_language_config:
-            assert not self.lora_config, ("To be tested: vision language model with LoRA settings.")
+            assert not self.lora_config, (
+                "To be tested: vision language model with LoRA settings.")
 
         self.model_runner = ModelRunner(
             model,
@@ -113,7 +116,8 @@ class Worker(Worker):
             os.environ["TORCH_NCCL_AVOID_RECORD_STREAMS"] = "1"
 
             # NOTE(sgm): Modify for verl, Env vars will be set by TORCHRUN.
-            self.rank = self.rank if self.rank is not None else int(os.getenv("RANK", "-1"))
+            self.rank = self.rank if self.rank is not None else int(
+                os.getenv("RANK", "-1"))
             local_rank = int(os.getenv("LOCAL_RANK", "0"))
             self.device = torch.device(f"cuda:{local_rank}")
             if self.rank < 0:
@@ -129,10 +133,12 @@ class Worker(Worker):
             torch.cuda.empty_cache()
             self.init_gpu_memory = torch.cuda.mem_get_info()[0]
         else:
-            raise RuntimeError(f"Not support device type: {self.device_config.device}")
+            raise RuntimeError(
+                f"Not support device type: {self.device_config.device}")
 
         # Initialize the distributed environment.
-        init_worker_distributed_environment(self.parallel_config, self.rank, self.distributed_init_method,
+        init_worker_distributed_environment(self.parallel_config, self.rank,
+                                            self.distributed_init_method,
                                             self.local_rank)
         # Set random seed.
         set_random_seed(self.model_config.seed)
@@ -166,16 +172,20 @@ class Worker(Worker):
         free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
         peak_memory = total_gpu_memory - free_gpu_memory
 
-        assert peak_memory > 0, ("Error in memory profiling. This happens when the GPU memory was "
-                                 "not properly cleaned up before initializing the vLLM instance.")
+        assert peak_memory > 0, (
+            "Error in memory profiling. This happens when the GPU memory was "
+            "not properly cleaned up before initializing the vLLM instance.")
 
         cache_block_size = self.get_cache_block_size_bytes()
 
         # NOTE(sgm) use the remaining memory
-        num_gpu_blocks = int((free_gpu_memory * self.cache_config.gpu_memory_utilization) // cache_block_size)
+        num_gpu_blocks = int(
+            (free_gpu_memory * self.cache_config.gpu_memory_utilization) //
+            cache_block_size)
         # num_gpu_blocks = int((total_gpu_memory * self.cache_config.gpu_memory_utilization - peak_memory) // cache_block_size)
 
-        num_cpu_blocks = int(self.cache_config.swap_space_bytes // cache_block_size)
+        num_cpu_blocks = int(self.cache_config.swap_space_bytes //
+                             cache_block_size)
         num_gpu_blocks = max(num_gpu_blocks, 0)
         num_cpu_blocks = max(num_cpu_blocks, 0)
         if self.model_runner.lora_manager:
@@ -206,7 +216,10 @@ class Worker(Worker):
         self.gpu_cache = None
 
     @torch.inference_mode()
-    def execute_model(self, execute_model_req: Optional[ExecuteModelRequest] = None) -> List[SamplerOutput]:
+    def execute_model(
+        self,
+        execute_model_req: Optional[ExecuteModelRequest] = None
+    ) -> List[SamplerOutput]:
 
         if execute_model_req is None:
             seq_group_metadata_list = None
@@ -227,7 +240,8 @@ class Worker(Worker):
         if num_seq_groups == 0:
             return []
 
-        output = self.model_runner.execute_model(seq_group_metadata_list, self.gpu_cache)
+        output = self.model_runner.execute_model(seq_group_metadata_list,
+                                                 self.gpu_cache)
 
         # Worker only supports single-step execution. Wrap the output in a list
         # to conform to interface.
@@ -262,10 +276,12 @@ def init_worker_distributed_environment(
 ) -> None:
     """Initialize the distributed environment."""
     # NOTE(sgm) use tcp://localhost:xxxx will hang in HF setting without megatron
-    init_distributed_environment(parallel_config.world_size, rank, distributed_init_method, local_rank)
+    init_distributed_environment(parallel_config.world_size, rank,
+                                 distributed_init_method, local_rank)
 
-    ensure_model_parallel_initialized(tensor_model_parallel_size=parallel_config.tensor_parallel_size,
-                                      pipeline_model_parallel_size=parallel_config.pipeline_parallel_size)
+    ensure_model_parallel_initialized(
+        tensor_model_parallel_size=parallel_config.tensor_parallel_size,
+        pipeline_model_parallel_size=parallel_config.pipeline_parallel_size)
 
     # TODO(sgm): check whether need this
     # if pynccl_utils.is_initialized():

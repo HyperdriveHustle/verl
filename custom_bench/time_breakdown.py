@@ -25,14 +25,18 @@ values = [time_breakdown[label][0] for label in labels]
 total_time = sum(values)
 
 # Verify the sum of breakdown matches the total step time (considering minor floating point differences)
-assert abs(sum(values) - total_time) < 1.0, "The sum of breakdown values does not match the total step time."
+assert abs(
+    sum(values) - total_time
+) < 1.0, "The sum of breakdown values does not match the total step time."
 
 # Create the pie chart with absolute values and percentages in labels
 plt.figure(figsize=(8, 8))
 wedges, texts, autotexts = plt.pie(
-    values, labels=labels, autopct=lambda p: f'{p:.1f}%\n({p * total_time / 100:.2f})',
-    startangle=140, colors=plt.cm.Paired.colors
-)
+    values,
+    labels=labels,
+    autopct=lambda p: f'{p:.1f}%\n({p * total_time / 100:.2f})',
+    startangle=140,
+    colors=plt.cm.Paired.colors)
 
 # Improve label visibility
 for text in texts + autotexts:

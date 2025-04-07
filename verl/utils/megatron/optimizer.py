@@ -34,8 +34,9 @@ def get_megatron_optimizer(
         overlap_param_gather=False  # add for verl
 ):
     # Base optimizer.
-    return get_megatron_optimizer_native(config=config,
-                                         model_chunks=model,
-                                         no_weight_decay_cond=no_weight_decay_cond,
-                                         scale_lr_cond=scale_lr_cond,
-                                         lr_mult=lr_mult)
+    return get_megatron_optimizer_native(
+        config=config,
+        model_chunks=model,
+        no_weight_decay_cond=no_weight_decay_cond,
+        scale_lr_cond=scale_lr_cond,
+        lr_mult=lr_mult)

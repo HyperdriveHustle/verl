@@ -60,8 +60,9 @@ class FlopsCounter:
 
     def __init__(self, config: PretrainedConfig):
         if not config.model_type in VALID_CONFIG_TYPE:
-            print(f"Only support config type of {VALID_CONFIG_TYPE}, but got {self.config.model_type}. "
-                  f"MFU will always be zero.")
+            print(
+                f"Only support config type of {VALID_CONFIG_TYPE}, but got {self.config.model_type}. "
+                f"MFU will always be zero.")
 
         self.estimate_func = {
             'qwen2': self._estimate_qwen2_flops,
@@ -90,10 +91,12 @@ class FlopsCounter:
         # non-attn per layer parm
         # Qwen2/LLama use SwiGelu, gate, having up and down linear layer in mlp
         mlp_N = hidden_size * intermediate_size * 3
-        attn_linear_N = hidden_size * (q_size + k_size + v_size + num_attention_heads * head_dim)
+        attn_linear_N = hidden_size * (q_size + k_size + v_size +
+                                       num_attention_heads * head_dim)
         emd_and_lm_head_N = vocab_size * hidden_size * 2
         # non-attn all_layer parm
-        dense_N = (mlp_N + attn_linear_N) * num_hidden_layers + emd_and_lm_head_N
+        dense_N = (mlp_N +
+                   attn_linear_N) * num_hidden_layers + emd_and_lm_head_N
         # non-attn all_layer & all_token fwd & bwd flops
         dense_N_flops = 6 * dense_N * tokens_sum
 
@@ -121,7 +124,8 @@ class FlopsCounter:
             promised_flops (float): The expected FLOPS of the current device.
         """
         tokens_sum = sum(batch_seqlens)
-        func = self.estimate_func.get(self.config.model_type, self._estimate_unknown_flops)
+        func = self.estimate_func.get(self.config.model_type,
+                                      self._estimate_unknown_flops)
         estimated_flops = func(tokens_sum, batch_seqlens, delta_time)
         promised_flops = get_device_flops()
         return estimated_flops, promised_flops

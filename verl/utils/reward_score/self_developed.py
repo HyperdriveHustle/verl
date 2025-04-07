@@ -1,13 +1,15 @@
 import math
 
+
 def compute_score(solution_str, ground_truth):
     # print(type(solution_str),solution_str)
     # print("="*100)
     # scores, sub_reward = [], []
     # retval = 0.
-    score=0
+    score = 0
     try:
-        format_score, answer_correct, cosine_reward, extracted_ans = evaluate_answer(solution_str, solution_str)
+        format_score, answer_correct, cosine_reward, extracted_ans = evaluate_answer(
+            solution_str, solution_str)
         # 格式完全不对
         if format_score == 0:
             score = -1
@@ -24,19 +26,22 @@ def compute_score(solution_str, ground_truth):
                 score += cosine_reward
 
         # print({
-        #     "score": score, 
-        #     "gt": ground_truth, 
+        #     "score": score,
+        #     "gt": ground_truth,
         #     "extracted_ans": extracted_ans
         # })
     except Exception as e:
         print(e)
     return score
 
+
 def evaluate_answer(ans, ground_truth, is_base=True):
     '''判断答案和 gt 是否匹配'''
     # Initialize reward functions
-    cosine_scaled_reward = get_cosine_scaled_reward(min_value_correct=0.5, max_value_correct=1.0, max_len=2048)
-    
+    cosine_scaled_reward = get_cosine_scaled_reward(min_value_correct=0.5,
+                                                    max_value_correct=1.0,
+                                                    max_len=2048)
+
     extracted_ans = None
     follow_format, answer_with_boxed, answer_correct = 0, 0, 0
     # format_pattern = r'^<think>.*?<\/think>\s*<answer>.*?<\/answer>$'
@@ -45,10 +50,11 @@ def evaluate_answer(ans, ground_truth, is_base=True):
     ans = ans[1:]
     if len(ans) == 1: ans = ans[0]
     else: ans = "assistant:".join(ans)
-    
+
     ans = ans.strip()
     # 0. 对于 base model 先判断是否遵循指令
-    if ans.startswith("<think>") and ans.endswith("</answer>") and "<answer>" in ans  and "</think>" in ans:
+    if ans.startswith("<think>") and ans.endswith(
+            "</answer>") and "<answer>" in ans and "</think>" in ans:
         follow_format = 1
     print(f">> follow_format = {follow_format}\n>> ans = {ans}")
     # 必须要 follow format 才可以继续训
@@ -64,11 +70,11 @@ def evaluate_answer(ans, ground_truth, is_base=True):
         if extracted_ans is not None:
             extracted_ans = remove_unnecessary(extracted_ans.strip())
             ground_truth = remove_unnecessary(ground_truth.strip())
-            
+
             if len(extracted_ans) > 0:
                 ans_set = parse_set(extracted_ans)
                 gt_set = parse_set(ground_truth)
-            
+
                 # 完全匹配
                 if ans_set == gt_set:
                     answer_correct = 1
@@ -80,16 +86,21 @@ def evaluate_answer(ans, ground_truth, is_base=True):
                         answer_correct = 1
                 except:
                     pass
-        
+
     # 添加 cos 长度惩罚
     cosine_reward = cosine_scaled_reward(ans, answer_correct == 1)
     return follow_format + answer_with_boxed, answer_correct, cosine_reward, extracted_ans
 
-def get_cosine_scaled_reward(min_value_wrong: float = -1.0, max_value_wrong: float = -0.5,
-                              min_value_correct: float = 0.5, max_value_correct: float = 1.0, max_len: int = 1000):
+
+def get_cosine_scaled_reward(min_value_wrong: float = -1.0,
+                             max_value_wrong: float = -0.5,
+                             min_value_correct: float = 0.5,
+                             max_value_correct: float = 1.0,
+                             max_len: int = 1000):
     """
     计算基于余弦调度的长度奖励
     """
+
     def cosine_scaled_reward(content, is_correct: bool) -> float:
         gen_len = len(content.split())
         progress = gen_len / max_len
@@ -106,6 +117,7 @@ def get_cosine_scaled_reward(min_value_wrong: float = -1.0, max_value_wrong: flo
         return reward
 
     return cosine_scaled_reward
+
 
 def match_last_box_content(s):
     '''取出 \box{} 里面的内容

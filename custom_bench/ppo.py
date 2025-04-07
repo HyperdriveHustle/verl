@@ -14,7 +14,7 @@
 """
 Note that we don't combine the main with ray_trainer as ray_trainer is used by other main.
 """
-from verl.trainer.ppo.ray_trainer import RayPPOTrainer
+from verl.trainer.ppo.ray_trainer_with_sched import RayPPOTrainer
 
 import ray
 import hydra
@@ -28,8 +28,14 @@ def main(config):
 def run_ppo(config, compute_score=None):
     if not ray.is_initialized():
         # this is for local ray cluster
-        ray.init(runtime_env={'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN'}})
+        ray.init(runtime_env={
+            'env_vars': {
+                'TOKENIZERS_PARALLELISM': 'true',
+                'NCCL_DEBUG': 'WARN'
+            }
+        })
     ray.get(main_task.remote(config, compute_score))
+
 
 @ray.remote(num_cpus=1)  # please make sure main_task is not scheduled on head
 def main_task(config, compute_score=None):
@@ -37,7 +43,8 @@ def main_task(config, compute_score=None):
     # print initial config
     from pprint import pprint
     from omegaconf import OmegaConf
-    pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
+    pprint(OmegaConf.to_container(
+        config, resolve=True))  # resolve=True will eval symbol values
     OmegaConf.resolve(config)
 
     # download the checkpoint from hdfs
@@ -46,7 +53,8 @@ def main_task(config, compute_score=None):
     # instantiate tokenizer
     from verl.utils import hf_tokenizer, hf_processor
     tokenizer = hf_tokenizer(local_path)
-    processor = hf_processor(local_path, use_fast=True)  # used for multimodal LLM, could be none
+    processor = hf_processor(
+        local_path, use_fast=True)  # used for multimodal LLM, could be none
 
     # define worker classes
     if config.actor_rollout_ref.actor.strategy == 'fsdp':
@@ -72,14 +80,15 @@ def main_task(config, compute_score=None):
         Role.RefPolicy: ray.remote(ActorRolloutRefWorker)
     }
 
-    global_pool_id = 'global_pool'
+    a800_pool = 'a800_pool'
     resource_pool_spec = {
-        global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
+        # a800_pool: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
+        a800_pool: [8] * 1,
     }
     mapping = {
-        Role.ActorRollout: global_pool_id,
-        Role.Critic: global_pool_id,
-        Role.RefPolicy: global_pool_id,
+        Role.ActorRollout: a800_pool,
+        Role.Critic: a800_pool,
+        Role.RefPolicy: a800_pool,
     }
 
     # we should adopt a multi-source reward function here
@@ -89,6 +98,7 @@ def main_task(config, compute_score=None):
     # - finally, we combine all the rewards together
     # - The reward type depends on the tag of the data
     if config.reward_model.enable:
+        assert False
         if config.reward_model.strategy == 'fsdp':
             from verl.workers.fsdp_workers import RewardModelWorker
         elif config.reward_model.strategy == 'megatron':
@@ -107,12 +117,17 @@ def main_task(config, compute_score=None):
         reward_manager_cls = PrimeRewardManager
     else:
         raise NotImplementedError
-    reward_fn = reward_manager_cls(tokenizer=tokenizer, num_examine=0, compute_score=compute_score)
+    reward_fn = reward_manager_cls(tokenizer=tokenizer,
+                                   num_examine=0,
+                                   compute_score=compute_score)
 
     # Note that we always use function-based RM for validation
-    val_reward_fn = reward_manager_cls(tokenizer=tokenizer, num_examine=1, compute_score=compute_score)
+    val_reward_fn = reward_manager_cls(tokenizer=tokenizer,
+                                       num_examine=1,
+                                       compute_score=compute_score)
 
-    resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
+    resource_pool_manager = ResourcePoolManager(
+        resource_pool_spec=resource_pool_spec, mapping=mapping)
     trainer = RayPPOTrainer(config=config,
                             tokenizer=tokenizer,
                             processor=processor,

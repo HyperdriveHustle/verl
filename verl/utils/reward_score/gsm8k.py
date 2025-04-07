@@ -25,7 +25,9 @@ def extract_solution(solution_str, method='strict'):
             final_answer = None
         else:
             final_answer = solution.group(0)
-            final_answer = final_answer.split('#### ')[1].replace(',', '').replace('$', '')
+            final_answer = final_answer.split('#### ')[1].replace(',',
+                                                                  '').replace(
+                                                                      '$', '')
     elif method == 'flexible':
         answer = re.findall("(\\-?[0-9\\.\\,]+)", solution_str)
         final_answer = None
@@ -41,7 +43,11 @@ def extract_solution(solution_str, method='strict'):
     return final_answer
 
 
-def compute_score(solution_str, ground_truth, method='strict', format_score=0., score=1.):
+def compute_score(solution_str,
+                  ground_truth,
+                  method='strict',
+                  format_score=0.,
+                  score=1.):
     """The scoring function for GSM8k.
 
     Reference: Trung, Luong, et al. "Reft: Reasoning with reinforced fine-tuning." Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers). 2024.

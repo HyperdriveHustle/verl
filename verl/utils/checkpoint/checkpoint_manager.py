@@ -40,8 +40,8 @@ class BaseCheckpointManager:
     """
 
     def __init__(self, model: FSDP, optimizer: torch.optim.Optimizer,
-                 lr_scheduler: torch.optim.lr_scheduler.LRScheduler, processing_class: Union[PreTrainedTokenizer,
-                                                                                             ProcessorMixin]):
+                 lr_scheduler: torch.optim.lr_scheduler.LRScheduler,
+                 processing_class: Union[PreTrainedTokenizer, ProcessorMixin]):
         self.previous_global_step = None
         self.previous_save_local_path = None
 
@@ -65,7 +65,8 @@ class BaseCheckpointManager:
             return
 
         abs_path = os.path.abspath(self.previous_save_local_path)
-        print(f'Checkpoint manager remove previous save local path: {abs_path}')
+        print(
+            f'Checkpoint manager remove previous save local path: {abs_path}')
         if not os.path.exists(abs_path):
             return
 

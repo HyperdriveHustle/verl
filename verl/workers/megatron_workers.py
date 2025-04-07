@@ -87,8 +87,10 @@ class ActorRolloutRefWorker(MegatronWorker):
             if self.config.actor.megatron.sequence_parallel:
                 os.environ['CUDA_DEVICE_MAX_CONNECTIONS'] = '1'
             mpu.initialize_model_parallel(
-                tensor_model_parallel_size=self.config.actor.megatron.tensor_model_parallel_size,
-                pipeline_model_parallel_size=self.config.actor.megatron.pipeline_model_parallel_size,
+                tensor_model_parallel_size=self.config.actor.megatron.
+                tensor_model_parallel_size,
+                pipeline_model_parallel_size=self.config.actor.megatron.
+                pipeline_model_parallel_size,
                 virtual_pipeline_model_parallel_size=None,
                 pipeline_model_parallel_split_rank=None,
                 use_sharp=False,
@@ -100,10 +102,16 @@ class ActorRolloutRefWorker(MegatronWorker):
         set_random_seed(seed=self.config.actor.megatron.seed)
 
         self.role = role
-        assert self.role in ['actor', 'rollout', 'ref', 'actor_rollout', 'actor_rollout_ref']
+        assert self.role in [
+            'actor', 'rollout', 'ref', 'actor_rollout', 'actor_rollout_ref'
+        ]
 
-        self._is_actor = self.role in ['actor', 'actor_rollout', 'actor_rollout_ref']
-        self._is_rollout = self.role in ['rollout', 'actor_rollout', 'actor_rollout_ref']
+        self._is_actor = self.role in [
+            'actor', 'actor_rollout', 'actor_rollout_ref'
+        ]
+        self._is_rollout = self.role in [
+            'rollout', 'actor_rollout', 'actor_rollout_ref'
+        ]
         self._is_ref = self.role in ['ref', 'actor_rollout_ref']
 
         # TODO(sgm): Currently, we only support reference model param offload
@@ -115,21 +123,29 @@ class ActorRolloutRefWorker(MegatronWorker):
         # normalize config
         if self._is_actor and self._is_rollout:
             self.config.actor.ppo_mini_batch_size *= self.config.rollout.n
-            self.config.actor.ppo_mini_batch_size //= mpu.get_data_parallel_world_size()
+            self.config.actor.ppo_mini_batch_size //= mpu.get_data_parallel_world_size(
+            )
             if self.config.actor.get('ppo_micro_batch_size', None):
-                self.config.actor.ppo_micro_batch_size //= mpu.get_data_parallel_world_size()
-                self.config.rollout.log_prob_micro_batch_size //= mpu.get_data_parallel_world_size()
+                self.config.actor.ppo_micro_batch_size //= mpu.get_data_parallel_world_size(
+                )
+                self.config.rollout.log_prob_micro_batch_size //= mpu.get_data_parallel_world_size(
+                )
                 self.config.actor.ppo_micro_batch_size_per_gpu = self.config.actor.ppo_micro_batch_size
                 self.config.rollout.log_prob_micro_batch_size_per_gpu = self.config.rollout.log_prob_micro_batch_size
 
-            self._is_offload_param = self.config.actor.get('param_offload', False)
-            self._is_offload_grad = self.config.actor.get('grad_offload', False)
-            self._is_offload_optimizer = self.config.actor.get('optimizer_offload', False)
+            self._is_offload_param = self.config.actor.get(
+                'param_offload', False)
+            self._is_offload_grad = self.config.actor.get(
+                'grad_offload', False)
+            self._is_offload_optimizer = self.config.actor.get(
+                'optimizer_offload', False)
         elif self._is_ref:
             if self.config.ref.get('ppo_micro_batch_size', None):
-                self.config.ref.log_prob_micro_batch_size //= mpu.get_data_parallel_world_size()
+                self.config.ref.log_prob_micro_batch_size //= mpu.get_data_parallel_world_size(
+                )
                 self.config.ref.ppo_micro_batch_size_per_gpu = self.config.ref.ppo_micro_batch_size
-            self._is_offload_param = self.config.ref.get('param_offload', False)
+            self._is_offload_param = self.config.ref.get(
+                'param_offload', False)
 
     def _build_model_optimizer(self,
                                model_path,
@@ -158,7 +174,8 @@ class ActorRolloutRefWorker(MegatronWorker):
             'pad_token_id': self.tokenizer.pad_token_id,
         }
         override_config_kwargs.update(override_model_config)
-        update_model_config(actor_model_config, override_config_kwargs=override_config_kwargs)
+        update_model_config(actor_model_config,
+                            override_config_kwargs=override_config_kwargs)
 
         if self.rank == 0:
             print(f'Model config after override: {actor_model_config}')
@@ -166,16 +183,19 @@ class ActorRolloutRefWorker(MegatronWorker):
         def megatron_actor_model_provider(pre_process, post_process):
             from verl.utils.model import get_parallel_model_from_config
             # vpp is not supported yet because it will hang for some reason. Need debugging
-            vpp_rank = mpu.get_virtual_pipeline_model_parallel_rank()  # this will be set inside get_model
+            vpp_rank = mpu.get_virtual_pipeline_model_parallel_rank(
+            )  # this will be set inside get_model
             # this_megatron_config = copy.deepcopy(megatron_config)
             # this_megatron_config.virtual_pipeline_model_parallel_rank = vpp_rank
-            share_embeddings_and_output_weights = getattr(actor_model_config, "tie_word_embeddings", False)
+            share_embeddings_and_output_weights = getattr(
+                actor_model_config, "tie_word_embeddings", False)
             parallel_model = get_parallel_model_from_config(
                 config=actor_model_config,
                 megatron_config=megatron_config,
                 pre_process=pre_process,
                 post_process=post_process,
-                share_embeddings_and_output_weights=share_embeddings_and_output_weights,
+                share_embeddings_and_output_weights=
+                share_embeddings_and_output_weights,
                 value=False)
             parallel_model.cuda()
             return parallel_model
@@ -183,43 +203,49 @@ class ActorRolloutRefWorker(MegatronWorker):
         # Step 3: initialize the megatron model
         if self._is_actor and self._is_rollout:
             # Initialize the 3D HybridEngine
-            hybrid_engine = AllGatherPPModel(model_provider=megatron_actor_model_provider)
+            hybrid_engine = AllGatherPPModel(
+                model_provider=megatron_actor_model_provider)
             # Fetch the model at current rank
             actor_module = hybrid_engine.this_rank_models
             if isinstance(actor_module, nn.ModuleList):
                 actor_module = [actor_module[0]]
             if self.config.actor.load_weight:
-                load_megatron_model_weights(self.config,
-                                            actor_model_config,
-                                            actor_module,
-                                            params_dtype=megatron_config.params_dtype,
-                                            is_value_model=False)
+                load_megatron_model_weights(
+                    self.config,
+                    actor_model_config,
+                    actor_module,
+                    params_dtype=megatron_config.params_dtype,
+                    is_value_model=False)
 
             if self.rank == 0:
                 print_model_size(actor_module[0])
             log_gpu_memory_usage('After AllGatherPPModel init', logger=logger)
         elif self._is_ref:
-            print(f'self.config.ref.load_weight: {self.config.ref.load_weight}')
-            ref_module = get_model(model_provider_func=megatron_actor_model_provider,
-                                   model_type=ModelType.encoder_or_decoder,
-                                   wrap_with_ddp=False)
+            print(
+                f'self.config.ref.load_weight: {self.config.ref.load_weight}')
+            ref_module = get_model(
+                model_provider_func=megatron_actor_model_provider,
+                model_type=ModelType.encoder_or_decoder,
+                wrap_with_ddp=False)
             # ref_module = nn.ModuleList(ref_module)
 
             if self.config.ref.load_weight:  # should align with the actor:
                 assert self.config.actor.load_weight == self.config.ref.load_weight
                 print(f'load ref weight start')
-                load_megatron_model_weights(self.config,
-                                            actor_model_config,
-                                            ref_module,
-                                            params_dtype=megatron_config.params_dtype,
-                                            is_value_model=False)
+                load_megatron_model_weights(
+                    self.config,
+                    actor_model_config,
+                    ref_module,
+                    params_dtype=megatron_config.params_dtype,
+                    is_value_model=False)
             log_gpu_memory_usage('After ref module init', logger=logger)
             return ref_module, actor_model_config
 
         # TODO: add more optimizer args into config
         if self._is_actor:
             optim_config = init_megatron_optim_config(optim_config)
-            actor_optimizer = get_megatron_optimizer(model=actor_module, config=optim_config)
+            actor_optimizer = get_megatron_optimizer(model=actor_module,
+                                                     config=optim_config)
         else:
             optim_config = None
             actor_optimizer = None
@@ -238,9 +264,11 @@ class ActorRolloutRefWorker(MegatronWorker):
             # we will reorganize their weight format when resharding from actor to rollout.
             layer_name_mapping = {
                 "qkv_layer_name":
-                    self.config.rollout.layer_name_map.get("qkv_layer_name", "qkv"),
+                self.config.rollout.layer_name_map.get("qkv_layer_name",
+                                                       "qkv"),
                 "gate_proj_layer_name":
-                    self.config.rollout.layer_name_map.get("gate_proj_layer_name", "linear_fc1.weight"),
+                self.config.rollout.layer_name_map.get("gate_proj_layer_name",
+                                                       "linear_fc1.weight"),
             }
 
             # reshard the weight partition from actor to rollout to initialize the rollout class
@@ -251,25 +279,30 @@ class ActorRolloutRefWorker(MegatronWorker):
             # obtain name to parameters in pp/vpp
             params = self.hybrid_engine.get_all_params()
             # update the param name for the
-            params = normalize_pp_vpp_params(params=params,
-                                             num_hidden_layers=self.actor_model_config.num_hidden_layers,
-                                             layer_name='layers')
+            params = normalize_pp_vpp_params(
+                params=params,
+                num_hidden_layers=self.actor_model_config.num_hidden_layers,
+                layer_name='layers')
             assert vllm_mode == 'customized', "Support for vllm>=0.7 for Megatron-LM backend has not been implemented yet."
-            rollout = vLLMRollout(actor_module=params,
-                                  config=self.config.rollout,
-                                  tokenizer=self.tokenizer,
-                                  model_hf_config=self.actor_model_config,
-                                  train_tp=mpu.get_tensor_model_parallel_world_size())
+            rollout = vLLMRollout(
+                actor_module=params,
+                config=self.config.rollout,
+                tokenizer=self.tokenizer,
+                model_hf_config=self.actor_model_config,
+                train_tp=mpu.get_tensor_model_parallel_world_size())
             log_gpu_memory_usage('After building vllm rollout', logger=logger)
 
             # perform weight resharding between actor and rollout
-            sharding_manager = MegatronVLLMShardingManager(module=self.hybrid_engine,
-                                                           inference_engine=rollout.inference_engine,
-                                                           model_config=self.actor_model_config,
-                                                           layer_name_mapping=layer_name_mapping)
-            log_gpu_memory_usage('After building sharding manager', logger=logger)
+            sharding_manager = MegatronVLLMShardingManager(
+                module=self.hybrid_engine,
+                inference_engine=rollout.inference_engine,
+                model_config=self.actor_model_config,
+                layer_name_mapping=layer_name_mapping)
+            log_gpu_memory_usage('After building sharding manager',
+                                 logger=logger)
         else:
-            NotImplementedError('Only vllmRollout is supported with Megatron now')
+            NotImplementedError(
+                'Only vllmRollout is supported with Megatron now')
 
         return rollout, sharding_manager
 
@@ -282,17 +315,25 @@ class ActorRolloutRefWorker(MegatronWorker):
 
         from omegaconf import OmegaConf
         from verl.utils.torch_dtypes import PrecisionType
-        override_model_config = OmegaConf.to_container(self.config.model.get('override_config', OmegaConf.create()))
+        override_model_config = OmegaConf.to_container(
+            self.config.model.get('override_config', OmegaConf.create()))
         torch_dtype = torch.bfloat16
 
         megatron_config = OmegaConf.create({
-            'sequence_parallel': self.config.actor.megatron.get('sequence_parallel', True),
-            'param_dtype': PrecisionType.to_str(torch_dtype),
-            'tensor_model_parallel_size': mpu.get_tensor_model_parallel_world_size(),
-            'pipeline_model_parallel_rank': mpu.get_pipeline_model_parallel_rank(),
-            'pipeline_model_parallel_size': mpu.get_pipeline_model_parallel_world_size(),
-            'virtual_pipeline_model_parallel_rank': mpu.get_virtual_pipeline_model_parallel_rank(),
-            'virtual_pipeline_model_parallel_size': mpu.get_virtual_pipeline_model_parallel_world_size()
+            'sequence_parallel':
+            self.config.actor.megatron.get('sequence_parallel', True),
+            'param_dtype':
+            PrecisionType.to_str(torch_dtype),
+            'tensor_model_parallel_size':
+            mpu.get_tensor_model_parallel_world_size(),
+            'pipeline_model_parallel_rank':
+            mpu.get_pipeline_model_parallel_rank(),
+            'pipeline_model_parallel_size':
+            mpu.get_pipeline_model_parallel_world_size(),
+            'virtual_pipeline_model_parallel_rank':
+            mpu.get_virtual_pipeline_model_parallel_rank(),
+            'virtual_pipeline_model_parallel_size':
+            mpu.get_virtual_pipeline_model_parallel_world_size()
         })
 
         megatron_config = init_model_parallel_config(megatron_config)
@@ -312,12 +353,13 @@ class ActorRolloutRefWorker(MegatronWorker):
             )
 
         if self._is_actor:
-            self.actor = MegatronPPOActor(config=self.config.actor,
-                                          model_config=self.actor_model_config,
-                                          megatron_config=megatron_config,
-                                          actor_module=self.actor_module,
-                                          actor_optimizer=self.actor_optimizer,
-                                          actor_optimizer_config=self.actor_optim_config)
+            self.actor = MegatronPPOActor(
+                config=self.config.actor,
+                model_config=self.actor_model_config,
+                megatron_config=megatron_config,
+                actor_module=self.actor_module,
+                actor_optimizer=self.actor_optimizer,
+                actor_optimizer_config=self.actor_optim_config)
 
         if self._is_rollout:
             self.rollout, self.sharding_manager = self._build_rollout()
@@ -329,12 +371,13 @@ class ActorRolloutRefWorker(MegatronWorker):
                 optim_config=None,
                 override_model_config=override_model_config,
             )
-            self.ref_policy = MegatronPPOActor(config=self.config.ref,
-                                               model_config=self.ref_model_config,
-                                               megatron_config=megatron_config,
-                                               actor_module=self.ref_module,
-                                               actor_optimizer=None,
-                                               actor_optimizer_config=None)
+            self.ref_policy = MegatronPPOActor(
+                config=self.config.ref,
+                model_config=self.ref_model_config,
+                megatron_config=megatron_config,
+                actor_module=self.ref_module,
+                actor_optimizer=None,
+                actor_optimizer_config=None)
 
         if self._is_actor:
             self.flops_counter = FlopsCounter(self.actor_model_config)
@@ -354,8 +397,10 @@ class ActorRolloutRefWorker(MegatronWorker):
             metrics = self.actor.update_policy(dataloader=dataloader)
         delta_time = timer.last
         global_num_tokens = data.meta_info['global_token_num']
-        estimated_flops, promised_flops = self.flops_counter.estimate_flops(global_num_tokens, delta_time)
-        metrics['mfu/actor'] = estimated_flops * self.config.actor.ppo_epochs / promised_flops / self.world_size
+        estimated_flops, promised_flops = self.flops_counter.estimate_flops(
+            global_num_tokens, delta_time)
+        metrics[
+            'mfu/actor'] = estimated_flops * self.config.actor.ppo_epochs / promised_flops / self.world_size
 
         log_gpu_memory_usage('After update policy', logger=logger)
 
@@ -372,15 +417,16 @@ class ActorRolloutRefWorker(MegatronWorker):
         prompts.batch = prompts.batch.cuda()
         meta_info = {
             'eos_token_id':
-                self.generation_config.eos_token_id
-                if self.generation_config is not None else self.tokenizer.eos_token_id,
+            self.generation_config.eos_token_id if self.generation_config
+            is not None else self.tokenizer.eos_token_id,
             'pad_token_id':
-                self.generation_config.pad_token_id
-                if self.generation_config is not None else self.tokenizer.pad_token_id,
+            self.generation_config.pad_token_id if self.generation_config
+            is not None else self.tokenizer.pad_token_id,
         }
         prompts.meta_info.update(meta_info)
         with self.sharding_manager:
-            log_gpu_memory_usage('After entering sharding manager', logger=logger)
+            log_gpu_memory_usage('After entering sharding manager',
+                                 logger=logger)
 
             prompts = self.sharding_manager.preprocess_data(prompts)
             output = self.rollout.generate_sequences(prompts=prompts)
@@ -401,7 +447,9 @@ class ActorRolloutRefWorker(MegatronWorker):
 
         assert self._is_ref
         if self._is_offload_param:
-            load_megatron_param_and_grad(self.ref_module, torch.cuda.current_device(), self._is_offload_grad)
+            load_megatron_param_and_grad(self.ref_module,
+                                         torch.cuda.current_device(),
+                                         self._is_offload_grad)
 
         micro_batch_size = self.config.rollout.log_prob_micro_batch_size_per_gpu
         data.meta_info['micro_batch_size'] = micro_batch_size
@@ -410,7 +458,8 @@ class ActorRolloutRefWorker(MegatronWorker):
         output = DataProto.from_dict(tensors={'ref_log_prob': output})
         output = output.to('cpu')
         if self._is_offload_param:
-            offload_megatron_param_and_grad(self.ref_module, self._is_offload_grad)
+            offload_megatron_param_and_grad(self.ref_module,
+                                            self._is_offload_grad)
         torch.cuda.empty_cache()
         return output
 
@@ -420,7 +469,8 @@ class ActorRolloutRefWorker(MegatronWorker):
         data = data.to('cuda')
         output = data
         # we should always recompute old_log_probs when it is HybridEngine
-        output.meta_info['micro_batch_size'] = self.config.rollout.log_prob_micro_batch_size_per_gpu
+        output.meta_info[
+            'micro_batch_size'] = self.config.rollout.log_prob_micro_batch_size_per_gpu
         output.meta_info['temperature'] = self.config.rollout.temperature
         old_log_probs = self.actor.compute_log_prob(data=output)
         output.batch['old_log_probs'] = old_log_probs
@@ -464,8 +514,10 @@ class CriticWorker(MegatronWorker):
             if self.config.megatron.sequence_parallel:
                 os.environ['CUDA_DEVICE_MAX_CONNECTIONS'] = '1'
             mpu.initialize_model_parallel(
-                tensor_model_parallel_size=self.config.megatron.tensor_model_parallel_size,
-                pipeline_model_parallel_size=self.config.megatron.pipeline_model_parallel_size,
+                tensor_model_parallel_size=self.config.megatron.
+                tensor_model_parallel_size,
+                pipeline_model_parallel_size=self.config.megatron.
+                pipeline_model_parallel_size,
                 virtual_pipeline_model_parallel_size=None,
                 pipeline_model_parallel_split_rank=None,
                 use_sharp=False,
@@ -479,7 +531,8 @@ class CriticWorker(MegatronWorker):
         # normalize config
         self.config.ppo_mini_batch_size //= mpu.get_data_parallel_world_size()
         if self.config.get('ppo_micro_batch_size', None):
-            self.config.ppo_micro_batch_size //= mpu.get_data_parallel_world_size()
+            self.config.ppo_micro_batch_size //= mpu.get_data_parallel_world_size(
+            )
             self.config.ppo_micro_batch_size_per_gpu = self.config.ppo_micro_batch_size
 
         # TODO(sgm): support critic model offload
@@ -509,7 +562,8 @@ class CriticWorker(MegatronWorker):
             'pad_token_id': self.tokenizer.pad_token_id,
         }
         override_config_kwargs.update(override_model_config)
-        update_model_config(critic_model_config, override_config_kwargs=override_config_kwargs)
+        update_model_config(critic_model_config,
+                            override_config_kwargs=override_config_kwargs)
 
         if self.rank == 0:
             print(f'Model config after override: {critic_model_config}')
@@ -520,35 +574,39 @@ class CriticWorker(MegatronWorker):
             # vpp_rank = mpu.get_virtual_pipeline_model_parallel_rank()  # this will be set inside get_model
             # this_megatron_config = copy.deepcopy(megatron_config)
             # this_megatron_config.virtual_pipeline_model_parallel_rank = vpp_rank
-            parallel_model = get_parallel_model_from_config(config=critic_model_config,
-                                                            megatron_config=megatron_config,
-                                                            pre_process=pre_process,
-                                                            post_process=post_process,
-                                                            share_embeddings_and_output_weights=False,
-                                                            value=True)
+            parallel_model = get_parallel_model_from_config(
+                config=critic_model_config,
+                megatron_config=megatron_config,
+                pre_process=pre_process,
+                post_process=post_process,
+                share_embeddings_and_output_weights=False,
+                value=True)
             parallel_model.cuda()
             return parallel_model
 
         # Step 3: initialize the megatron model
-        critic_module = get_model(model_provider_func=megatron_critic_model_provider,
-                                  model_type=ModelType.encoder_or_decoder,
-                                  wrap_with_ddp=True)
+        critic_module = get_model(
+            model_provider_func=megatron_critic_model_provider,
+            model_type=ModelType.encoder_or_decoder,
+            wrap_with_ddp=True)
         # note that here critic_module will be a list to be compatible with the construction of interleaved pp (vpp).
         # but here, we do not use pp (vpp) yet. For simplicity, we remove the list
         # critic_module = nn.ModuleList(critic_module)
 
         if self.config.load_weight:
-            load_megatron_model_weights(self.config,
-                                        critic_model_config,
-                                        critic_module,
-                                        params_dtype=megatron_config.params_dtype,
-                                        is_value_model=True)
+            load_megatron_model_weights(
+                self.config,
+                critic_model_config,
+                critic_module,
+                params_dtype=megatron_config.params_dtype,
+                is_value_model=True)
         if self.rank == 0:
             print_model_size(critic_module[0])
 
         # TODO: add more optimizer args into config
         optim_config = init_megatron_optim_config(optim_config)
-        critic_optimizer = get_megatron_optimizer(model=critic_module, config=optim_config)
+        critic_optimizer = get_megatron_optimizer(model=critic_module,
+                                                  config=optim_config)
         torch.cuda.empty_cache()
         return critic_module, critic_optimizer, critic_model_config, optim_config
 
@@ -562,17 +620,25 @@ class CriticWorker(MegatronWorker):
             # This is used to import external_lib into the huggingface systems
             import importlib
             importlib.import_module(self.config.model.external_lib)
-        override_model_config = OmegaConf.to_container(self.config.model.get('override_config', OmegaConf.create()))
+        override_model_config = OmegaConf.to_container(
+            self.config.model.get('override_config', OmegaConf.create()))
         torch_dtype = torch.bfloat16
 
         megatron_config = OmegaConf.create({
-            'sequence_parallel': self.config.megatron.get('sequence_parallel', True),
-            'param_dtype': PrecisionType.to_str(torch_dtype),
-            'tensor_model_parallel_size': mpu.get_tensor_model_parallel_world_size(),
-            'pipeline_model_parallel_rank': mpu.get_pipeline_model_parallel_rank(),
-            'pipeline_model_parallel_size': mpu.get_pipeline_model_parallel_world_size(),
-            'virtual_pipeline_model_parallel_rank': mpu.get_virtual_pipeline_model_parallel_rank(),
-            'virtual_pipeline_model_parallel_size': mpu.get_virtual_pipeline_model_parallel_world_size()
+            'sequence_parallel':
+            self.config.megatron.get('sequence_parallel', True),
+            'param_dtype':
+            PrecisionType.to_str(torch_dtype),
+            'tensor_model_parallel_size':
+            mpu.get_tensor_model_parallel_world_size(),
+            'pipeline_model_parallel_rank':
+            mpu.get_pipeline_model_parallel_rank(),
+            'pipeline_model_parallel_size':
+            mpu.get_pipeline_model_parallel_world_size(),
+            'virtual_pipeline_model_parallel_rank':
+            mpu.get_virtual_pipeline_model_parallel_rank(),
+            'virtual_pipeline_model_parallel_size':
+            mpu.get_virtual_pipeline_model_parallel_world_size()
         })
 
         megatron_config = init_model_parallel_config(megatron_config)
@@ -582,12 +648,13 @@ class CriticWorker(MegatronWorker):
             megatron_config=megatron_config,
             optim_config=self.config.optim,
             override_model_config=override_model_config)
-        self.critic = MegatronPPOCritic(config=self.config,
-                                        model_config=critic_model_config,
-                                        megatron_config=megatron_config,
-                                        critic_module=critic_module,
-                                        critic_optimizer=critic_optimizer,
-                                        critic_optimizer_config=critic_optimizer_config)
+        self.critic = MegatronPPOCritic(
+            config=self.config,
+            model_config=critic_model_config,
+            megatron_config=megatron_config,
+            critic_module=critic_module,
+            critic_optimizer=critic_optimizer,
+            critic_optimizer_config=critic_optimizer_config)
         self.flops_counter = FlopsCounter(critic_model_config)
 
     @register(dispatch_mode=Dispatch.MEGATRON_COMPUTE_PROTO)
@@ -606,8 +673,10 @@ class CriticWorker(MegatronWorker):
             metrics = self.critic.update_critic(dataloader=dataloader)
         delta_time = timer.last
         global_num_tokens = data.meta_info['global_token_num']
-        estimated_flops, promised_flops = self.flops_counter.estimate_flops(global_num_tokens, delta_time)
-        metrics['mfu/critic'] = estimated_flops * self.config.ppo_epochs / promised_flops / self.world_size
+        estimated_flops, promised_flops = self.flops_counter.estimate_flops(
+            global_num_tokens, delta_time)
+        metrics[
+            'mfu/critic'] = estimated_flops * self.config.ppo_epochs / promised_flops / self.world_size
         output = DataProto(batch=None, meta_info={'metrics': metrics})
         output = output.to('cpu')
         return output
@@ -644,8 +713,10 @@ class RewardModelWorker(MegatronWorker):
             if self.config.megatron.sequence_parallel:
                 os.environ['CUDA_DEVICE_MAX_CONNECTIONS'] = '1'
             mpu.initialize_model_parallel(
-                tensor_model_parallel_size=self.config.megatron.tensor_model_parallel_size,
-                pipeline_model_parallel_size=self.config.megatron.pipeline_model_parallel_size,
+                tensor_model_parallel_size=self.config.megatron.
+                tensor_model_parallel_size,
+                pipeline_model_parallel_size=self.config.megatron.
+                pipeline_model_parallel_size,
                 virtual_pipeline_model_parallel_size=None,
                 pipeline_model_parallel_split_rank=None,
                 use_sharp=False,
@@ -661,7 +732,8 @@ class RewardModelWorker(MegatronWorker):
             self.config.micro_batch_size //= mpu.get_data_parallel_world_size()
             self.config.micro_batch_size_per_gpu = self.config.micro_batch_size
 
-    def _build_rm_model(self, model_path, megatron_config: ModelParallelConfig, override_model_config):
+    def _build_rm_model(self, model_path, megatron_config: ModelParallelConfig,
+                        override_model_config):
         from megatron.core.models.gpt.gpt_model import ModelType
         from verl.utils.model import print_model_size, update_model_config
         from verl.utils.megatron_utils import get_model
@@ -680,7 +752,8 @@ class RewardModelWorker(MegatronWorker):
             'pad_token_id': self.tokenizer.pad_token_id,
         }
         override_config_kwargs.update(override_model_config)
-        update_model_config(rm_model_config, override_config_kwargs=override_config_kwargs)
+        update_model_config(rm_model_config,
+                            override_config_kwargs=override_config_kwargs)
 
         if self.rank == 0:
             print(f'Model config after override: {rm_model_config}')
@@ -688,32 +761,36 @@ class RewardModelWorker(MegatronWorker):
         def megatron_rm_model_provider(pre_process, post_process):
             from verl.utils.model import get_parallel_model_from_config
             # vpp is not supported yet because it will hang for some reason. Need debugging
-            vpp_rank = mpu.get_virtual_pipeline_model_parallel_rank()  # this will be set inside get_model
+            vpp_rank = mpu.get_virtual_pipeline_model_parallel_rank(
+            )  # this will be set inside get_model
             # this_megatron_config = copy.deepcopy(megatron_config)
             # this_megatron_config.virtual_pipeline_model_parallel_rank = vpp_rank
-            parallel_model = get_parallel_model_from_config(config=rm_model_config,
-                                                            megatron_config=megatron_config,
-                                                            pre_process=pre_process,
-                                                            post_process=post_process,
-                                                            share_embeddings_and_output_weights=False,
-                                                            value=True)
+            parallel_model = get_parallel_model_from_config(
+                config=rm_model_config,
+                megatron_config=megatron_config,
+                pre_process=pre_process,
+                post_process=post_process,
+                share_embeddings_and_output_weights=False,
+                value=True)
             parallel_model.cuda()
             return parallel_model
 
         # Step 3: initialize the megatron model
-        reward_model = get_model(model_provider_func=megatron_rm_model_provider,
-                                 model_type=ModelType.encoder_or_decoder,
-                                 wrap_with_ddp=False)
+        reward_model = get_model(
+            model_provider_func=megatron_rm_model_provider,
+            model_type=ModelType.encoder_or_decoder,
+            wrap_with_ddp=False)
         # note that here critic_module will be a list to be compatible with the construction of interleaved pp (vpp).
         # but here, we do not use pp (vpp) yet. For simplicity, we remove the list
         # reward_model = nn.ModuleList(reward_model)
 
         if self.config.load_weight:
-            load_megatron_model_weights(self.config,
-                                        rm_model_config,
-                                        reward_model,
-                                        params_dtype=megatron_config.params_dtype,
-                                        is_value_model=True)
+            load_megatron_model_weights(
+                self.config,
+                rm_model_config,
+                reward_model,
+                params_dtype=megatron_config.params_dtype,
+                is_value_model=True)
 
         # TODO: add more optimizer args into config
         torch.cuda.empty_cache()
@@ -730,9 +807,11 @@ class RewardModelWorker(MegatronWorker):
             # This is used to import external_lib into the huggingface systems
             import importlib
             importlib.import_module(self.config.model.external_lib)
-        override_model_config = OmegaConf.to_container(self.config.model.get('override_config', OmegaConf.create()))
+        override_model_config = OmegaConf.to_container(
+            self.config.model.get('override_config', OmegaConf.create()))
 
-        sft_tokenizer_local_path = copy_to_local(self.config.model.input_tokenizer)
+        sft_tokenizer_local_path = copy_to_local(
+            self.config.model.input_tokenizer)
         sft_tokenizer = hf_tokenizer(sft_tokenizer_local_path)
         rm_tokenizer_path = self.config.model.get('rm_tokenizer', None)
         rm_tokenizer = None
@@ -743,13 +822,20 @@ class RewardModelWorker(MegatronWorker):
         torch_dtype = torch.bfloat16
 
         megatron_config = OmegaConf.create({
-            'sequence_parallel': self.config.megatron.get('sequence_parallel', True),
-            'param_dtype': PrecisionType.to_str(torch_dtype),
-            'tensor_model_parallel_size': mpu.get_tensor_model_parallel_world_size(),
-            'pipeline_model_parallel_rank': mpu.get_pipeline_model_parallel_rank(),
-            'pipeline_model_parallel_size': mpu.get_pipeline_model_parallel_world_size(),
-            'virtual_pipeline_model_parallel_rank': mpu.get_virtual_pipeline_model_parallel_rank(),
-            'virtual_pipeline_model_parallel_size': mpu.get_virtual_pipeline_model_parallel_world_size()
+            'sequence_parallel':
+            self.config.megatron.get('sequence_parallel', True),
+            'param_dtype':
+            PrecisionType.to_str(torch_dtype),
+            'tensor_model_parallel_size':
+            mpu.get_tensor_model_parallel_world_size(),
+            'pipeline_model_parallel_rank':
+            mpu.get_pipeline_model_parallel_rank(),
+            'pipeline_model_parallel_size':
+            mpu.get_pipeline_model_parallel_world_size(),
+            'virtual_pipeline_model_parallel_rank':
+            mpu.get_virtual_pipeline_model_parallel_rank(),
+            'virtual_pipeline_model_parallel_size':
+            mpu.get_virtual_pipeline_model_parallel_world_size()
         })
 
         megatron_config = init_model_parallel_config(megatron_config)

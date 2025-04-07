@@ -1,8 +1,9 @@
 from typing import Callable, List, Optional
 
 
-def generate_masked_orthogonal_rank_groups(world_size: int, parallel_size: List[int],
-                                           mask: List[bool]) -> List[List[int]]:
+def generate_masked_orthogonal_rank_groups(
+        world_size: int, parallel_size: List[int],
+        mask: List[bool]) -> List[List[int]]:
     r"""Generate orthogonal parallel groups based on the parallel size and mask.
 
     Arguments:
@@ -78,8 +79,10 @@ def generate_masked_orthogonal_rank_groups(world_size: int, parallel_size: List[
         idx = [(index // d) % s for s, d in zip(shape, stride)]
         # stride is a prefix_product result. And the value of stride[-1]
         # is not used.
-        assert (sum([x * y for x, y in zip(idx, stride[:-1])
-                    ]) == index), "idx {} with shape {} mismatch the return idx {}".format(index, shape, idx)
+        assert (sum([
+            x * y for x, y in zip(idx, stride[:-1])
+        ]) == index), "idx {} with shape {} mismatch the return idx {}".format(
+            index, shape, idx)
         return idx
 
     masked_shape = [s for s, m in zip(parallel_size, mask) if m]
@@ -110,8 +113,16 @@ def generate_masked_orthogonal_rank_groups(world_size: int, parallel_size: List[
 class RankGenerator(object):
     """A class for generating rank groups for different modes of parallelism."""
 
-    def __init__(self, tp: int, ep: int, dp: int, pp: int, cp: int, order: str, rank_offset: int = 0) -> None:
-        assert (ep == 1 or cp == 1), "Both EP and CP > 1 in not allow in one rank generator. \
+    def __init__(self,
+                 tp: int,
+                 ep: int,
+                 dp: int,
+                 pp: int,
+                 cp: int,
+                 order: str,
+                 rank_offset: int = 0) -> None:
+        assert (ep == 1 or cp == 1
+                ), "Both EP and CP > 1 in not allow in one rank generator. \
             CP is only included in default RankGenerator, and EP only in expert RankGenerator."
 
         self.tp = tp
@@ -134,8 +145,9 @@ class RankGenerator(object):
 
         for name in self.name_to_size.keys():
             if name not in order and self.name_to_size[name] != 1:
-                raise RuntimeError(f"The size of ({name}) is ({self.name_to_size[name]}), but you haven't"
-                                   f"specified the order ({self.order}).")
+                raise RuntimeError(
+                    f"The size of ({name}) is ({self.name_to_size[name]}), but you haven't"
+                    f"specified the order ({self.order}).")
             elif name not in order:
                 order = order + '-' + name
 
@@ -171,7 +183,8 @@ class RankGenerator(object):
                 the TP_DP group, the token should be 'tp-dp'.
         """
         mask = self.get_mask(self.order, token)
-        ranks = generate_masked_orthogonal_rank_groups(self.world_size, self.ordered_size, mask)
+        ranks = generate_masked_orthogonal_rank_groups(self.world_size,
+                                                       self.ordered_size, mask)
         if self.rank_offset > 0:
             for rank_group in ranks:
                 for i in range(len(rank_group)):
@@ -201,7 +214,8 @@ def main():
     cp = 2
     model_size = tp * pp * cp
     world_size = 32
-    assert world_size % (tp * pp * cp) == 0, f'{world_size=} %!=0 {tp=} {pp=} {cp=}'
+    assert world_size % (tp * pp *
+                         cp) == 0, f'{world_size=} %!=0 {tp=} {pp=} {cp=}'
     dp = world_size // (tp * pp * cp)
     print(f'{dp=}, {tp=}, {pp=}, {cp=}, {world_size=}')
 

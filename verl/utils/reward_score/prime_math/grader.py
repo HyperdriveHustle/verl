@@ -122,8 +122,9 @@ def normalize(answer, pi) -> str:
         return answer[1:]
 
     # checking if answer is <number>% or <number>\\% and removing %
-    if isinstance(answer, str) and (bool(re.match(r'^\d+(\.\d+)?%$', answer)) or
-                                    bool(re.match(r'^\d+(\.\d+)?\\%$', answer))):
+    if isinstance(answer,
+                  str) and (bool(re.match(r'^\d+(\.\d+)?%$', answer))
+                            or bool(re.match(r'^\d+(\.\d+)?\\%$', answer))):
         return answer.replace("\\%", "").replace("%", "")
 
     # handle base
@@ -186,7 +187,9 @@ def math_equal(prediction: Union[bool, float, str],
     prediction = normalize(prediction, pi)
     reference = normalize(reference, pi)
 
-    if isinstance(prediction, str) and len(prediction) > 1000:  # handling weird corner-cases
+    if isinstance(
+            prediction,
+            str) and len(prediction) > 1000:  # handling weird corner-cases
         prediction = prediction[:1000]
 
     # 0. string comparison
@@ -226,9 +229,10 @@ def math_equal(prediction: Union[bool, float, str],
     prediction = format_intervals(prediction)
 
     pred_str, ref_str = prediction, reference
-    if (prediction.startswith("[") and prediction.endswith("]") and
-            not reference.startswith("(")) or (prediction.startswith("(") and prediction.endswith(")") and
-                                               not reference.startswith("[")):
+    if (prediction.startswith("[") and prediction.endswith("]")
+            and not reference.startswith("(")) or (
+                prediction.startswith("(") and prediction.endswith(")")
+                and not reference.startswith("[")):
         pred_str = pred_str.strip("[]()")
         ref_str = ref_str.strip("[]()")
     for s in ["{", "}", "(", ")"]:
@@ -238,8 +242,9 @@ def math_equal(prediction: Union[bool, float, str],
         return True
 
     ## [a, b] vs. [c, d], return a==c and b==d
-    if (prediction and reference and prediction[0] in "([" and prediction[-1] in ")]" and
-            prediction[0] == reference[0] and prediction[-1] == reference[-1]):
+    if (prediction and reference and prediction[0] in "(["
+            and prediction[-1] in ")]" and prediction[0] == reference[0]
+            and prediction[-1] == reference[-1]):
         pred_parts = prediction[1:-1].split(",")
         ref_parts = reference[1:-1].split(",")
         if len(pred_parts) == len(ref_parts):
@@ -255,15 +260,16 @@ def math_equal(prediction: Union[bool, float, str],
 
         if len(pred_parts) == len(ref_parts):
             if all([
-                    math_equal(pred_parts[i], ref_parts[i], include_percentage, tolerance)
-                    for i in range(len(pred_parts))
+                    math_equal(pred_parts[i], ref_parts[i], include_percentage,
+                               tolerance) for i in range(len(pred_parts))
             ]):
                 return True
             else:
                 return False
 
     # if we have point == tuple of values
-    if prediction.startswith("Point") and reference[0] == "(" and reference[-1] == ")":
+    if prediction.startswith(
+            "Point") and reference[0] == "(" and reference[-1] == ")":
         pred_parts = prediction[prediction.find("(") + 1:-1].split(",")
         ref_parts = reference[1:-1].split(",")
         if len(pred_parts) == len(ref_parts):
@@ -286,18 +292,24 @@ def math_equal(prediction: Union[bool, float, str],
                     return True
         except Exception:
             pass
-    elif "\begin{pmatrix}" in reference and prediction.startswith("[") and prediction.endswith("]"):
+    elif "\begin{pmatrix}" in reference and prediction.startswith(
+            "[") and prediction.endswith("]"):
         if isinstance(eval(prediction), list):
             try:
                 pred_matrix = eval(prediction)
                 # ref_matrix_items = reference.split()[1:-1:2]
-                ref_matrix_items = reference.lstrip("\\begin{pmatrix}").lstrip("\begin{pmatrix}").rstrip(
-                    "\\end{pmatrix}").rstrip("\end{pmatrix}")
+                ref_matrix_items = reference.lstrip("\\begin{pmatrix}").lstrip(
+                    "\begin{pmatrix}").rstrip("\\end{pmatrix}").rstrip(
+                        "\end{pmatrix}")
                 ref_matrix_items = ref_matrix_items.split("\\")
-                ref_matrix_items = [row.split("&") if "&" in row else row for row in ref_matrix_items]
+                ref_matrix_items = [
+                    row.split("&") if "&" in row else row
+                    for row in ref_matrix_items
+                ]
                 if len(pred_matrix) == len(ref_matrix_items):
                     if all([
-                            math_equal(pred, ref, include_percentage, tolerance)
+                            math_equal(pred, ref, include_percentage,
+                                       tolerance)
                             for ref, pred in zip(ref_matrix_items, pred_matrix)
                     ]):
                         return True
