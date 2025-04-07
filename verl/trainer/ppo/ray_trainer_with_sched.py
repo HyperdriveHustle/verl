@@ -36,7 +36,7 @@ from verl import DataProto
 from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.single_controller.base import Worker
 from verl.single_controller.ray import RayResourcePool, RayWorkerGroup, RayClassWithInitArgs
-from verl.single_controller.ray.base import create_colocated_worker_cls
+from verl.single_controller.ray.base import create_colocated_worker_cls, create_colocated_worker_cls_with_sched, RayClassWithInitArgsAndSched
 from verl.trainer.ppo import core_algos
 from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance
 from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path
@@ -48,43 +48,30 @@ import ray
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy, NodeAffinitySchedulingStrategy
 
 
-class RayClassWithInitArgsAndSched(RayClassWithInitArgs):
+def get_nodes():
+    nodes = ray.nodes()
 
-    def __init__(self, cls, *args, **kwargs) -> None:
-        # sched
-        self.target_node_id = kwargs.pop('target_node_id', None)
-        assert self.target_node_id is not None, f'target node must specify'
+    target_gpu_type = 'accelerator_type:A800'
+    target_node_id = None
 
-        super().__init__(cls, *args, **kwargs)
+    node_info = []
+    for i, node in enumerate(nodes):
+        resources = node["Resources"]
 
-    def __call__(
-        self,
-        placement_group,
-        placement_group_bundle_idx,
-        use_gpu: bool,
-        num_gpus=1,
-    ):
-        # the signature stay the same
-        options = {
-            "scheduling_strategy":
-            NodeAffinitySchedulingStrategy(
-                node_id=self.target_node_id,
-                soft=False,
-            )
-        }
-        options.update(self._options)
-        if use_gpu:
-            options["num_gpus"] = num_gpus
+        for resource, value in resources.items():
+            if resource.startswith('accelerator_type'):
+                if resource == target_gpu_type and value > 0:
+                    target_node_id = nodes[i]["NodeID"]
 
-        if len(self._additional_resource) > 1:
-            for k, v in self._additional_resource.items():
-                options[k] = v
+        node_info.append(resources)
 
-        return self.cls.options(**options).remote(
-            *self.args,
-            #cuda_visible_devices=cuda_visible_devices,
-            **self.kwargs,
-        )
+    if target_node_id is None:
+        for node in node_info:
+            print(node)
+        raise RuntimeError(f'no target gpu')
+
+    print(f'{type(target_node_id)=}, {target_node_id=} {target_gpu_type=}')
+    return target_node_id
 
 
 WorkerType = Type[Worker]
@@ -824,9 +811,9 @@ class RayPPOTrainer(object):
         }
 
         # gh512; sched
-        nodes = ray.nodes()
-        target_node_id = nodes[-1]["NodeID"]
-        print(f'{type(target_node_id)=}, {target_node_id=}')
+        print("=" * 100)
+        print('*' * 100)
+        target_node_id = get_nodes()
 
         # create actor and rollout
         if self.hybrid_engine:
@@ -895,16 +882,49 @@ class RayPPOTrainer(object):
         self.wg_dicts = []
         for resource_pool, class_dict in self.resource_pool_to_cls.items():
             print(f'{resource_pool=} | {class_dict=}')
+        print("=" * 100)
+        print('*' * 100)
 
         for resource_pool, class_dict in self.resource_pool_to_cls.items():
-            worker_dict_cls = create_colocated_worker_cls(
-                class_dict=class_dict)
+
+            # XXX colocate worker group
+            # XXX any benefits? it seems to have some registration process
+            # worker_dict_cls = create_colocated_worker_cls(
+            #     class_dict=class_dict, )
+            # wg_dict = self.ray_worker_group_cls(
+            #     resource_pool=resource_pool,
+            #     ray_cls_with_init=worker_dict_cls,
+            # )
+            # spawn_wg = wg_dict.spawn(prefix_set=class_dict.keys())
+            # all_wg.update(spawn_wg)
+            # ##keep the referece of WorkerDict to support ray >= 2.31. Ref: https://github.com/ray-project/ray/pull/45699
+            # self.wg_dicts.append(wg_dict)
+
+            # with sched version
+            spawn_wg = {}
+            worker_dict_cls = create_colocated_worker_cls_with_sched(
+                class_dict=class_dict,
+                target_node_id=target_node_id,
+            )
             wg_dict = self.ray_worker_group_cls(
-                resource_pool=resource_pool, ray_cls_with_init=worker_dict_cls)
+                resource_pool=resource_pool,
+                ray_cls_with_init=worker_dict_cls,
+            )
             spawn_wg = wg_dict.spawn(prefix_set=class_dict.keys())
             all_wg.update(spawn_wg)
-            # keep the referece of WorkerDict to support ray >= 2.31. Ref: https://github.com/ray-project/ray/pull/45699
+            ##keep the referece of WorkerDict to support ray >= 2.31. Ref: https://github.com/ray-project/ray/pull/45699
             self.wg_dicts.append(wg_dict)
+
+            # individual workerGroup
+            # spawn_wg = {}
+            # for class_role, ray_class_init_with_sched in class_dict.items():
+            #     wg = self.ray_worker_group_cls(
+            #         resource_pool=resource_pool,
+            #         ray_cls_with_init=ray_class_init_with_sched,
+            #     )
+            #     spawn_wg[class_role] = wg
+            # all_wg.update(spawn_wg)
+            # self.wg_dicts.append(spawn_wg)
 
         if self.use_critic:
             self.critic_wg = all_wg['critic']

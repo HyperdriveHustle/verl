@@ -38,7 +38,7 @@ def query_ray_cluster():
 
     # Process node information
     node_data = []
-    for node in nodes:
+    for i, node in enumerate(nodes):
         node_info = {
             'Node ID':
             node['NodeID'][:8] + '...',  # Truncated node ID for readability
@@ -48,7 +48,8 @@ def query_ray_cluster():
             'CPU': f"{node['Resources'].get('CPU', 0):.1f}",
             'Memory (GB)':
             f"{node['Resources'].get('memory', 0) / (1024 * 1024 * 1024):.2f}",
-            'GPU': f"{node['Resources'].get('GPU', 0):.0f}"
+            'GPU': f"{node['Resources'].get('GPU', 0):.0f}",
+            'gpu-type': f'{node}',
         }
 
         # Add any custom resources
@@ -56,6 +57,8 @@ def query_ray_cluster():
             if resource not in ['CPU', 'memory', 'GPU', 'object_store_memory']:
                 node_info[resource] = value
 
+            if resource.startswith('accelerator_type'):
+                print(f'node {i=}; {resource=} {value=}')
         node_data.append(node_info)
 
     # Create a DataFrame for better display
@@ -258,7 +261,7 @@ if __name__ == '__main__':
     print(f'{type(target_node_id)=}, {target_node_id=}')
     kwargs = {
         'target_node_id': target_node_id,
-        'cuda_visible_devices': [0, 1, 2, 3],
+        #'cuda_visible_devices': [0, 1, 2, 3],
     }
     layer_cls = RayClassWithInitArgsAndSched(cls=MLPLayerWorker, **kwargs)
 

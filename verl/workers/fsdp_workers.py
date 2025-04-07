@@ -168,9 +168,8 @@ class ActorRolloutRefWorker(Worker):
         rank = torch.distributed.get_rank()
         worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
         local_rank = os.environ.get("LOCAL_RANK", "None")
-        print(f"")
         print(
-            f'ray worker: {rank=} {local_rank=} {world_size=}, CUDA_VISIBLE_DEVICES: {worker_gpus} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}'
+            f'[INIT] ray ActorRollout: {role=} {rank=} {local_rank=} {world_size=}, CUDA_VISIBLE_DEVICES: {worker_gpus} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}'
         )
 
     def _build_model_optimizer(self,
@@ -713,9 +712,8 @@ class CriticWorker(Worker):
         rank = torch.distributed.get_rank()
         worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
         local_rank = os.environ.get("LOCAL_RANK", "None")
-        print(f"")
         print(
-            f'ray worker: {rank=} {local_rank=} {world_size=}, CUDA_VISIBLE_DEVICES: {worker_gpus} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}'
+            f'[INIT] ray Critic: {rank=} {local_rank=} {world_size=}, CUDA_VISIBLE_DEVICES: {worker_gpus} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}'
         )
 
         # normalize config

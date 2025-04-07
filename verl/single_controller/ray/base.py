@@ -194,6 +194,49 @@ class RayClassWithInitArgs(ClassWithInitArgs):
         return self.cls.options(**options).remote(*self.args, **self.kwargs)
 
 
+class RayClassWithInitArgsAndSched(RayClassWithInitArgs):
+
+    def __init__(self, cls, *args, **kwargs) -> None:
+        # sched
+        self.target_node_id = kwargs.pop('target_node_id', None)
+        assert self.target_node_id is not None, f'target node must specify'
+
+        print(f'[RAYCLASSSCHED] {self.target_node_id=}')
+
+        super().__init__(cls, *args, **kwargs)
+
+    def __call__(
+        self,
+        placement_group,
+        placement_group_bundle_idx,
+        use_gpu: bool,
+        num_gpus=1,
+    ):
+        # the signature stay the same
+        options = {
+            "scheduling_strategy":
+            NodeAffinitySchedulingStrategy(
+                node_id=self.target_node_id,
+                soft=False,
+            )
+        }
+        options.update(self._options)
+        if use_gpu:
+            options["num_gpus"] = num_gpus
+
+        if len(self._additional_resource) > 1:
+            for k, v in self._additional_resource.items():
+                options[k] = v
+
+        print(f'[RAYCLASSSCHED]{placement_group_bundle_idx=} {options=}')
+
+        return self.cls.options(**options).remote(
+            *self.args,
+            #cuda_visible_devices=cuda_visible_devices,
+            **self.kwargs,
+        )
+
+
 class RayWorkerGroup(WorkerGroup):
 
     def __init__(self,
@@ -506,4 +549,53 @@ def create_colocated_worker_cls(class_dict: dict[str, RayClassWithInitArgs]):
 
     remote_cls = ray.remote(WorkerDict)
     remote_cls = RayClassWithInitArgs(cls=remote_cls)
+    return remote_cls
+
+
+def create_colocated_worker_cls_with_sched(
+    class_dict: dict[str, RayClassWithInitArgsAndSched],
+    target_node_id: str,
+):
+    """
+    This function should return a class instance that delegates the calls to every 
+    cls in cls_dict
+    """
+    cls_dict = {}
+    init_args_dict = {}
+    worker_cls = None
+    for key, cls in class_dict.items():
+        if worker_cls == None:
+            worker_cls = cls.cls.__ray_actor_class__.__base__
+        else:
+            assert worker_cls == cls.cls.__ray_actor_class__.__base__, \
+                'the worker class should be the same when share the same process'
+        cls_dict[key] = cls.cls
+        init_args_dict[key] = {'args': cls.args, 'kwargs': cls.kwargs}
+
+    assert cls_dict.keys() == init_args_dict.keys()
+
+    # TODO: create a class with customizable name
+    class WorkerDict(worker_cls):
+
+        def __init__(self):
+            super().__init__()
+            self.worker_dict = {}
+            for key, user_defined_cls in cls_dict.items():
+                user_defined_cls = _unwrap_ray_remote(user_defined_cls)
+                # directly instantiate the class without remote
+                with patch.dict(os.environ, {'DISABLE_WORKER_INIT': '1'}):
+                    self.worker_dict[key] = user_defined_cls(
+                        *init_args_dict[key].get('args', ()),
+                        **init_args_dict[key].get('kwargs', {}))
+
+    # now monkey-patch the methods from inner class to WorkerDict
+    for key, user_defined_cls in cls_dict.items():
+        user_defined_cls = _unwrap_ray_remote(user_defined_cls)
+        _bind_workers_method_to_parent(WorkerDict, key, user_defined_cls)
+
+    remote_cls = ray.remote(WorkerDict)
+
+    # TODO how to support more than 1 node resources pool?
+    remote_cls = RayClassWithInitArgsAndSched(cls=remote_cls,
+                                              target_node_id=target_node_id)
     return remote_cls
