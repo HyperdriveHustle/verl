@@ -77,18 +77,23 @@ def main_task(config, compute_score=None):
     role_worker_mapping = {
         Role.ActorRollout: ray.remote(ActorRolloutRefWorker),
         Role.Critic: ray.remote(CriticWorker),
-        Role.RefPolicy: ray.remote(ActorRolloutRefWorker)
+        Role.RefPolicy: ray.remote(ActorRolloutRefWorker),
+        Role.CheapGPURollout: ray.remote(ActorRolloutRefWorker),
     }
 
     a800_pool = 'a800_pool'
+    rtx4090_pool = '4090_pool'
+
     resource_pool_spec = {
         # a800_pool: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
         a800_pool: [8] * 1,
+        rtx4090_pool: [8] * 1,
     }
     mapping = {
         Role.ActorRollout: a800_pool,
         Role.Critic: a800_pool,
         Role.RefPolicy: a800_pool,
+        Role.CheapGPURollout: rtx4090_pool,
     }
 
     # we should adopt a multi-source reward function here
@@ -137,8 +142,11 @@ def main_task(config, compute_score=None):
                             reward_fn=reward_fn,
                             val_reward_fn=val_reward_fn)
     trainer.init_workers()
-    print("begin fit")
-    trainer.fit()
+
+    # print("begin fit")
+    # trainer.fit()
+
+    trainer.test_model_transfer()
 
 
 if __name__ == '__main__':

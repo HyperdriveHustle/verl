@@ -51,27 +51,26 @@ from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy, Nod
 def get_nodes():
     nodes = ray.nodes()
 
-    target_gpu_type = 'accelerator_type:A800'
-    target_node_id = None
+    a800 = 'accelerator_type:A800'
+    rtx4090 = 'accelerator_type:G'
+    GPU2node = {}
 
-    node_info = []
     for i, node in enumerate(nodes):
         resources = node["Resources"]
+        node_id = node["NodeID"]
 
         for resource, value in resources.items():
             if resource.startswith('accelerator_type'):
-                if resource == target_gpu_type and value > 0:
-                    target_node_id = nodes[i]["NodeID"]
+                if resource == a800 and value > 0:
+                    GPU2node['a800'] = node_id
+                elif resource == rtx4090 and value > 0:
+                    GPU2node['rtx4090'] = node_id
+                else:
+                    raise RuntimeError(f'Unkown {resource=} and {value=}')
+                break
 
-        node_info.append(resources)
-
-    if target_node_id is None:
-        for node in node_info:
-            print(node)
-        raise RuntimeError(f'no target gpu')
-
-    print(f'{type(target_node_id)=}, {target_node_id=} {target_gpu_type=}')
-    return target_node_id
+    print(f'[NODEs] {GPU2node}')
+    return GPU2node
 
 
 WorkerType = Type[Worker]
@@ -98,6 +97,8 @@ class Role(Enum):
     RefPolicy = 4
     RewardModel = 5
     ActorRolloutRef = 6
+
+    CheapGPURollout = 7
 
 
 class AdvantageEstimator(str, Enum):
@@ -802,6 +803,9 @@ class RayPPOTrainer(object):
 
         return metric_dict
 
+    def test_model_transfer(self):
+        pass
+
     def init_workers(self):
         """Init resource pool and worker group"""
         self.resource_pool_manager.create_resource_pool()
@@ -813,7 +817,7 @@ class RayPPOTrainer(object):
         # gh512; sched
         print("=" * 100)
         print('*' * 100)
-        target_node_id = get_nodes()
+        GPU2Node = get_nodes()
 
         # create actor and rollout
         if self.hybrid_engine:
@@ -827,10 +831,22 @@ class RayPPOTrainer(object):
                 cls=self.role_worker_mapping[Role.ActorRollout],
                 config=self.config.actor_rollout_ref,
                 role='actor_rollout',
-                target_node_id=target_node_id,
+                target_node_id=GPU2Node['a800'],
             )
             self.resource_pool_to_cls[resource_pool][
                 'actor_rollout'] = actor_rollout_cls
+
+            # rtx4090 actor (only for rollout)
+            resource_pool = self.resource_pool_manager.get_resource_pool(
+                Role.CheapGPURollout)
+            rollout_cls = RayClassWithInitArgsAndSched(
+                cls=self.role_worker_mapping[Role.CheapGPURollout],
+                config=self.config.actor_rollout_ref,
+                role='rollout',
+                target_node_id=GPU2Node['rtx4090'],
+            )
+            self.resource_pool_to_cls[resource_pool]['rollout'] = rollout_cls
+
         else:
             raise NotImplementedError
 
@@ -844,7 +860,7 @@ class RayPPOTrainer(object):
             critic_cls = RayClassWithInitArgsAndSched(
                 cls=self.role_worker_mapping[Role.Critic],
                 config=self.config.critic,
-                target_node_id=target_node_id,
+                target_node_id=GPU2Node['a800'],
             )
             self.resource_pool_to_cls[resource_pool]['critic'] = critic_cls
 
@@ -860,7 +876,7 @@ class RayPPOTrainer(object):
                 self.role_worker_mapping[Role.RefPolicy],
                 config=self.config.actor_rollout_ref,
                 role='ref',
-                target_node_id=target_node_id,
+                target_node_id=GPU2Node['a800'],
             )
             self.resource_pool_to_cls[resource_pool]['ref'] = ref_policy_cls
 
@@ -900,8 +916,15 @@ class RayPPOTrainer(object):
             # ##keep the referece of WorkerDict to support ray >= 2.31. Ref: https://github.com/ray-project/ray/pull/45699
             # self.wg_dicts.append(wg_dict)
 
-            # with sched version
-            spawn_wg = {}
+            ## with sched version
+            target_node_id = None
+            for class_role, ray_class_init_with_sched in class_dict.items():
+                node_id = ray_class_init_with_sched.target_node_id
+                if target_node_id is None:
+                    target_node_id = node_id
+                else:
+                    assert target_node_id == node_id, f"target_node_id {target_node_id} != {node_id}"
+
             worker_dict_cls = create_colocated_worker_cls_with_sched(
                 class_dict=class_dict,
                 target_node_id=target_node_id,
@@ -915,7 +938,7 @@ class RayPPOTrainer(object):
             ##keep the referece of WorkerDict to support ray >= 2.31. Ref: https://github.com/ray-project/ray/pull/45699
             self.wg_dicts.append(wg_dict)
 
-            # individual workerGroup
+            # XXX individual workerGroup
             # spawn_wg = {}
             # for class_role, ray_class_init_with_sched in class_dict.items():
             #     wg = self.ray_worker_group_cls(
