@@ -104,6 +104,7 @@ class vLLMRollout(BaseRollout):
         if max_num_batched_tokens < max_model_len and self.config.enable_chunked_prefill:
             raise ValueError('Enable chunked prefill, max_num_batched_tokens is smaller than max_model_len, \
                              please increase max_num_batched_tokens or disable chunked prefill')
+        load_format = 'dummy' if config.load_format.startswith('dummy') else config.load_format
 
         self.inference_engine = LLM(
             model=model_path,
@@ -117,6 +118,7 @@ class vLLMRollout(BaseRollout):
             disable_mm_preprocessor_cache=True,
             skip_tokenizer_init=False,
             max_model_len=max_model_len,
+            load_format=load_format,
             disable_log_stats=config.disable_log_stats,
             max_num_batched_tokens=max_num_batched_tokens,
             enable_chunked_prefill=config.enable_chunked_prefill,
