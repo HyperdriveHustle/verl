@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-project_name='DAPO'
+project_name='DAPO-verl'
 exp_name='DAPO-Qwen2.5-32B'
 
 adv_estimator=grpo
