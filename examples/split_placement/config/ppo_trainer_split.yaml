@@ -62,6 +62,7 @@ actor_rollout_ref:
     ulysses_sequence_parallel_size: ${actor_rollout_ref.actor.ulysses_sequence_parallel_size} # sp size
   rollout:
     name: vllm
+    engine_seed: 0 # c.f. https://github.com/volcengine/verl/commit/1ee730163f6326e9679644db62eb32c8d1947c7f
     temperature: 1.0
     top_k: -1 # 0 for hf rollout, -1 for vllm rollout
     top_p: 1
