@@ -11,7 +11,7 @@ import sys
 from verl.single_controller.base.decorator import register, Dispatch, Execute
 from verl.single_controller.ray.megatron import NVMegatronRayWorkerGroup
 from verl.single_controller.base.megatron.worker import MegatronWorker
-from verl.single_controller.ray.base import RayResourcePool, RayClassWithInitArgs
+from verl.single_controller.ray.base import RayResourcePool, RayClassWithInitArgs, RayClassWithInitArgsAndSched
 from omegaconf import OmegaConf
 
 import ray
@@ -178,53 +178,6 @@ class MLPLayerWorker(MegatronWorker):
         y = self.parallel_layer(x)
         return y
 
-
-class RayClassWithInitArgsAndSched(RayClassWithInitArgs):
-
-    def __init__(self, cls, *args, **kwargs) -> None:
-
-        self.target_node_id = kwargs.pop('target_node_id', None)
-        # self.cuda_visible_devices = kwargs.pop('cuda_visible_devices', None)
-
-        # # assume visible devices start from 0
-        # self.cnt = 0
-
-        assert self.target_node_id is not None, f'target node must specify'
-        #assert self.cuda_visible_devices is not None, f'visible device must specify'
-
-        super().__init__(cls, *args, **kwargs)
-
-    def __call__(
-        self,
-        placement_group,
-        placement_group_bundle_idx,
-        use_gpu: bool,
-        num_gpus=1,
-    ):
-        # the signature stay the same
-        options = {
-            "scheduling_strategy":
-            NodeAffinitySchedulingStrategy(
-                node_id=self.target_node_id,
-                soft=False,
-            )
-        }
-        options.update(self._options)
-        if use_gpu:
-            options["num_gpus"] = num_gpus
-
-        if len(self._additional_resource) > 1:
-            for k, v in self._additional_resource.items():
-                options[k] = v
-
-        # cuda_visible_devices = self.cuda_visible_devices[self.cnt]
-        # self.cnt+=1
-
-        return self.cls.options(**options).remote(
-            *self.args,
-            #cuda_visible_devices=cuda_visible_devices,
-            **self.kwargs,
-        )
 
 
 if __name__ == '__main__':

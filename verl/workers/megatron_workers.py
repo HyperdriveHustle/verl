@@ -492,6 +492,14 @@ class ActorRolloutRefWorker(MegatronWorker):
     def save_checkpoint(self, checkpoint_path, **kwargs):
         assert self._is_actor
         pass
+    
+    def transfer_model(self):
+        print(f'[TRANSFER] {self.rank=}')
+        assert self._is_rollout
+
+        # target peer
+
+        # transfer
 
 
 class CriticWorker(MegatronWorker):

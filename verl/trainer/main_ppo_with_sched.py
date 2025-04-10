@@ -87,12 +87,20 @@ def main_task(config, compute_score=None):
     resource_pool_spec = {
         # a800_pool: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
         a800_pool: [8] * 1,
-        rtx4090_pool: [8] * 1,
+        rtx4090_pool: [4] * 1,
     }
     mapping = {
-        Role.ActorRollout: a800_pool,
-        Role.Critic: a800_pool,
-        Role.RefPolicy: a800_pool,
+        # Role.ActorRollout: a800_pool,
+        # Role.Critic: a800_pool,
+        # Role.RefPolicy: a800_pool,
+
+        # Role.CheapGPURollout: rtx4090_pool,
+
+
+        # TMP
+        Role.ActorRollout: rtx4090_pool,
+        Role.Critic: rtx4090_pool,
+        Role.RefPolicy: rtx4090_pool,
         Role.CheapGPURollout: rtx4090_pool,
     }
 

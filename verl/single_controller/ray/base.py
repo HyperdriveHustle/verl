@@ -194,16 +194,23 @@ class RayClassWithInitArgs(ClassWithInitArgs):
         return self.cls.options(**options).remote(*self.args, **self.kwargs)
 
 
-class RayClassWithInitArgsAndSched(RayClassWithInitArgs):
+class RayClassWithInitArgsAndSched(ClassWithInitArgs):
 
     def __init__(self, cls, *args, **kwargs) -> None:
         # sched
         self.target_node_id = kwargs.pop('target_node_id', None)
         assert self.target_node_id is not None, f'target node must specify'
-
         print(f'[RAYCLASSSCHED] {self.target_node_id=}')
 
         super().__init__(cls, *args, **kwargs)
+        self._options = {}
+        self._additional_resource = {}
+
+    def set_additional_resource(self, additional_resource):
+        self._additional_resource = additional_resource
+
+    def update_options(self, options: Dict):
+        self._options.update(options)
 
     def __call__(
         self,
@@ -232,7 +239,6 @@ class RayClassWithInitArgsAndSched(RayClassWithInitArgs):
 
         return self.cls.options(**options).remote(
             *self.args,
-            #cuda_visible_devices=cuda_visible_devices,
             **self.kwargs,
         )
 
@@ -352,6 +358,11 @@ class RayWorkerGroup(WorkerGroup):
                                 f"{self.name_prefix}_register_center")
                             break
                     assert register_center_actor is not None, f"failed to get register_center_actor: {self.name_prefix}_register_center in {list_named_actors(all_namespaces=True)}"
+
+                    # XXX: ray will not allow to schedule when request gpu=8, and some gpu is being used
+                    # XXX: make sure the GPU is not occupied!
+                    #print(f'[REGISTER] {self.name_prefix=} {list_named_actors()=}')
+
                     rank_zero_info = ray.get(
                         register_center_actor.get_rank_zero_info.remote())
                     self._master_addr, self._master_port = rank_zero_info[

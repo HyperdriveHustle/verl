@@ -804,7 +804,10 @@ class RayPPOTrainer(object):
         return metric_dict
 
     def test_model_transfer(self):
-        pass
+        self.actor_rollout_wg
+        self.cheap_rollout_wg
+
+        # TODO how to transfer weight?
 
     def init_workers(self):
         """Init resource pool and worker group"""
@@ -818,6 +821,20 @@ class RayPPOTrainer(object):
         print("=" * 100)
         print('*' * 100)
         GPU2Node = get_nodes()
+        llm2gpu = {
+            # 'actor_rollout': 'a800',
+            # 'rollout': 'rtx4090',
+            # 'critic': 'a800',
+            # 'ref': 'a800',
+
+            'actor_rollout': 'rtx4090',
+            # 'rollout': 'rtx4090',
+            'critic': 'rtx4090',
+            'ref': 'rtx4090',
+
+        }
+        for llm, gpu in llm2gpu.items():
+            assert gpu in GPU2Node, f"gpu {gpu} not found in {GPU2Node}"
 
         # create actor and rollout
         if self.hybrid_engine:
@@ -831,22 +848,22 @@ class RayPPOTrainer(object):
                 cls=self.role_worker_mapping[Role.ActorRollout],
                 config=self.config.actor_rollout_ref,
                 role='actor_rollout',
-                target_node_id=GPU2Node['a800'],
+                target_node_id=GPU2Node[llm2gpu['actor_rollout']],
             )
             self.resource_pool_to_cls[resource_pool][
                 'actor_rollout'] = actor_rollout_cls
 
             # rtx4090 actor (only for rollout)
-            resource_pool = self.resource_pool_manager.get_resource_pool(
-                Role.CheapGPURollout)
-            rollout_cls = RayClassWithInitArgsAndSched(
-                cls=self.role_worker_mapping[Role.CheapGPURollout],
-                config=self.config.actor_rollout_ref,
-                role='rollout',
-                target_node_id=GPU2Node['rtx4090'],
-            )
-            self.resource_pool_to_cls[resource_pool]['rollout'] = rollout_cls
-
+            if 'rollout' in llm2gpu:
+                resource_pool = self.resource_pool_manager.get_resource_pool(
+                    Role.CheapGPURollout)
+                rollout_cls = RayClassWithInitArgsAndSched(
+                    cls=self.role_worker_mapping[Role.CheapGPURollout],
+                    config=self.config.actor_rollout_ref,
+                    role='rollout',
+                    target_node_id=GPU2Node[llm2gpu['rollout']],
+                )
+                self.resource_pool_to_cls[resource_pool]['rollout'] = rollout_cls
         else:
             raise NotImplementedError
 
@@ -860,7 +877,7 @@ class RayPPOTrainer(object):
             critic_cls = RayClassWithInitArgsAndSched(
                 cls=self.role_worker_mapping[Role.Critic],
                 config=self.config.critic,
-                target_node_id=GPU2Node['a800'],
+                target_node_id=GPU2Node[llm2gpu['critic']],
             )
             self.resource_pool_to_cls[resource_pool]['critic'] = critic_cls
 
@@ -876,7 +893,7 @@ class RayPPOTrainer(object):
                 self.role_worker_mapping[Role.RefPolicy],
                 config=self.config.actor_rollout_ref,
                 role='ref',
-                target_node_id=GPU2Node['a800'],
+                target_node_id=GPU2Node[llm2gpu['ref']],
             )
             self.resource_pool_to_cls[resource_pool]['ref'] = ref_policy_cls
 
@@ -896,12 +913,13 @@ class RayPPOTrainer(object):
         # See https://github.com/volcengine/verl/blob/master/examples/ray/tutorial.ipynb for more information.
         all_wg = {}
         self.wg_dicts = []
-        for resource_pool, class_dict in self.resource_pool_to_cls.items():
-            print(f'{resource_pool=} | {class_dict=}')
+
         print("=" * 100)
         print('*' * 100)
-
         for resource_pool, class_dict in self.resource_pool_to_cls.items():
+            print(f'{resource_pool=} | {class_dict=}')
+            if len(class_dict) == 0:
+                continue
 
             # XXX colocate worker group
             # XXX any benefits? it seems to have some registration process
@@ -918,7 +936,7 @@ class RayPPOTrainer(object):
 
             ## with sched version
             target_node_id = None
-            for class_role, ray_class_init_with_sched in class_dict.items():
+            for _, ray_class_init_with_sched in class_dict.items():
                 node_id = ray_class_init_with_sched.target_node_id
                 if target_node_id is None:
                     target_node_id = node_id
@@ -938,7 +956,7 @@ class RayPPOTrainer(object):
             ##keep the referece of WorkerDict to support ray >= 2.31. Ref: https://github.com/ray-project/ray/pull/45699
             self.wg_dicts.append(wg_dict)
 
-            # XXX individual workerGroup
+            ## XXX individual workerGroup
             # spawn_wg = {}
             # for class_role, ray_class_init_with_sched in class_dict.items():
             #     wg = self.ray_worker_group_cls(
@@ -948,6 +966,11 @@ class RayPPOTrainer(object):
             #     spawn_wg[class_role] = wg
             # all_wg.update(spawn_wg)
             # self.wg_dicts.append(spawn_wg)
+
+        print("=" * 100)
+        print('*' * 100)
+        for name, _ in all_wg.items():
+            print(f'{name=}')
 
         if self.use_critic:
             self.critic_wg = all_wg['critic']
@@ -971,6 +994,13 @@ class RayPPOTrainer(object):
         self.actor_rollout_wg = all_wg['actor_rollout']
         self.actor_rollout_wg.init_model()
         print("Actor rollout initialized.")
+        print("=" * 100)
+        print('*' * 100)
+
+        # we should create rollout at the end so that vllm can have a better estimation of kv cache memory
+        self.cheap_rollout_wg = all_wg['rollout']
+        self.cheap_rollout_wg.init_model()
+        print("cheap rollout initialized.")
         print("=" * 100)
         print('*' * 100)
 
