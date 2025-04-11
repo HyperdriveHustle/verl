@@ -1,25 +1,33 @@
 import matplotlib.pyplot as plt
 
+GPU = 'A800'
+MODEL = 'llama7b'
+
 time_breakdown = {
-    "gen": (331.87347317123783, 19.471599649749386),
-    "post_processing": (0.0798660227097571, 0.015049873872713348),
-    "old_log_prob": (23.980894559808075, 4.744868846860671),
-    "ref": (48.11182795548812, 5.812303926062228),
-    "values": (23.588751344103365, 4.428156308343343),
-    "adv": (0.7970318300649524, 0.057262937263335506),
-    "update_critic": (94.75331611009315, 1.0696240718273826),
-    "update_actor": (99.7962265675321, 0.6651195843986861),
-    "step": (622.982666027308, 5.651579329078492),
-    "collecting": (0.09991906676441431, 0.011415995609689549)
+    "gen": [471.055022542287, 21.233553883936978],
+    "post_processing": [0.0610113571407353, 0.013105832658047127],
+    "old_log_prob": [45.84351506708196, 1.506679798602322],
+    "ref": [91.02278898411896, 2.079227286969615],
+    "values": [44.598032225994395, 0.8025507943625851],
+    "adv": [1.299121051067535, 0.067878702519606764],
+    "update_critic": [187.596554842565, 0.9247216280539763],
+    "update_actor": [390.583198133117, 1.0988030367877426],
+    #"step": [1039.859872462969, 18.42019933419803],
+    "collecting": [0.1508021720636, 0.017556559132094251]
 }
 
+
 # Define the time breakdown components
-labels = [
-    "gen", "post_processing", "old_log_prob", "ref", "values", "adv",
-    "update_critic", "update_actor", "collecting"
-]
-values = [291.37, 0.0619, 20.94, 42.72, 19.56, 0.77, 85.13, 90.31, 0.0939]
-total_time = 550.87
+#labels = [
+#    "gen", "post_processing", "old_log_prob", "ref", "values", "adv",
+#    "update_critic", "update_actor", "collecting"
+#]
+#values = [291.37, 0.0619, 20.94, 42.72, 19.56, 0.77, 85.13, 90.31, 0.0939]
+#total_time = 550.87
+
+labels = list(time_breakdown.keys())
+values = [x[0] for x in time_breakdown.values()]
+total_time = sum(values)
 
 # Verify the sum of breakdown matches the total step time (considering minor floating point differences)
 assert abs(
@@ -39,5 +47,5 @@ wedges, texts, autotexts = plt.pie(
 for text in texts + autotexts:
     text.set_fontsize(10)
 
-plt.title("Time Breakdown in Step Execution")
+plt.title(f"{GPU=}, {MODEL=}")
 plt.show()
