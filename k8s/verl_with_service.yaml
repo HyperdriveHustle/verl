@@ -3,7 +3,7 @@ kind: Job
 metadata:
   name: hgl-verl
 spec:
-  minAvailable: 2
+  minAvailable: 1
   schedulerName: volcano
   queue: chatrl
   # policies:
@@ -25,15 +25,15 @@ spec:
               requiredDuringSchedulingIgnoredDuringExecution:
                 nodeSelectorTerms:
                   - matchExpressions:
-                      - key: team
+                      #- key: team
+                      #  operator: In
+                      #  values:
+                      #    -  rlib
+                      - key: kubernetes.io/hostname 
                         operator: In
                         values:
-                          -  rlib
-                      # - key: kubernetes.io/hostname 
-                      #   operator: In
-                      #   values:
-                      #     - zjzx1h-402-f-03-a1p1-sev-h100-08u05
-                          # - zjzx1h-402-b-15-a1p1-sev-h100-08u05
+                          - zjzx1h-402-f-03-a1p1-sev-h100-08u05
+                          - zjzx1h-402-b-15-a1p1-sev-h100-08u05
           initContainers: #不修改，本次升级改动
             - name: init
               image: harbor.telecom-ai.com.cn/teleinfra/alpine:latest
@@ -130,7 +130,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: hgl-verl
+  name: hgl-verl-service
 spec:
   selector:
     job.volcano.sh/job-name: hgl-verl
