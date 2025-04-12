@@ -17,17 +17,28 @@ This trainer supports model-agonistic model initialization with huggingface
 """
 
 import uuid
-from pprint import pprint
-from copy import deepcopy
 from collections import defaultdict
-from tqdm import tqdm
+from copy import deepcopy
+from pprint import pprint
+
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from verl import DataProto
-from verl.trainer.ppo.ray_trainer import RayPPOTrainer, _timer, apply_kl_penalty, compute_advantage, AdvantageEstimator
-from verl.trainer.ppo.metric_utils import (compute_data_metrics, compute_throughout_metrics, compute_timing_metrics,
-                                           reduce_metrics)
+from verl.trainer.ppo.metric_utils import (
+    compute_data_metrics,
+    compute_throughout_metrics,
+    compute_timing_metrics,
+    reduce_metrics,
+)
+from verl.trainer.ppo.ray_trainer import (
+    AdvantageEstimator,
+    RayPPOTrainer,
+    _timer,
+    apply_kl_penalty,
+    compute_advantage,
+)
 
 
 class RayDAPOTrainer(RayPPOTrainer):
@@ -41,8 +52,9 @@ class RayDAPOTrainer(RayPPOTrainer):
         The driver process only need to call the compute functions of the worker group through RPC to construct the PPO dataflow.
         The light-weight advantage computation is done on the driver process.
         """
-        from verl.utils.tracking import Tracking
         from omegaconf import OmegaConf
+
+        from verl.utils.tracking import Tracking
 
         logger = Tracking(project_name=self.config.trainer.project_name,
                           experiment_name=self.config.trainer.experiment_name,
@@ -165,7 +177,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                         metric_name = self.config.algorithm.filter_groups.metric
                         if metric_name == "seq_final_reward":
                             # Turn to numpy for easier filtering
-                            new_batch.non_tensor_batch["seq_final_reward"] = new_batch.batch['token_level_scores'].sum(
+                            new_batch.non_tensor_batch["seq_final_reward"] = new_batch.batch['token_level_rewards'].sum(
                                 dim=-1).numpy()
                         elif metric_name == "seq_reward":
                             new_batch.non_tensor_batch["seq_reward"] = new_batch.batch['token_level_scores'].sum(
