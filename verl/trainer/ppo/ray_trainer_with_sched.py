@@ -822,15 +822,15 @@ class RayPPOTrainer(object):
         print('*' * 100)
         GPU2Node = get_nodes()
         llm2gpu = {
-            # 'actor_rollout': 'a800',
-            # 'rollout': 'rtx4090',
-            # 'critic': 'a800',
-            # 'ref': 'a800',
+            'actor_rollout': 'a800',
+            #'rollout': 'rtx4090',
+            'critic': 'a800',
+            'ref': 'a800',
 
-            'actor_rollout': 'rtx4090',
-            # 'rollout': 'rtx4090',
-            'critic': 'rtx4090',
-            'ref': 'rtx4090',
+            #'actor_rollout': 'rtx4090',
+            ## 'rollout': 'rtx4090',
+            #'critic': 'rtx4090',
+            #'ref': 'rtx4090',
 
         }
         for llm, gpu in llm2gpu.items():
@@ -943,9 +943,12 @@ class RayPPOTrainer(object):
                 else:
                     assert target_node_id == node_id, f"target_node_id {target_node_id} != {node_id}"
 
-            worker_dict_cls = create_colocated_worker_cls_with_sched(
+            #worker_dict_cls = create_colocated_worker_cls_with_sched(
+            #    class_dict=class_dict,
+            #    target_node_id=target_node_id,
+            #)
+            worker_dict_cls = create_colocated_worker_cls(
                 class_dict=class_dict,
-                target_node_id=target_node_id,
             )
             wg_dict = self.ray_worker_group_cls(
                 resource_pool=resource_pool,
@@ -998,11 +1001,12 @@ class RayPPOTrainer(object):
         print('*' * 100)
 
         # we should create rollout at the end so that vllm can have a better estimation of kv cache memory
-        self.cheap_rollout_wg = all_wg['rollout']
-        self.cheap_rollout_wg.init_model()
-        print("cheap rollout initialized.")
-        print("=" * 100)
-        print('*' * 100)
+        if 'rollout' in llm2gpu:
+            self.cheap_rollout_wg = all_wg['rollout']
+            self.cheap_rollout_wg.init_model()
+            print("cheap rollout initialized.")
+            print("=" * 100)
+            print('*' * 100)
 
     def _save_checkpoint(self):
         # path: given_path + `/global_step_{global_steps}` + `/actor`
@@ -1137,6 +1141,9 @@ class RayPPOTrainer(object):
         The driver process only need to call the compute functions of the worker group through RPC to construct the PPO dataflow.
         The light-weight advantage computation is done on the driver process.
         """
+        while True:
+            sleep(1)
+
         from verl.utils.tracking import Tracking
         from omegaconf import OmegaConf
 
