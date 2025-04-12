@@ -218,7 +218,7 @@ class DataParallelPPOCritic(BasePPOCritic):
             dataloader = batch.split(self.config.ppo_mini_batch_size)
 
         print(
-            f'update critic: {self.config.ppo_mini_batch_size=} {self.config.ppo_epochs=} {has_multi_modal_inputs=} {self.config.use_dynamic_bsz=} {self.config.ppo_micro_batch_size_per_gpu=} {batch.batch_size=}'
+            f'[UPDATE CRITIC]: {self.config.ppo_mini_batch_size=} {self.config.ppo_epochs=} {has_multi_modal_inputs=} {self.config.use_dynamic_bsz=} {self.config.ppo_micro_batch_size_per_gpu=} {batch.batch_size=}'
         )
 
         for epoch in range(self.config.ppo_epochs):
