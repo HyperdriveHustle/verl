@@ -287,7 +287,6 @@ class MegatronPPOCritic(BasePPOCritic):
         for i, module in enumerate(self.critic_module):
             module.eval()
             module.to('cpu')
-
         # 2. Offload optimizer states
         for param_group in self.critic_optimizer.param_groups:
             for p in param_group['params']:
@@ -295,11 +294,11 @@ class MegatronPPOCritic(BasePPOCritic):
                     for key, value in self.critic_optimizer.state[p].items():
                         if torch.is_tensor(value):
                             self.critic_optimizer.state[p][key] = value.cpu()
-
+        
         # 3. Force memory cleanup
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
-
+        
     def load(self, device_id):
         #for module in self.critic_module:
         #    for _, param in module.named_parameters():

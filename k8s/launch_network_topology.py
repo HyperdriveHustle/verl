@@ -45,6 +45,11 @@ def parse_arguments():
     parser.add_argument('-n', type=int, default=None, help='num of node')
     parser.add_argument('-f', type=str, default=None)
     parser.add_argument('--ban', type=str, default='ban_list.txt')
+    parser.add_argument("-p",
+                        nargs='*',
+                        type=int,
+                        default=None,
+                        help="patterns to match")
 
     return parser.parse_args()
 
@@ -79,6 +84,7 @@ def get_ban_node(filename):
                     node_name = parts[
                         0]  # The first part should be the node name
                     node_names.append(node_name)  # Append to the list
+    print(f'*' * 100)
     print(f'ban list: ', node_names)
     return node_names
 
@@ -177,12 +183,13 @@ def build_yaml(
 
 
 def resource_scheduling(
-    empty_nodes_by_region,
-    n,
-    ban_nodes,
+        empty_nodes_by_region,
+        n,
+        ban_nodes,
+        patterns: list[int],  # each int specify node number under a Tor
 ):
     print('*' * 100)
-    print(f'resource_scheduling: ')
+    print(f'[resource scheduling]: ')
     assert n is not None, "n is None"
     ns = []
     for tor, nodes in empty_nodes_by_region:
@@ -191,8 +198,6 @@ def resource_scheduling(
             gpu_type = node['labels'].get('nvidia.com/gpu.product', 'unknown')
             total_gpu = node['labels'].get('nvidia.com/gpu.count', 'unknown')
             allocatable_gpu = node['allocatable_gpus']
-            #print(f"{idx}. Node: {node['name']} GPU Type: {gpu_type}. GPUs: {allocatable_gpu}/{total_gpu}.")
-
             if gpu_type == 'unknown':
                 continue
             if total_gpu == 'unknown':
@@ -206,7 +211,7 @@ def resource_scheduling(
             if len(tmp) >= n:
                 break
         if len(tmp) >= n:
-            print(f'resource_scheduling: {tor=} {tmp=}')
+            print(f'Allocated: {tor=} {tmp=}')
             ns = tmp
             break
     print(f'nodes: {ns=}')
@@ -223,7 +228,12 @@ def main():
     ban_nodes = get_ban_node(args.ban)
 
     # schedule strategy
-    nodes = resource_scheduling(empty_nodes_by_region, args.n, ban_nodes)
+    nodes = resource_scheduling(
+        empty_nodes_by_region,
+        args.n,
+        ban_nodes,
+        args.p,
+    )
     output_file = build_yaml(args.f, nodes)
     sleep(1)
 

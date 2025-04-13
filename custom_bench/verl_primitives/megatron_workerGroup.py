@@ -179,7 +179,6 @@ class MLPLayerWorker(MegatronWorker):
         return y
 
 
-
 if __name__ == '__main__':
     warnings.filterwarnings("ignore", category=FutureWarning)
     warnings.filterwarnings("ignore", category=UserWarning)

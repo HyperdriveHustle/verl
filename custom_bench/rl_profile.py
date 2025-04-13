@@ -4,18 +4,17 @@ GPU = 'A800'
 MODEL = 'llama7b'
 
 time_breakdown = {
-    'gen': 471.0550225452287 ,
-    'post_processing': 0.061001135781407353 ,
+    'gen': 471.0550225452287,
+    'post_processing': 0.061001135781407353,
     'old_log_prob': 45.843515065708196,
     'ref': 91.02278898411896,
     'values': 44.598032225994395,
-    'adv': 1.2991210516076535 ,
-    'update_critic': 187.59655480042565 ,
-    'update_actor': 198.38269411679357 ,
+    'adv': 1.2991210516076535,
+    'update_critic': 187.59655480042565,
+    'update_actor': 198.38269411679357,
     #'step': 1039.8598758099834 - 18.42019934319803,
-    'collecting': 0.10735758242662996 ,
+    'collecting': 0.10735758242662996,
 }
-
 
 # Define the time breakdown components
 #labels = [
