@@ -1,8 +1,8 @@
 apiVersion: batch.volcano.sh/v1alpha1
 kind: Job
 metadata:
-  name: hgl-verl
-  # namespace: hgl
+  name: sherry-verl-grpo-7b-2node-realbs256-vllm082
+  # namespace: wxe
 spec:
   minAvailable: 2
   schedulerName: volcano
@@ -11,7 +11,7 @@ spec:
   #   - event: PodEvicted
   #     action: CompleteJob
   plugins:
-    pytorch: ["--port=25430"]
+    pytorch: ["--port=25431"]
     svc: ["--disable-network-policy=true"]
   tasks:
     - replicas: 1
@@ -26,15 +26,15 @@ spec:
               requiredDuringSchedulingIgnoredDuringExecution:
                 nodeSelectorTerms:
                   - matchExpressions:
-                      #- key: team
-                      #  operator: In
-                      #  values:
-                      #    -  rlib
-                      - key: kubernetes.io/hostname 
+                      - key: team
                         operator: In
                         values:
-                          - zjzx1h-402-f-03-a1p1-sev-h100-08u05
-                          - zjzx1h-402-b-15-a1p1-sev-h100-08u05
+                          -  rlib-debug
+                      # - key: kubernetes.io/hostname 
+                      #   operator: In
+                      #   values:
+                      #     - zjzx1h-402-c-16-a1p1-sev-h100-08u05
+                          # - zjzx1h-402-b-15-a1p1-sev-h100-08u05
           initContainers: #不修改，本次升级改动
             - name: init
               image: harbor.telecom-ai.com.cn/teleinfra/alpine:latest
@@ -51,35 +51,29 @@ spec:
             - name: worker
               resources:
                 requests:
-                  cpu: 128
-                  memory: 512G
+                  cpu: 64
+                  memory: 900G
                   nvidia.com/gpu: 8
                 limits:
-                  cpu: 128
-                  memory: 512G
+                  cpu: 64
+                  memory: 1024G
                   nvidia.com/gpu: 8
-              image: harbor.telecom-ai.com.cn/teleinfra/verl:24.05-py3-apex
+              image: harbor.telecom-ai.com.cn/chatrl/verl:ngc-th2.6.0-cu120-vllm0.8.2
               command: ["/bin/bash"]
               args:
                 - "-c"
                 - |
-                  export NCCL_IB_HCA=$(ib-config/look mlxdevice.sh) #必须有，不修改，本次升级改动
+                  export NCCL_IB_HCA=$(/ib-config/look_mlxdevice.sh) #必须有，不修改，本次升级改动
                   echo NCCL_IB_HCA=$NCCL_IB_HCA
-
-                  # cp model from shared storage
-                  mkdir models/
-                  cp -r /nvfile-heatstorage/chatrl/public/models/Qwen25-7B-Base-change-chat-template models/
-
-                  # install packages
-                  pip install megatron-core==0.10.0
-
-                  # install verl
-                  #cp -r /nvfile-heatstorage/teleat-infra/heguoliang/verl .
-                  cd /nvfile-heatstorage/teleat-infra/heguoliang/verl
-                  pip install flash_attn-2.7.4.post1+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl --no-build-isolation
+                  rm -f /etc/pip.conf /etc/xdg/pip/pip.conf /root/.pip/pip.conf /root/.config/pip/pip.conf /usr/pip.conf \
+                  && pip3 config set global.index-url http://pypi.chinatelecom.ai/simple \
+                  && pip3 config set install.trusted-host pypi.chinatelecom.ai
+                  cd  /nvfile-heatstorage/chatrl/users/hxh/code/refine_code/verl/
                   pip install -v -e .
                   echo $MASTER_PORT
-                  ray start --block --port=$MASTER_PORT --head
+                  ray start --head  --port=$MASTER_PORT &
+                  sleep 10
+                  ./examples/grpo_trainer/run_qwen2-7b-2node-realbs256-lr4e-7_maxlen16k-vllm_0_8_2.sh 2>&1 | tee logs/run_qwen2-7b-2node-realbs256-lr4e-7_maxlen16k-vllm_0_8_2.log
               securityContext:
                 privileged: true
                 # capabilities:
@@ -140,15 +134,15 @@ spec:
               requiredDuringSchedulingIgnoredDuringExecution:
                 nodeSelectorTerms:
                   - matchExpressions:
-                      #- key: team
-                      #  operator: In
-                      #  values:
-                      #    -  rlib
-                      - key: kubernetes.io/hostname 
+                      - key: team
                         operator: In
                         values:
-                          - zjzx1h-402-f-03-a1p1-sev-h100-08u05
-                          - zjzx1h-402-b-15-a1p1-sev-h100-08u05
+                          -  rlib-debug
+                      # - key: kubernetes.io/hostname 
+                      #   operator: In
+                      #   values:
+                      #     - zjzx1h-402-b-15-a1p1-sev-h100-08u05
+                          # - zjzx1h-402-b-15-a1p1-sev-h100-08u05
           initContainers: #不修改，本次升级改动
             - name: init
               image: harbor.telecom-ai.com.cn/teleinfra/alpine:latest
@@ -165,35 +159,28 @@ spec:
             - name: worker
               resources:
                 requests:
-                  cpu: 128
-                  memory: 512G
+                  cpu: 64
+                  memory: 900G
                   nvidia.com/gpu: 8
                 limits:
-                  cpu: 128
-                  memory: 512G
+                  cpu: 64
+                  memory: 1024G
                   nvidia.com/gpu: 8
-              image: harbor.telecom-ai.com.cn/teleinfra/verl:24.05-py3-apex
+              image: harbor.telecom-ai.com.cn/chatrl/verl:ngc-th2.6.0-cu120-vllm0.8.2
               command: ["/bin/bash"]
               args:
                 - "-c"
                 - |
-                  export NCCL_IB_HCA=$(ib-config/look mlxdevice.sh) #必须有，不修改，本次升级改动
+                  export NCCL_IB_HCA=$(/ib-config/look_mlxdevice.sh) #必须有，不修改，本次升级改动
                   echo NCCL_IB_HCA=$NCCL_IB_HCA
-
-                  # cp model from shared storage
-                  mkdir models/
-                  cp -r /nvfile-heatstorage/chatrl/public/models/Qwen25-7B-Base-change-chat-template models/
-
-                  # install packages
-                  pip install megatron-core==0.10.0
-
-                  # install verl
-                  #cp -r /nvfile-heatstorage/teleat-infra/heguoliang/verl .
-                  cd /nvfile-heatstorage/teleat-infra/heguoliang/verl
-                  pip install flash_attn-2.7.4.post1+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl --no-build-isolation
+                  rm -f /etc/pip.conf /etc/xdg/pip/pip.conf /root/.pip/pip.conf /root/.config/pip/pip.conf /usr/pip.conf \
+                  && pip3 config set global.index-url http://pypi.chinatelecom.ai/simple \
+                  && pip3 config set install.trusted-host pypi.chinatelecom.ai
+                  cd  /nvfile-heatstorage/chatrl/users/hxh/code/refine_code/verl/
+                  # pip install flash_attn-2.7.4.post1+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl --no-build-isolation
                   pip install -v -e .
-                  echo $MASTER_PORT
-                  ray start --block --port=$MASTER_PORT --head
+                  ray start --address=${MASTER_ADDR}:${MASTER_PORT} --block
+                  # sleep infinity
               securityContext:
                 privileged: true
                 # capabilities:
@@ -242,4 +229,3 @@ spec:
                 path: /nvfile-heatstorage/tele_data_share/public/vsixs
           securityContext:
             runAsUser: 0
-
