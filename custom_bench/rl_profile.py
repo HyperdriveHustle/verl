@@ -4,16 +4,16 @@ GPU = 'A800'
 MODEL = 'llama7b'
 
 time_breakdown = {
-    "gen": [471.055022542287, 21.233553883936978],
-    "post_processing": [0.0610113571407353, 0.013105832658047127],
-    "old_log_prob": [45.84351506708196, 1.506679798602322],
-    "ref": [91.02278898411896, 2.079227286969615],
-    "values": [44.598032225994395, 0.8025507943625851],
-    "adv": [1.299121051067535, 0.067878702519606764],
-    "update_critic": [187.596554842565, 0.9247216280539763],
-    "update_actor": [390.583198133117, 1.0988030367877426],
-    #"step": [1039.859872462969, 18.42019933419803],
-    "collecting": [0.1508021720636, 0.017556559132094251]
+    'gen': 471.0550225452287 ,
+    'post_processing': 0.061001135781407353 ,
+    'old_log_prob': 45.843515065708196,
+    'ref': 91.02278898411896,
+    'values': 44.598032225994395,
+    'adv': 1.2991210516076535 ,
+    'update_critic': 187.59655480042565 ,
+    'update_actor': 198.38269411679357 ,
+    #'step': 1039.8598758099834 - 18.42019934319803,
+    'collecting': 0.10735758242662996 ,
 }
 
 
@@ -26,7 +26,7 @@ time_breakdown = {
 #total_time = 550.87
 
 labels = list(time_breakdown.keys())
-values = [x[0] for x in time_breakdown.values()]
+values = [x for x in time_breakdown.values()]
 total_time = sum(values)
 
 # Verify the sum of breakdown matches the total step time (considering minor floating point differences)

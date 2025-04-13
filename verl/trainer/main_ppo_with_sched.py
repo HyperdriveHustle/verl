@@ -96,12 +96,15 @@ def main_task(config, compute_score=None):
 
         # Role.CheapGPURollout: rtx4090_pool,
 
-
         # TMP
-        Role.ActorRollout: rtx4090_pool,
-        Role.Critic: rtx4090_pool,
-        Role.RefPolicy: rtx4090_pool,
-        Role.CheapGPURollout: rtx4090_pool,
+        Role.ActorRollout:
+        rtx4090_pool,
+        Role.Critic:
+        rtx4090_pool,
+        Role.RefPolicy:
+        rtx4090_pool,
+        Role.CheapGPURollout:
+        rtx4090_pool,
     }
 
     # we should adopt a multi-source reward function here

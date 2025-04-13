@@ -66,10 +66,13 @@ spec:
                   export NCCL_IB_HCA=$(/ib-config/look_mlxdevice.sh) #必须有，不修改，本次升级改动
                   echo NCCL_IB_HCA=$NCCL_IB_HCA
 
+                  # verl
                   cp -r /nvfile-heatstorage/teleai-infra/heguoliang/verl .
                   cd verl
                   pip install flash_attn-2.7.4.post1+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl --no-build-isolation
                   pip install -v -e .
+
+                  # megatron
                   pip install megatron-core==0.10.0
                   echo $MASTER_PORT
 

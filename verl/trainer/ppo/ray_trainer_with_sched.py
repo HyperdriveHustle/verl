@@ -831,7 +831,6 @@ class RayPPOTrainer(object):
             ## 'rollout': 'rtx4090',
             #'critic': 'rtx4090',
             #'ref': 'rtx4090',
-
         }
         for llm, gpu in llm2gpu.items():
             assert gpu in GPU2Node, f"gpu {gpu} not found in {GPU2Node}"
@@ -863,7 +862,8 @@ class RayPPOTrainer(object):
                     role='rollout',
                     target_node_id=GPU2Node[llm2gpu['rollout']],
                 )
-                self.resource_pool_to_cls[resource_pool]['rollout'] = rollout_cls
+                self.resource_pool_to_cls[resource_pool][
+                    'rollout'] = rollout_cls
         else:
             raise NotImplementedError
 
@@ -948,8 +948,7 @@ class RayPPOTrainer(object):
             #    target_node_id=target_node_id,
             #)
             worker_dict_cls = create_colocated_worker_cls(
-                class_dict=class_dict,
-            )
+                class_dict=class_dict, )
             wg_dict = self.ray_worker_group_cls(
                 resource_pool=resource_pool,
                 ray_cls_with_init=worker_dict_cls,

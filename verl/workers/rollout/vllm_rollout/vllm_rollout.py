@@ -201,7 +201,7 @@ class vLLMRollout(BaseRollout):
                 prompt_token_ids=idx_list,
                 use_tqdm=True,
                 #use_tqdm=False,
-                )
+            )
         # TODO(sgm): disable logprob when recompute_log_prob is enable
         # if n = 1: (bs, response_length) ; if n > 1: (bs * n, response_length)
         response = output[0].to(idx.device)

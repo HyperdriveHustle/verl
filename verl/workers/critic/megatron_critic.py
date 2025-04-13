@@ -262,3 +262,57 @@ class MegatronPPOCritic(BasePPOCritic):
         # add empty cache after each compute
         torch.cuda.empty_cache()
         return metrics
+
+    #####
+    # NOTE: observe very little difference offloading critic megatron
+    # maybe something is wrong, dont think we offload megatron module correctly
+    #####
+    def offload(self):
+        # for module in self.critic_module:
+        #     for _, param in module.named_parameters():
+        #         param.data = param.data.to('cpu')
+        #         if param.grad is not None:
+        #             param.grad = param.grad.to("cpu")
+
+        # for param_group in self.critic_optimizer.param_groups:
+        #     for param in param_group['params']:
+        #         state = self.critic_optimizer.state[param]
+        #         for key, value in state.items():
+        #             if isinstance(value, torch.Tensor):
+        #                 state[key] = value.to("cpu", non_blocking=True)
+        # torch.cuda.synchronize()
+        # torch.cuda.empty_cache()
+
+        ## 1. Offload model modules
+        for i, module in enumerate(self.critic_module):
+            module.eval()
+            module.to('cpu')
+
+        # 2. Offload optimizer states
+        for param_group in self.critic_optimizer.param_groups:
+            for p in param_group['params']:
+                if p in self.critic_optimizer.state:
+                    for key, value in self.critic_optimizer.state[p].items():
+                        if torch.is_tensor(value):
+                            self.critic_optimizer.state[p][key] = value.cpu()
+
+        # 3. Force memory cleanup
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
+    def load(self, device_id):
+        #for module in self.critic_module:
+        #    for _, param in module.named_parameters():
+        #        param.data = param.data.to(device_id, non_blocking=True)
+        #        if param.grad is not None:
+        #            param.grad = param.grad.to(device_id, non_blocking=True)
+        for i, module in enumerate(self.critic_module):
+            module.eval()
+            module.to(device_id)
+
+        for param_group in self.critic_optimizer.param_groups:
+            for param in param_group['params']:
+                state = self.critic_optimizer.state[param]
+                for key, value in state.items():
+                    if isinstance(value, torch.Tensor):
+                        state[key] = value.to(device_id, non_blocking=True)
