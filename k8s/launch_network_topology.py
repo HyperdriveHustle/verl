@@ -42,8 +42,12 @@ def parse_arguments():
                         help='Enable verbose output')
 
     #
-    parser.add_argument('-n', type=int, default=None, help='num of node')
-    parser.add_argument('-f', type=str, default=None)
+    #parser.add_argument('-n', type=int, default=None, help='num of node')
+    parser.add_argument(
+        '-f',
+        type=str,
+        default=None,
+        help='yaml template to dynamically change affinity and node num')
     parser.add_argument('--ban', type=str, default='ban_list.txt')
     parser.add_argument("-p",
                         nargs='*',
@@ -107,9 +111,11 @@ def get_empty_nodes(args):
         empty_nodes_by_region[tor].append(node)
 
     # sort by TOR
-    empty_nodes_by_region = sorted(empty_nodes_by_region.items(),
-                                   key=lambda x: x[0])
-    for tor, nodes in empty_nodes_by_region:
+    kv = sorted(
+        empty_nodes_by_region.items(),
+        key=lambda x: x[0],
+    )
+    for tor, nodes in kv:
         print(f"TOR: {tor}, {len(nodes)} empty nodes:")
         for idx, node in enumerate(nodes):
             gpu_type = node['labels'].get('nvidia.com/gpu.product', 'unknown')
@@ -182,38 +188,71 @@ def build_yaml(
     return name
 
 
+def filter_node(node, ban_nodes):
+    gpu_type = node['labels'].get('nvidia.com/gpu.product', 'unknown')
+    total_gpu = node['labels'].get('nvidia.com/gpu.count', 'unknown')
+    allocatable_gpu = node['allocatable_gpus']
+    if gpu_type == 'unknown':
+        return False
+    if total_gpu == 'unknown':
+        return False
+    if int(allocatable_gpu) != 8:
+        return False
+    if node['name'] in ban_nodes:
+        return False
+    return True
+
+
 def resource_scheduling(
-        empty_nodes_by_region,
-        n,
-        ban_nodes,
+        empty_nodes_by_region: dict,
+        ban_nodes: list[str],
         patterns: list[int],  # each int specify node number under a Tor
 ):
-    print('*' * 100)
-    print(f'[resource scheduling]: ')
-    assert n is not None, "n is None"
-    ns = []
-    for tor, nodes in empty_nodes_by_region:
-        tmp = []
-        for idx, node in enumerate(nodes):
-            gpu_type = node['labels'].get('nvidia.com/gpu.product', 'unknown')
-            total_gpu = node['labels'].get('nvidia.com/gpu.count', 'unknown')
-            allocatable_gpu = node['allocatable_gpus']
-            if gpu_type == 'unknown':
-                continue
-            if total_gpu == 'unknown':
-                continue
-            if int(allocatable_gpu) != 8:
-                continue
-            if node['name'] in ban_nodes:
-                continue
+    assert patterns is not None, 'patterns is None'
 
-            tmp.append(node['name'])
-            if len(tmp) >= n:
-                break
-        if len(tmp) >= n:
-            print(f'Allocated: {tor=} {tmp=}')
-            ns = tmp
-            break
+    tor2nodes = sorted(
+        empty_nodes_by_region.items(),
+        key=lambda x: len(x[1]),
+        reverse=True,
+    )
+    patterns = list(sorted(patterns, reverse=True))
+    tor_len = [(x[0], len(x[1])) for x in tor2nodes]
+    print('*' * 100)
+    print(f'[resource scheduling]: {patterns=} {tor_len=}')
+    assert sum([i[1] for i in tor_len
+                ]) >= sum(patterns), f'{sum(tor_len)=} {sum(patterns)=}'
+
+    # match patterns to tor-topology
+    pat_idx = 0
+    tor_idx = 0
+    ns = []
+    while pat_idx < len(patterns) and tor_idx < len(tor2nodes):
+
+        pat = patterns[pat_idx]
+        nodes = tor2nodes[tor_idx][1]
+        tor = tor2nodes[tor_idx][0]
+        if tor == 'unknown':
+            # unknown TOR
+            tor_idx += 1
+            continue
+
+        avail_nodes = []
+        for idx, node in enumerate(nodes):
+            ok = filter_node(node, ban_nodes)
+            if ok:
+                avail_nodes.append(node)
+
+        if len(avail_nodes) >= pat:
+            selected_nodes = [node['name'] for node in avail_nodes[:pat]]
+            print(f'Allocated: {tor2nodes[tor_idx][0]=} {selected_nodes=}')
+            ns.extend(selected_nodes)
+            pat_idx += 1
+        tor_idx += 1
+
+    # not enough
+    if pat_idx < len(patterns):
+        raise RuntimeError(
+            f'Not enough nodes to match patterns: {patterns=} {tor_len=}')
     print(f'nodes: {ns=}')
     return ns
 
@@ -230,7 +269,6 @@ def main():
     # schedule strategy
     nodes = resource_scheduling(
         empty_nodes_by_region,
-        args.n,
         ban_nodes,
         args.p,
     )
