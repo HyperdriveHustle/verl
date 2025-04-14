@@ -61,8 +61,10 @@ spec:
                   # install verl
                   cp -r /nvfile-heatstorage/chatrl/users/heguoliang/hgl-verl .
                   
+                  # sleep infinity
                   # 
-                  NCCL_DEBUG=INFO torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
+                  #NCCL_DEBUG=INFO torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
+                  torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
               securityContext:
                 privileged: true
               volumeMounts:
@@ -154,8 +156,10 @@ spec:
                   # install verl
                   cp -r /nvfile-heatstorage/chatrl/users/heguoliang/hgl-verl .
                   
+                  # sleep infinity
                   # 
-                  NCCL_DEBUG=INFO torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
+                  #NCCL_DEBUG=INFO torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
+                  torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
               securityContext:
                 privileged: true
               volumeMounts:

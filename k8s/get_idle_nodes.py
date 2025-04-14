@@ -121,14 +121,15 @@ def find_empty_nodes(
         with open(label_selector_file, 'r') as f:
             data = yaml.safe_load(f)
         for k, v in data.items():
-            assert not isinstance(v, dict), f"only support one level of labels: {v}"
+            assert not isinstance(
+                v, dict), f"only support one level of labels: {v}"
             label_selector[k] = v
 
-    print(f'='*80)
+    print(f'=' * 80)
     print(f'label selector: {len(label_selector)}')
     for k, v in label_selector.items():
         print(f'{k} -> {v}')
-    print(f'='*80)
+    print(f'=' * 80)
 
     empty_nodes = []
     for node in nodes:
