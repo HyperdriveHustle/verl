@@ -6,7 +6,9 @@ import yaml
 import subprocess
 import argparse
 import json
+import re
 import sys
+
 from typing import List, Dict, Any
 from time import sleep
 
@@ -48,7 +50,10 @@ def parse_arguments():
         type=str,
         default=None,
         help='yaml template to dynamically change affinity and node num')
-    parser.add_argument('--ban', type=str, default='ban_list.txt')
+
+    parser.add_argument('--ban', type=str, default=None)
+    parser.add_argument('--only', type=str, default=None)
+
     parser.add_argument("-p",
                         nargs='*',
                         type=int,
@@ -58,39 +63,40 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def get_ban_node(filename):
-    if filename is None:
-        return []
+def get_predefined_nodes(filename):
+    prefix = 'zjzx1h'
+    node_names = []
+    # Compile a regular expression pattern to find words starting with the prefix.
+    # \b        - Matches a word boundary to ensure we match whole words.
+    # (         - Starts a capturing group (to extract the full name).
+    # {prefix}  - Matches the literal prefix provided.
+    # [\w-]* - Matches zero or more word characters (letters, numbers, _)
+    #             or hyphens (-). This assumes node names consist of these.
+    # )         - Ends the capturing group.
+    # \b        - Matches a word boundary at the end.
+    # re.escape ensures the prefix is treated literally even if it contains regex special characters.
+    pattern = re.compile(r"\b(" + re.escape(prefix) + r"[\w-]*)\b")
 
-    node_names = []  # Initialize an empty list to store node names
-    with open(filename, 'r') as f:  # Open the file for reading
-        for line in f:  # Iterate over each line
-            # Strip leading/trailing whitespace from the line first
-            cleaned_line = line.strip()
+    try:
+        with open(filename, 'r') as f:  # Open the file for reading
+            for line in f:
+                # Find all non-overlapping matches of the pattern in the current line
+                matches = pattern.findall(line)
+                # Add all found matches (node names) from this line to our list
+                node_names.extend(matches)
 
-            # Find the position of "Node: "
-            node_keyword = "Node: "
-            start_index = cleaned_line.find(node_keyword)
+    except FileNotFoundError as e:
+        print(f"Error: File '{filename}' not found.")
+        raise e
+    except Exception as e:
+        print(f"An error occurred while reading the file: {e}")
+        raise e
 
-            # Check if the keyword was found
-            if start_index != -1:
-                # Calculate where the node name starts (after "Node: ")
-                name_start = start_index + len(node_keyword)
-
-                # Extract the rest of the string from where the name starts
-                remaining_string = cleaned_line[name_start:]
-
-                # Split the remaining string by space to isolate the node name
-                parts = remaining_string.split()
-
-                # Check if parts is not empty (to avoid index errors)
-                if parts:
-                    node_name = parts[
-                        0]  # The first part should be the node name
-                    node_names.append(node_name)  # Append to the list
+    # Return a list of unique node names found (preserves order)
+    # Using dict.fromkeys is an efficient way to remove duplicates
     print(f'*' * 100)
     print(f'ban list: ', node_names)
-    return node_names
+    return list(dict.fromkeys(node_names))
 
 
 def get_empty_nodes(args):
@@ -188,7 +194,11 @@ def build_yaml(
     return name
 
 
-def filter_node(node, ban_nodes):
+def filter_node(
+    node,
+    predefined_strategy: str,
+    predefined_nodes: list[str],
+):
     gpu_type = node['labels'].get('nvidia.com/gpu.product', 'unknown')
     total_gpu = node['labels'].get('nvidia.com/gpu.count', 'unknown')
     allocatable_gpu = node['allocatable_gpus']
@@ -198,14 +208,22 @@ def filter_node(node, ban_nodes):
         return False
     if int(allocatable_gpu) != 8:
         return False
-    if node['name'] in ban_nodes:
-        return False
+
+    if predefined_strategy == 'ban':
+        if node['name'] in predefined_nodes:
+            return False
+    elif predefined_strategy == 'only':
+        if node['name'] not in predefined_nodes:
+            return False
+    else:
+        raise RuntimeError(f'Unknown strategy: {predefined_strategy}')
     return True
 
 
 def resource_scheduling(
         empty_nodes_by_region: dict,
-        ban_nodes: list[str],
+        predefined_strategy: str,
+        predefined_nodes: list[str],
         patterns: list[int],  # each int specify node number under a Tor
 ):
     assert patterns is not None, 'patterns is None'
@@ -238,13 +256,13 @@ def resource_scheduling(
 
         avail_nodes = []
         for idx, node in enumerate(nodes):
-            ok = filter_node(node, ban_nodes)
+            ok = filter_node(node, predefined_strategy, predefined_nodes)
             if ok:
                 avail_nodes.append(node)
 
         if len(avail_nodes) >= pat:
             selected_nodes = [node['name'] for node in avail_nodes[:pat]]
-            print(f'Allocated: {tor2nodes[tor_idx][0]=} {selected_nodes=}')
+            print(f'Allocated: tor: {tor2nodes[tor_idx][0]} {selected_nodes=}')
             ns.extend(selected_nodes)
             pat_idx += 1
         tor_idx += 1
@@ -253,6 +271,7 @@ def resource_scheduling(
     if pat_idx < len(patterns):
         raise RuntimeError(
             f'Not enough nodes to match patterns: {patterns=} {tor_len=}')
+    print(f'=' * 50)
     print(f'nodes: {ns=}')
     return ns
 
@@ -263,13 +282,25 @@ def main():
     # get empty nodes
     empty_nodes_by_region = get_empty_nodes(args)
 
-    # get ban nodes
-    ban_nodes = get_ban_node(args.ban)
+    # get ban nodes or only (mutual exclusive)
+    if args.ban is None and args.only is None:
+        # all allowed
+        select = 'ban'
+        select_nodes = []
+    elif args.ban is not None:
+        assert args.only is None
+        select = 'ban'
+        select_nodes = get_predefined_nodes(args.ban)
+    elif args.only is not None:
+        assert args.ban is None
+        select = 'only'
+        select_nodes = get_predefined_nodes(args.only)
 
     # schedule strategy
     nodes = resource_scheduling(
         empty_nodes_by_region,
-        ban_nodes,
+        select,
+        select_nodes,
         args.p,
     )
     output_file = build_yaml(args.f, nodes)

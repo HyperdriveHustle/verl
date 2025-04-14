@@ -55,17 +55,14 @@ spec:
               args:
                 - "-c"
                 - |
-                  export NCCL_IB_HCA=$(ib-config/look mlxdevice.sh) #必须有，不修改，本次升级改动
+                  export NCCL_IB_HCA=$(/ib-config/look_mlxdevice.sh) #必须有，不修改，本次升级改动
                   echo NCCL_IB_HCA=$NCCL_IB_HCA
 
                   # install verl
-                  cd /nvfile-heatstorage/teleat-infra/heguoliang/verl
-                  pip install flash_attn-2.7.4.post1+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl --no-build-isolation
-                  pip install -v -e .
-                  echo $MASTER_PORT
-
-                  # run nccl test instead
-                  ray start --block --port=$MASTER_PORT --head
+                  cp -r /nvfile-heatstorage/chatrl/users/heguoliang/hgl-verl .
+                  
+                  # 
+                  NCCL_DEBUG=INFO torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
               securityContext:
                 privileged: true
               volumeMounts:
@@ -151,17 +148,14 @@ spec:
               args:
                 - "-c"
                 - |
-                  export NCCL_IB_HCA=$(ib-config/look mlxdevice.sh) #必须有，不修改，本次升级改动
+                  export NCCL_IB_HCA=$(/ib-config/look_mlxdevice.sh) #必须有，不修改，本次升级改动
                   echo NCCL_IB_HCA=$NCCL_IB_HCA
 
                   # install verl
-                  cd /nvfile-heatstorage/teleat-infra/heguoliang/verl
-                  pip install flash_attn-2.7.4.post1+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl --no-build-isolation
-                  pip install -v -e .
-                  echo $MASTER_PORT
-
-                  # run nccl test instead
-                  ray start --address=${MASTER_ADDR}:${MASTER_PORT}
+                  cp -r /nvfile-heatstorage/chatrl/users/heguoliang/hgl-verl .
+                  
+                  # 
+                  NCCL_DEBUG=INFO torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
               securityContext:
                 privileged: true
               volumeMounts:
