@@ -12,7 +12,7 @@ import sys
 from typing import List, Dict, Any
 from time import sleep
 
-from get_idle_nodes import get_all_nodes, get_pods_per_node, find_empty_nodes, run_kubectl_command
+from get_idle_nodes import get_all_nodes, get_pods_per_node, find_empty_nodes, run_kubectl_command, get_empty_nodes
 
 
 def parse_arguments():
@@ -97,40 +97,6 @@ def get_predefined_nodes(filename):
     print(f'*' * 100)
     print(f'ban list: ', node_names)
     return list(dict.fromkeys(node_names))
-
-
-def get_empty_nodes(args):
-    nodes = get_all_nodes(args)
-    pod_counts = get_pods_per_node(args)
-    empty_nodes = find_empty_nodes(nodes, pod_counts)
-
-    assert len(empty_nodes) > 0, "no empty nodes found"
-
-    print(f"Found {len(empty_nodes)} empty nodes:")
-
-    # group by region
-    empty_nodes_by_region = {}
-    for node in empty_nodes:
-        tor = node['labels'].get('region', 'unknown')
-        if tor not in empty_nodes_by_region:
-            empty_nodes_by_region[tor] = []
-        empty_nodes_by_region[tor].append(node)
-
-    # sort by TOR
-    kv = sorted(
-        empty_nodes_by_region.items(),
-        key=lambda x: x[0],
-    )
-    for tor, nodes in kv:
-        print(f"TOR: {tor}, {len(nodes)} empty nodes:")
-        for idx, node in enumerate(nodes):
-            gpu_type = node['labels'].get('nvidia.com/gpu.product', 'unknown')
-            total_gpu = node['labels'].get('nvidia.com/gpu.count', 'unknown')
-            allocatable_gpu = node['allocatable_gpus']
-            print(
-                f"{idx}. Node: {node['name']} GPU Type: {gpu_type}. GPUs: {allocatable_gpu}/{total_gpu}."
-            )
-    return empty_nodes_by_region
 
 
 def build_yaml(

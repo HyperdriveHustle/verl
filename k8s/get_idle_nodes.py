@@ -2,6 +2,7 @@ import subprocess
 import argparse
 import json
 import sys
+import yaml
 from typing import List, Dict, Any
 
 
@@ -63,8 +64,8 @@ def get_all_nodes(args) -> List[Dict[str, Any]]:
     if args.kubeconfig:
         cmd.extend(["--kubeconfig", args.kubeconfig])
 
-    if args.selector:
-        cmd.extend(["--selector", args.selector])
+    # if args.selector:
+    #     cmd.extend(["--selector", args.selector])
 
     output = run_kubectl_command(cmd, args.verbose)
     nodes_json = json.loads(output)
@@ -88,7 +89,6 @@ def get_pods_per_node(args) -> Dict[str, int]:
     # Count pods per node
     pod_counts = {}
     for pod in pods_json["items"]:
-
         pod_name = pod['metadata']['name']
 
         # skip non-gpu pod
@@ -109,45 +109,119 @@ def get_pods_per_node(args) -> Dict[str, int]:
     return pod_counts
 
 
-def find_empty_nodes(nodes: List[Dict[str, Any]],
-                     pod_counts: Dict[str, int]) -> List[Dict[str, Any]]:
-    """Find nodes that don't have any pods running on them."""
+def find_empty_nodes(
+    nodes: List[Dict[str, Any]],
+    pod_counts: Dict[str, int],
+    label_selector_file: str,
+) -> List[Dict[str, Any]]:
+
+    # get selectors
+    label_selector = {}
+    if label_selector_file is not None:
+        with open(label_selector_file, 'r') as f:
+            data = yaml.safe_load(f)
+        for k, v in data.items():
+            assert not isinstance(v, dict), f"only support one level of labels: {v}"
+            label_selector[k] = v
+
+    print(f'='*80)
+    print(f'label selector: {len(label_selector)}')
+    for k, v in label_selector.items():
+        print(f'{k} -> {v}')
+    print(f'='*80)
+
     empty_nodes = []
-
     for node in nodes:
-
-        # skip not gpu=true
-        if 'gpu' not in node['metadata']['labels'] or node['metadata'][
-                'labels']['gpu'] != 'true':
+        ## skip not gpu=true
+        if 'gpu' not in node['metadata']['labels'] or \
+                node['metadata']['labels']['gpu'] != 'true':
             continue
 
+        ## skip if node has pod
         node_name = node["metadata"]["name"]
-        if node_name not in pod_counts:
-            # Check if the node is ready
-            node_conditions = node["status"]["conditions"]
-            ready_condition = next(
-                (cond for cond in node_conditions if cond["type"] == "Ready"),
-                None)
+        if node_name in pod_counts:
+            continue
 
-            # skip non NV GPU
-            if 'nvidia.com/gpu' not in node['status']['allocatable']:
-                continue
+        ## skip non NV GPU
+        if 'nvidia.com/gpu' not in node['status']['allocatable']:
+            continue
 
-            # some node will have partial allocable GPU
-            allocatable_gpus = node['status']['allocatable']['nvidia.com/gpu']
+        ## filter labels (ALL)
+        # ok = True
+        # for k, v in label_selector.items():
+        #     if k not in node_labels or node_labels[k] != v:
+        #         ok = False
+        #         break
 
-            node_info = {
-                "name": node_name,
-                "ready": ready_condition
-                and ready_condition["status"] == "True",
-                "capacity": node["status"]["capacity"],
-                "labels": node["metadata"]["labels"],
-                'allocatable_gpus': allocatable_gpus,
-            }
+        ## filter labels (Any)
+        node_labels = node["metadata"]["labels"]
+        if len(label_selector) > 0:
+            ok = False
+        else:
+            ok = True
+        for k, v in label_selector.items():
+            if k in node_labels and node_labels[k] == v:
+                ok = True
+                break
+        if not ok:
+            continue
 
-            empty_nodes.append(node_info)
+        # collect
+        node_conditions = node["status"]["conditions"]
+        ready_condition = next(
+            (cond for cond in node_conditions if cond["type"] == "Ready"),
+            None)
+
+        allocatable_gpus = node['status']['allocatable']['nvidia.com/gpu']
+
+        node_info = {
+            "name": node_name,
+            "ready": ready_condition and ready_condition["status"] == "True",
+            "capacity": node["status"]["capacity"],
+            "labels": node["metadata"]["labels"],
+            'allocatable_gpus': allocatable_gpus,
+        }
+
+        empty_nodes.append(node_info)
 
     return empty_nodes
+
+
+def get_empty_nodes(args):
+    nodes = get_all_nodes(args)
+    pod_counts = get_pods_per_node(args)
+    empty_nodes = find_empty_nodes(nodes, pod_counts, args.selector)
+
+    assert len(empty_nodes) > 0, "no empty nodes found"
+    print(f"Found {len(empty_nodes)} empty nodes:")
+
+    # group by region
+    empty_nodes_by_region = {}
+    for node in empty_nodes:
+
+        # XXX I am told unknown == a, but not sure exactly
+        #tor = node['labels'].get('region', 'unknown')
+        tor = node['labels'].get('region', 'a')
+
+        if tor not in empty_nodes_by_region:
+            empty_nodes_by_region[tor] = []
+        empty_nodes_by_region[tor].append(node)
+
+    # sort by TOR
+    kv = sorted(
+        empty_nodes_by_region.items(),
+        key=lambda x: x[0],
+    )
+    for tor, nodes in kv:
+        print(f"TOR: {tor}, {len(nodes)} empty nodes:")
+        for idx, node in enumerate(nodes):
+            gpu_type = node['labels'].get('nvidia.com/gpu.product', 'unknown')
+            total_gpu = node['labels'].get('nvidia.com/gpu.count', 'unknown')
+            allocatable_gpu = node['allocatable_gpus']
+            print(
+                f"{idx}. Node: {node['name']} GPU Type: {gpu_type}. GPUs: {allocatable_gpu}/{total_gpu}."
+            )
+    return empty_nodes_by_region
 
 
 def main():
@@ -157,46 +231,7 @@ def main():
     if args.verbose:
         print("Gathering information about nodes and pods...")
 
-    nodes = get_all_nodes(args)
-    pod_counts = get_pods_per_node(args)
-    empty_nodes = find_empty_nodes(nodes, pod_counts)
-
-    if args.output == 'json':
-        print(json.dumps(empty_nodes, indent=2))
-    else:
-        if empty_nodes:
-            print(f"Found {len(empty_nodes)} empty nodes:")
-
-            # for idx, node in enumerate(empty_nodes):
-            #     gpu_type = node['labels'].get('nvidia.com/gpu.product', 'unknown')
-            #     gpu_num = node['labels'].get('nvidia.com/gpu.count', 'unknown')
-            #     tor = node['labels'].get('region', 'unknown')
-            #     print(f"{idx}. Node: {node['name']}. GPU Type: {gpu_type}. GPU Count: {gpu_num}. TOR: {tor}")
-
-            # group by region
-            empty_nodes_by_region = {}
-            for node in empty_nodes:
-                tor = node['labels'].get('region', 'unknown')
-                if tor not in empty_nodes_by_region:
-                    empty_nodes_by_region[tor] = []
-                empty_nodes_by_region[tor].append(node)
-
-            # sort by TOR
-            empty_nodes_by_region = sorted(empty_nodes_by_region.items(),
-                                           key=lambda x: x[0])
-            for tor, nodes in empty_nodes_by_region:
-                print(f"TOR: {tor}, {len(nodes)} empty nodes:")
-                for idx, node in enumerate(nodes):
-                    gpu_type = node['labels'].get('nvidia.com/gpu.product',
-                                                  'unknown')
-                    total_gpu = node['labels'].get('nvidia.com/gpu.count',
-                                                   'unknown')
-                    allocatable_gpu = node['allocatable_gpus']
-                    print(
-                        f"{idx}. Node: {node['name']} GPU Type: {gpu_type}. GPUs: {allocatable_gpu}/{total_gpu}."
-                    )
-        else:
-            print("No empty nodes found in the cluster.")
+    get_empty_nodes(args)
 
 
 if __name__ == "__main__":
