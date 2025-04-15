@@ -49,7 +49,6 @@ from datetime import timedelta
 
 # Constants
 FLOAT32_BYTES = torch.finfo(torch.float32).bits // 8
-DEFAULT_TIMEOUT_SECONDS = 60  # Increased timeout for potentially slower operations or larger clusters
 
 
 def parse_args():
@@ -84,6 +83,11 @@ def parse_args():
                         type=int,
                         default=42,
                         help='Random seed for tensor initialization.')
+    parser.add_argument(
+        '--timeout',
+        type=int,
+        default=60,
+    )
     # Potentially add --sizes argument later if needed:
     # parser.add_argument('--sizes', type=str, default=None, help='Comma-separated list of sizes (e.g., "1KB,1MB,1GB")')
     parser.add_argument('--backend',
@@ -172,7 +176,10 @@ def get_bandwidth_factors(op_name, world_size):
     return algo_factor, bus_factor
 
 
-def setup(backend='nccl'):
+def setup(
+    timeout,
+    backend='nccl',
+):
     if dist.is_initialized():
         print(
             "Warning: Distributed process group already initialized. Skipping setup."
@@ -194,7 +201,7 @@ def setup(backend='nccl'):
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     visible_gpu = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
 
-    timeout = timedelta(seconds=DEFAULT_TIMEOUT_SECONDS)
+    timeout = timedelta(seconds=timeout)
     print(
         f"{rank=} {local_rank=} {visible_gpu=} {world_size=} Initializing process group with backend '{backend}' and timeout {timeout}..."
     )
@@ -626,7 +633,7 @@ def main():
     # Seed CUDA devices if desired (may have minor performance impact)
     # torch.cuda.manual_seed_all(args.seed)
 
-    setup()
+    setup(args.timeout, args.backend)
 
     all_results = {}  # Dictionary to store results if running 'all'
 

@@ -64,7 +64,7 @@ spec:
                   # sleep infinity
                   # 
                   #NCCL_DEBUG=INFO torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
-                  torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
+                  torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/gemini_nccl_test.py --op all
               securityContext:
                 privileged: true
               volumeMounts:
@@ -159,7 +159,7 @@ spec:
                   # sleep infinity
                   # 
                   #NCCL_DEBUG=INFO torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
-                  torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/my_nccl_test.py  --op send-recv
+                  torchrun --nproc_per_node=8 --nnodes=$((VC_MASTER_NUM+VC_WORKER_NUM)) --node_rank=$RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT /workspace/hgl-verl/custom_bench/nccl_test/gemini_nccl_test.py --op all
               securityContext:
                 privileged: true
               volumeMounts:
