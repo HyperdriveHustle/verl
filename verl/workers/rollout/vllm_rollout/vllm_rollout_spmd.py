@@ -24,6 +24,7 @@ When working with Megatron:
 - Do inference in tp. pp is treated as additional dp
 - After inference, all the parameters that doesn't belong to this pp rank is freed.
 """
+import os
 import numpy as np
 from typing import List
 from contextlib import contextmanager
@@ -34,7 +35,7 @@ from tensordict import TensorDict
 from torch import nn
 from typing import Any, Union
 from verl import DataProto
-from verl.utils.torch_functional import get_eos_mask, pad_2d_list_to_length
+from verl.utils.torch_functional import get_response_mask, pad_2d_list_to_length
 from verl.workers.rollout.base import BaseRollout
 from vllm.distributed import parallel_state as vllm_ps
 from vllm import LLM, SamplingParams
@@ -106,6 +107,8 @@ class vLLMRollout(BaseRollout):
                              please increase max_num_batched_tokens or disable chunked prefill')
         load_format = 'dummy' if config.load_format.startswith('dummy') else config.load_format
 
+        trust_remote_code = kwargs.get('trust_remote_code', False)
+
         self.inference_engine = LLM(
             model=model_path,
             enable_sleep_mode=True,
@@ -123,6 +126,8 @@ class vLLMRollout(BaseRollout):
             max_num_batched_tokens=max_num_batched_tokens,
             enable_chunked_prefill=config.enable_chunked_prefill,
             enable_prefix_caching=True,
+            trust_remote_code=trust_remote_code,
+            seed=config.engine_seed,
         )
 
         # Offload vllm model to reduce peak memory usage
@@ -268,7 +273,9 @@ class vLLMRollout(BaseRollout):
         # position_ids:   [0,0,0,0,0,1,2,3, | 4,5,6,7,8,9,10,11]
         response_position_ids = position_ids[:, -1:] + delta_position_id
         position_ids = torch.cat([position_ids, response_position_ids], dim=-1)
-        response_attention_mask = get_eos_mask(response_id=response, eos_token=eos_token_id, dtype=attention_mask.dtype)
+        response_attention_mask = get_response_mask(response_id=response,
+                                                    eos_token=eos_token_id,
+                                                    dtype=attention_mask.dtype)
         attention_mask = torch.cat((attention_mask, response_attention_mask), dim=-1)
 
         # all the tp ranks should contain the same data here. data in all ranks are valid
