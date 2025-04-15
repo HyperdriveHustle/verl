@@ -1,3 +1,4 @@
+import re
 import subprocess
 import argparse
 import json
@@ -35,7 +36,31 @@ def parse_arguments():
                         '-v',
                         action='store_true',
                         help='Enable verbose output')
+    parser.add_argument(
+        '--ip_only',
+        type=str,
+        default=None,
+    )
     return parser.parse_args()
+
+
+def extract_ips_from_file(file_path):
+    ip_list = []
+    # Define the regular expression pattern for IPs starting with "10"
+    pattern = re.compile(r'^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+
+    # Open the file and read line by line
+    with open(file_path, 'r') as file:
+        for line in file:
+            # Remove any leading/trailing whitespace characters (including newline)
+            line = line.strip()
+
+            # Try to match the line with the IP pattern
+            if pattern.match(line):
+                ip_list.append(line)
+            else:
+                continue  # Continue to the next line if no match found
+    return ip_list
 
 
 def run_kubectl_command(command: List[str], verbose: bool = False) -> str:
@@ -271,8 +296,15 @@ def find_empty_nodes(
     nodes: List[Dict[str, Any]],
     pod_counts: Dict[str, int],
     label_selector_file: str,
-    args,
+    ip_only_file: Optional[str],
 ) -> List[Dict[str, Any]]:
+
+    # get from a pre-defined list of IPs
+    ip_only = []
+    if ip_only_file is not None:
+        ip_only = extract_ips_from_file(ip_only_file)
+        print(f'=' * 80)
+        print(f'ip only ({len(ip_only)}): {ip_only}')
 
     # get selectors
     label_selector = {}
@@ -284,11 +316,11 @@ def find_empty_nodes(
                 v, dict), f"only support one level of labels: {v}"
             label_selector[k] = v
 
-    print(f'=' * 80)
-    print(f'label selector: {len(label_selector)}')
-    for k, v in label_selector.items():
-        print(f'{k} -> {v}')
-    print(f'=' * 80)
+        print(f'=' * 80)
+        print(f'label selector: {len(label_selector)}')
+        for k, v in label_selector.items():
+            print(f'{k} -> {v}')
+        print(f'=' * 80)
 
     empty_nodes = []
     for node in nodes:
@@ -306,25 +338,37 @@ def find_empty_nodes(
         if 'nvidia.com/gpu' not in node['status']['allocatable']:
             continue
 
-        ## filter labels (ALL)
-        # ok = True
-        # for k, v in label_selector.items():
-        #     if k not in node_labels or node_labels[k] != v:
-        #         ok = False
-        #         break
+        ## filter on label selector
+        if label_selector_file is not None:
+            ## filter labels (ALL)
+            # ok = True
+            # for k, v in label_selector.items():
+            #     if k not in node_labels or node_labels[k] != v:
+            #         ok = False
+            #         break
 
-        ## filter labels (Any)
-        node_labels = node["metadata"]["labels"]
-        if len(label_selector) > 0:
-            ok = False
-        else:
-            ok = True
-        for k, v in label_selector.items():
-            if k in node_labels and node_labels[k] == v:
+            ## filter labels (Any)
+            node_labels = node["metadata"]["labels"]
+            if len(label_selector) > 0:
+                ok = False
+            else:
                 ok = True
-                break
-        if not ok:
-            continue
+            for k, v in label_selector.items():
+                if k in node_labels and node_labels[k] == v:
+                    ok = True
+                    break
+            if not ok:
+                continue
+
+        ## fileter ip only
+        if ip_only_file is not None:
+            node_ip = None
+            for addr in node["status"].get("addresses", []):
+                if addr.get("type") == "InternalIP":
+                    node_ip = addr.get("address")
+                    break
+            if node_ip not in ip_only:
+                continue
 
         # collect
         node_conditions = node["status"]["conditions"]
@@ -359,7 +403,8 @@ def find_empty_nodes(
 def get_empty_nodes(args):
     nodes = get_all_nodes(args)
     pod_counts = get_pods_per_node(args)
-    empty_nodes = find_empty_nodes(nodes, pod_counts, args.selector, args)
+    empty_nodes = find_empty_nodes(nodes, pod_counts, args.selector,
+                                   args.ip_only)
 
     assert len(empty_nodes) > 0, "no empty nodes found"
     print(f"Found {len(empty_nodes)} empty nodes:")

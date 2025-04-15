@@ -46,6 +46,11 @@ def parse_arguments():
     #
     #parser.add_argument('-n', type=int, default=None, help='num of node')
     parser.add_argument(
+        '--ip_only',
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         '-f',
         type=str,
         default=None,
