@@ -59,11 +59,11 @@ def parse_args():
         '--op',
         type=str,
         choices=[
-            #'send-recv',      # Point-to-point ring
             'all-reduce',
             'all-gather',
             'reduce-scatter',
             'broadcast',
+            'send-recv',  # Point-to-point ring
             'all'  # Run all supported tests sequentially
         ],
         required=True,
@@ -124,6 +124,52 @@ def get_sizes(args):
     # if args.sizes:
     #     sizes = [parse_size_str(s) for s in args.sizes.split(',')]
     return sizes
+
+
+def get_bandwidth_factors(op_name, world_size):
+    """
+    Get algorithm and bus bandwidth multipliers for different operations.
+    For details, see:
+        https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md
+    
+    Returns:
+        tuple: (algorithm_factor, bus_factor)
+    """
+    if op_name == 'all-reduce':
+        # All-reduce: Each rank sends and receives data
+        # Algorithm sees data size once (reduced result)
+        # Bus sees 2(n-1)/n data volume (ring algorithm)
+        algo_factor = 1.0
+        bus_factor = 2.0 * (world_size - 1) / world_size
+    elif op_name == 'reduce-scatter':
+        # Reduce-scatter: Each rank contributes full data but receives 1/n
+        # Algorithm sees 1/n of data (scattered result)
+        # Bus sees (n-1)/n data volume (ring algorithm)
+        algo_factor = world_size
+        bus_factor = (world_size - 1) / world_size
+    elif op_name == 'all-gather':
+        # All-gather: Each rank contributes 1/n but receives full data
+        # Algorithm sees full data size (gathered result)
+        # Bus sees (n-1)/n data volume (ring algorithm)
+        algo_factor = world_size
+        bus_factor = (world_size - 1) / world_size
+    elif op_name == 'broadcast':
+        # Broadcast: Only one rank sends, all others receive
+        # Algorithm sees full data size once
+        # Bus factor depends on topology, approximated as (n-1)/n
+        algo_factor = 1.0
+        bus_factor = 1.0
+    elif op_name == 'send-recv':
+        # Point-to-point: Direct data transfer
+        algo_factor = 1.0
+        bus_factor = 1.0
+    else:
+        # Default conservative values
+        # algo_factor = 1.0
+        # bus_factor = 1.0
+        raise RuntimeError(f'unsupport {op_name}')
+
+    return algo_factor, bus_factor
 
 
 def setup(backend='nccl'):
@@ -208,7 +254,6 @@ def measure_op_bandwidth(
     args,
     op_name,
     comm_op_func,
-    bandwidth_factor=1.0,
     setup_tensors_func=None,
     requires_input_list=False,
     requires_output_list=False,
@@ -220,7 +265,6 @@ def measure_op_bandwidth(
         args: Command line arguments.
         op_name (str): Name of the operation (e.g., 'all-reduce').
         comm_op_func (callable): The torch.distributed communication function (e.g., dist.all_reduce).
-        bandwidth_factor (float): Multiplier for bandwidth calculation (e.g., 2.0 for all-reduce).
         setup_tensors_func (callable, optional): Custom function to create tensors if needed.
         requires_input_list (bool): If the comm_op requires an input list (e.g., reduce_scatter).
         requires_output_list (bool): If the comm_op requires an output list (e.g., all_gather).
@@ -239,6 +283,8 @@ def measure_op_bandwidth(
         sizes = get_sizes(args)
         warmup_iters = args.warmup
         test_iters = args.iters
+
+        algo_factor, bus_factor = get_bandwidth_factors(op_name, world_size)
 
         results = {}  # Store results {size: bandwidth}
 
@@ -356,22 +402,22 @@ def measure_op_bandwidth(
             duration = end_time - start_time
 
             # --- Bandwidth Calculation ---
-            # Base data transferred per iteration (size of the tensor involved per rank)
-            # For collectives like all-reduce, reduce-scatter, we use a factor of 2
-            # to approximate the data movement (send + receive) in algorithms like ring.
-            # For point-to-point, broadcast, all-gather, it's typically the size itself.
-            total_data_transferred = size * bandwidth_factor * test_iters
-            bandwidth_gbps = (
-                total_data_transferred /
-                (1024 * 1024 * 1024)) / duration if duration > 0 else 0
+            assert duration > 0, f'{duration=}'
+            # N_Elements per GPU * N_Iterations * factor
+            total_data_algo = size * test_iters * algo_factor
+            algo_bandwidth_gbps = (total_data_algo /
+                                   (1024 * 1024 * 1024)) / duration
+
+            # Bus bandwidth - what the hardware sees
+            bus_bandwidth_gbps = algo_bandwidth_gbps * bus_factor
 
             if local_rank == args.r:
                 print(
                     f"  Size: {format_size(size)}\n"
                     f"    Total time: {duration:.4f} seconds\n"
-                    f"    Bandwidth ({'Algo' if bandwidth_factor > 1 else 'Per Rank'}): {bandwidth_gbps:.2f} GB/s"
+                    f"    AlgoBW: {algo_bandwidth_gbps:.2f} GB/s - BusBW: {bus_bandwidth_gbps:.2f} GB/s\n"
                 )
-                results[size] = bandwidth_gbps
+                results[size] = (algo_bandwidth_gbps, bus_bandwidth_gbps)
 
             # --- Cleanup per size ---
             del tensor, input_list, output_list, output_tensor
@@ -394,8 +440,15 @@ def measure_op_bandwidth(
         traceback.print_exc()
 
 
-def measure_send_recv_bandwidth(args):
-    """Measure bandwidth using send/recv in a ring pattern."""
+def measure_send_recv(
+    args,
+    op_name,
+    comm_op_func=None,
+    setup_tensors_func=None,
+    requires_input_list=False,
+    requires_output_list=False,
+):
+    assert comm_op_func is None
     try:
         local_rank = int(os.environ["LOCAL_RANK"])
         rank = int(os.environ["RANK"])
@@ -405,82 +458,100 @@ def measure_send_recv_bandwidth(args):
         torch.cuda.set_device(local_rank)
         device = torch.device(f'cuda:{local_rank}')
 
-        print_test_header("Send-Recv (Ring)", rank, local_rank, world_size,
-                          visible_gpu)
+        print_test_header(op_name, rank, local_rank, world_size, visible_gpu)
 
         sizes = get_sizes(args)
         warmup_iters = args.warmup
         test_iters = args.iters
 
-        # Determine communication peers for the ring
-        p_send = (rank + 1) % world_size  # Send to next rank
-        p_recv = (rank - 1 +
-                  world_size) % world_size  # Receive from previous rank
+        algo_factor, bus_factor = get_bandwidth_factors(op_name, world_size)
 
-        if local_rank == args.r:
-            print(
-                f"Rank {rank} setup: Sending to {p_send}, Receiving from {p_recv}"
-            )
-        dist.barrier()
-
-        results = {}
+        results = {}  # Store results {size: bandwidth}
 
         for size in sizes:
-            num_elements = size // FLOAT32_BYTES
-            if num_elements == 0:
-                if rank == args.r:
-                    print(f"Skipping size {format_size(size)}...")
+            # skip if more than 512MB
+            if size > 512 * 1024 * 1024:
                 continue
 
+            num_elements = size // FLOAT32_BYTES
+            if num_elements == 0:
+                if local_rank == args.r:
+                    print(
+                        f"{rank=} {local_rank=} Skipping size {format_size(size)} as it results in 0 elements."
+                    )
+                continue
+
+            # --- Tensor Creation ---
+            tensor = None
+            input_list = None
+            output_list = None
+            output_tensor = None
+
             try:
-                send_tensor = torch.rand(num_elements,
-                                         dtype=torch.float32,
-                                         device=device)
-                recv_tensor = torch.zeros(num_elements,
-                                          dtype=torch.float32,
-                                          device=device)
+                if setup_tensors_func:
+                    # Custom tensor setup if provided
+                    tensor, input_list, output_list, output_tensor = setup_tensors_func(
+                        size, num_elements, device, world_size)
+                else:
+                    # Default: create a single tensor
+                    send_tensor = torch.rand(num_elements,
+                                             dtype=torch.float32,
+                                             device=device)
+                    recv_tensor = torch.zeros(num_elements,
+                                              dtype=torch.float32,
+                                              device=device)
+
             except torch.cuda.OutOfMemoryError:
                 if local_rank == args.r:
                     print(
-                        f"OOM ERROR: Cannot allocate tensors for size {format_size(size)} on rank {rank}. Skipping."
+                        f"OOM ERROR: Cannot allocate tensor(s) for size {format_size(size)} on rank {rank} (GPU {local_rank}). Skipping this size."
                     )
-                dist.barrier()
-                del send_tensor, recv_tensor
+                dist.barrier(
+                )  # Ensure all ranks acknowledge OOM before continuing/exiting
+                # Clean up any partially allocated tensors if possible
+                del tensor, input_list, output_list, output_tensor
                 torch.cuda.empty_cache()
-                continue
+                continue  # Skip to next size
             except Exception as e:
                 if local_rank == args.r:
                     print(
-                        f"ERROR during tensor creation for size {format_size(size)}: {e}"
+                        f"ERROR during tensor creation for size {format_size(size)} on rank {rank}: {e}"
                     )
                 dist.barrier()
-                raise
+                raise  # Propagate other unexpected errors
 
             # --- Warmup ---
-            dist.barrier()
+            dist.barrier()  # Ensure tensors created everywhere before warmup
             if local_rank == args.r:
                 print()
                 print(f"{rank=} Warming up for size {format_size(size)}...")
-            reqs = []
-            for _ in range(warmup_iters):
-                # Simple non-blocking approach, could also use blocking with odd/even separation
-                # Non-blocking might show slightly different performance characteristics
-                req_send = dist.isend(send_tensor, dst=p_send)
-                req_recv = dist.irecv(recv_tensor, src=p_recv)
-                reqs.extend([req_send, req_recv])
 
-                # Wait for this pair to complete before next iteration
-                for req in [req_send, req_recv]:
-                    req.wait()
-                # Barrier between iterations might be needed if synchronization issues arise
-                # dist.barrier()
+            if rank == 0:
+                p1 = world_size - 1
+            else:
+                p1 = rank - 1
 
-            # Ensure all prior ops completed if using non-blocking
-            # for req in reqs:
-            #     req.wait()
+            if rank == world_size - 1:
+                p2 = 0
+            else:
+                p2 = rank + 1
+
+            ## NOTE separate odd/even to avoid deadlock
+            for i in range(warmup_iters):
+                if rank % 2 == 0:
+                    dist.recv(recv_tensor, src=p1)
+                else:
+                    dist.send(send_tensor, dst=p2)
+
+                if rank % 2 == 0:
+                    dist.send(send_tensor, dst=p1)
+                else:
+                    dist.recv(recv_tensor, src=p2)
+
             torch.cuda.synchronize()
             dist.barrier()
-            if local_rank == args.r: print("Warmup complete.")
+            if local_rank == args.r:
+                print(f"{rank=} Warmup complete.")
 
             # --- Measurement ---
             if local_rank == args.r:
@@ -488,51 +559,56 @@ def measure_send_recv_bandwidth(args):
                     f"Starting measurement ({test_iters} iters) for size {format_size(size)}..."
                 )
             start_time = time.time()
-            # Using blocking send/recv with odd/even separation for deadlock avoidance
-            # This is often more stable for benchmarking point-to-point.
-            for i in range(test_iters):
+            for _ in range(test_iters):
+                # NOTE separate odd/even to avoid deadlock
                 if rank % 2 == 0:
-                    dist.send(send_tensor, dst=p_send)
-                    dist.recv(recv_tensor, src=p_recv)
+                    dist.recv(recv_tensor, src=p1)
                 else:
-                    dist.recv(recv_tensor, src=p_recv)
-                    dist.send(send_tensor, dst=p_send)
+                    dist.send(send_tensor, dst=p2)
+                if rank % 2 == 0:
+                    dist.send(send_tensor, dst=p1)
+                else:
+                    dist.recv(recv_tensor, src=p2)
 
-                # Optional barrier per iteration for tight sync (can add overhead)
-                # dist.barrier()
-
-            torch.cuda.synchronize()
+            torch.cuda.synchronize()  # Ensure GPU work is done
             end_time = time.time()
-            dist.barrier()  # Ensure all ranks finished timing section
+            dist.barrier()  # Ensure all ranks finished before calculating time
 
             duration = end_time - start_time
 
-            # Bandwidth Calculation: Data sent OR received by this process
-            total_data_transferred = size * test_iters
-            bandwidth_gbps = (
-                total_data_transferred /
-                (1024 * 1024 * 1024)) / duration if duration > 0 else 0
+            # --- Bandwidth Calculation ---
+            assert duration > 0, f'{duration=}'
+            total_data_algo = size * test_iters * algo_factor  # *2? 2 round??
+            algo_bandwidth_gbps = (total_data_algo /
+                                   (1024 * 1024 * 1024)) / duration
+
+            # Bus bandwidth - what the hardware sees
+            bus_bandwidth_gbps = algo_bandwidth_gbps * bus_factor
 
             if local_rank == args.r:
-                print(f"  Size: {format_size(size)}\n"
-                      f"    Total time: {duration:.4f} seconds\n"
-                      f"    Bandwidth (Per Rank): {bandwidth_gbps:.2f} GB/s")
-                results[size] = bandwidth_gbps
+                print(
+                    f"  Size: {format_size(size)}\n"
+                    f"    Total time: {duration:.4f} seconds\n"
+                    f"    AlgoBW: {algo_bandwidth_gbps:.2f} GB/s - BusBW: {bus_bandwidth_gbps:.2f} GB/s\n"
+                )
+                results[size] = (algo_bandwidth_gbps, bus_bandwidth_gbps)
 
-            del send_tensor, recv_tensor
+            # --- Cleanup per size ---
+            del tensor, input_list, output_list, output_tensor
             torch.cuda.empty_cache()
             dist.barrier()
 
         if local_rank == args.r:
-            print("--- Send-Recv (Ring) Test Complete ---")
+            print(f"--- {op_name} Test Complete ---")
             print()
-        return results
+        return results  # Return results for potential aggregation
 
     except Exception as e:
+        # Ensure cleanup happens even if errors occur mid-test
         local_rank = os.environ.get("LOCAL_RANK", "N/A")
         rank = os.environ.get("RANK", "N/A")
         print(
-            f"[Rank {rank}, LocalRank {local_rank}] EXCEPTION in measure_send_recv_bandwidth: {e}"
+            f"[Rank {rank}, LocalRank {local_rank}] EXCEPTION in measure_op_bandwidth ({op_name}): {e}"
         )
         import traceback
         traceback.print_exc()
@@ -558,11 +634,11 @@ def main():
     if args.op == 'all':
         # Define the order for the 'all' run
         ops_to_run = [
-            #'send-recv',
-            'broadcast',
             'all-reduce',
-            'reduce-scatter',
             'all-gather',
+            'reduce-scatter',
+            'broadcast',
+            'send-recv',
         ]
     else:
         ops_to_run = [args.op]
@@ -571,34 +647,34 @@ def main():
 
         results = {}
         if op_choice == 'send-recv':
-            #results = measure_send_recv_bandwidth(args)
-            raise RuntimeError(f'not impl')
+            results = measure_send_recv(
+                args,
+                op_name='send-recv',
+            )
         elif op_choice == 'all-reduce':
-            # Bandwidth factor 2.0 for algorithmic bandwidth (Ring Algo approximation)
-            results = measure_op_bandwidth(args,
-                                           op_name='all-reduce',
-                                           comm_op_func=dist.all_reduce,
-                                           bandwidth_factor=2.0)
+            results = measure_op_bandwidth(
+                args,
+                op_name='all-reduce',
+                comm_op_func=dist.all_reduce,
+            )
         elif op_choice == 'broadcast':
-            # Bandwidth factor 1.0 (data received per non-root node)
-            results = measure_op_bandwidth(args,
-                                           op_name='broadcast',
-                                           comm_op_func=dist.broadcast,
-                                           bandwidth_factor=1.0)
+            results = measure_op_bandwidth(
+                args,
+                op_name='broadcast',
+                comm_op_func=dist.broadcast,
+            )
         elif op_choice == 'all-gather':
-            # Needs output list, BW factor 1.0 (data sent per node)
-            results = measure_op_bandwidth(args,
-                                           op_name='all-gather',
-                                           comm_op_func=dist.all_gather,
-                                           bandwidth_factor=1.0,
-                                           requires_output_list=True)
+            results = measure_op_bandwidth(
+                args,
+                op_name='all-gather',
+                comm_op_func=dist.all_gather,
+                requires_output_list=True,
+            )
         elif op_choice == 'reduce-scatter':
-            # Needs input list, BW factor 2.0 (Ring Algo approximation)
             results = measure_op_bandwidth(
                 args,
                 op_name='reduce-scatter',
                 comm_op_func=dist.reduce_scatter,
-                bandwidth_factor=2.0,
                 requires_input_list=True,
             )
         else:
@@ -623,10 +699,11 @@ def main():
                     continue
                 for size, bw in results.items():
                     print(
-                        f"  Size: {format_size(size)} -> Bandwidth: {bw:.2f} GB/s"
+                        f"  Size: {format_size(size)} -> Algo: {bw[0]:.2f} GB/s, Bus: {bw[1]:.2f} GB/s"
                     )
             print("================================\n")
 
+    dist.barrier()
     cleanup()
     print(f"Rank {os.environ.get('RANK', 'N/A')} finished.")
 

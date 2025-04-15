@@ -33,13 +33,16 @@ def format_size(size_in_bytes):
 
 def get_sizes(args):
     sizes = [
-        1024,  # 1 KB
+        #1024,  # 1 KB
         1024 * 1024,  # 1 MB
-        10 * 1024 * 1024,  # 10 MB
-        50 * 1024 * 1024,
-        100 * 1024 * 1024,  # 100 MB
-        1024 * 1024 * 1024,  # 1GB 
-        #5 * 1024 * 1024 * 1024,  # 5GB
+        8 * 1024 * 1024,  # 8 MB
+        64 * 1024 * 1024,  # 64 MB
+        128 * 1024 * 1024,  # 128 MB
+        512 * 1024 * 1024,  # 512 MB
+        1024 * 1024 * 1024,  # 1 GB
+        # Add larger sizes cautiously, ensure sufficient GPU memory
+        # 2 * 1024 * 1024 * 1024, # 2 GB
+        # 4 * 1024 * 1024 * 1024, # 4 GB
     ]
     return sizes
 
