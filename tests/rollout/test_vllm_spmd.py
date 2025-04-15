@@ -113,12 +113,15 @@ def test_vllm_spmd():
     sampling_params = SamplingParams(**kwargs)
     tensor_parallel_size = 4
 
-    llm = LLM(model=local_model_path,
-              enable_sleep_mode=True,
-              tensor_parallel_size=tensor_parallel_size,
-              distributed_executor_backend="external_launcher",
-              dtype='bfloat16',
-              gpu_memory_utilization=0.5)
+    llm = LLM(
+        model=local_model_path,
+        enable_sleep_mode=True,
+        tensor_parallel_size=tensor_parallel_size,
+        distributed_executor_backend="external_launcher",
+        dtype='bfloat16',
+        gpu_memory_utilization=0.5,
+        seed=int(os.getenv("RANK", "0")) // tensor_parallel_size,
+    )
 
     print('start generation')
     input_ids = input_ids.cuda()

@@ -12,6 +12,7 @@ train_files="['$chatrl_train_path']"
 test_files="['$chatrl_test_path']"
 
 python3 -m verl.trainer.main_ppo \
+    algorithm.adv_estimator=gae \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
     data.train_batch_size=1024 \
@@ -26,14 +27,18 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
+    actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=16 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.5 \
+<<<<<<< HEAD
     actor_rollout_ref.rollout.prompt_length=4096 \
     actor_rollout_ref.rollout.response_length=4096 \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
+=======
+>>>>>>> gm-tyx/puffin/main
     critic.optim.lr=1e-5 \
     critic.model.use_remove_padding=True \
     critic.ulysses_sequence_parallel_size=2 \
@@ -42,7 +47,7 @@ python3 -m verl.trainer.main_ppo \
     critic.ppo_micro_batch_size_per_gpu=8 \
     critic.model.fsdp_config.param_offload=False \
     critic.model.fsdp_config.optimizer_offload=False \
-    algorithm.kl_ctrl.kl_coef=0.0001 \
+    algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.logger=['console'] \
     trainer.project_name='verl_example' \

@@ -66,16 +66,6 @@ class MegatronPPOCritic(BasePPOCritic):
             'reduce_grads_use_alltoall': False
         })
 
-        if self.config.kl_ctrl.type == 'fixed':
-            self.kl_ctrl = core_algos.FixedKLController(kl_coef=self.config.kl_ctrl.kl_coef)
-        elif self.config.kl_ctrl.type == 'adaptive':
-            assert self.config.kl_ctrl.horizon > 0, f'horizon must be larger than 0. Got {self.config.kl_ctrl.horizon}'
-            self.kl_ctrl = core_algos.AdaptiveKLController(init_kl_coef=self.config.kl_ctrl.kl_coef,
-                                                           target_kl=self.config.kl_ctrl.target_kl,
-                                                           horizon=self.config.kl_ctrl.horizon)
-        else:
-            raise NotImplementedError
-
     def _validate_config(self, config) -> None:
         """Validate config options not implemented for Megatron backend"""
         assert config.get('ulysses_sequence_parallel_size', 1) == 1
@@ -148,7 +138,7 @@ class MegatronPPOCritic(BasePPOCritic):
             returns = data['returns']
             response_length = responses.size(1)
 
-            eos_mask = attention_mask[:, -response_length:]
+            response_mask = attention_mask[:, -response_length:]
 
             cliprange_value = self.config.cliprange_value
 
@@ -158,12 +148,12 @@ class MegatronPPOCritic(BasePPOCritic):
             vf_loss, vf_clipfrac = core_algos.compute_value_loss(vpreds=vpreds,
                                                                  values=values,
                                                                  returns=returns,
-                                                                 eos_mask=eos_mask,
+                                                                 response_mask=response_mask,
                                                                  cliprange_value=cliprange_value)
             stats = {
                 'critic/vf_loss': vf_loss.detach().item(),
                 'critic/vf_clipfrac': vf_clipfrac.detach().item(),
-                'critic/vpred_mean': masked_mean(vpreds, eos_mask).detach().item(),
+                'critic/vpred_mean': masked_mean(vpreds, response_mask).detach().item(),
             }
 
             return vf_loss, stats
