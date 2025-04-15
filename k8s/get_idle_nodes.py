@@ -351,7 +351,7 @@ def find_empty_nodes(
         empty_nodes.append(node_info)
 
         # if test for 1 node
-        break
+        #break
 
     return empty_nodes
 
