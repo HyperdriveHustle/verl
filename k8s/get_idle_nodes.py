@@ -314,6 +314,7 @@ def find_empty_nodes(
         for k, v in data.items():
             assert not isinstance(
                 v, dict), f"only support one level of labels: {v}"
+            assert k not in label_selector, f'{k=} already in {label_selector}'
             label_selector[k] = v
 
         print(f'=' * 80)
