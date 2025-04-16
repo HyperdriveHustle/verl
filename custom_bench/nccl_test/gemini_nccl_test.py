@@ -90,8 +90,8 @@ def parse_args():
     )
     parser.add_argument(
         '--cap',
-        type=int,
-        default=2,
+        type=float,
+        default=1.5,
     )
     # Potentially add --sizes argument later if needed:
     # parser.add_argument('--sizes', type=str, default=None, help='Comma-separated list of sizes (e.g., "1KB,1MB,1GB")')
