@@ -1,15 +1,11 @@
 apiVersion: batch.volcano.sh/v1alpha1
 kind: Job
 metadata:
-  name: sherry-verl-grpo-7b-2node-realbs256-vllm082
-  # namespace: wxe
+  name: hgl-verl-vllm082
 spec:
   minAvailable: 2
   schedulerName: volcano
   queue: chatrl
-  # policies:
-  #   - event: PodEvicted
-  #     action: CompleteJob
   plugins:
     pytorch: ["--port=25431"]
     svc: ["--disable-network-policy=true"]
@@ -26,15 +22,10 @@ spec:
               requiredDuringSchedulingIgnoredDuringExecution:
                 nodeSelectorTerms:
                   - matchExpressions:
-                      - key: team
+                      - key: kubernetes.io/hostname 
                         operator: In
                         values:
-                          -  rlib-debug
-                      # - key: kubernetes.io/hostname 
-                      #   operator: In
-                      #   values:
-                      #     - zjzx1h-402-c-16-a1p1-sev-h100-08u05
-                          # - zjzx1h-402-b-15-a1p1-sev-h100-08u05
+                          - zjzx1h-402-c-16-a1p1-sev-h100-08u05
           initContainers: #不修改，本次升级改动
             - name: init
               image: harbor.telecom-ai.com.cn/teleinfra/alpine:latest
@@ -65,15 +56,22 @@ spec:
                 - |
                   export NCCL_IB_HCA=$(/ib-config/look_mlxdevice.sh) #必须有，不修改，本次升级改动
                   echo NCCL_IB_HCA=$NCCL_IB_HCA
+
                   rm -f /etc/pip.conf /etc/xdg/pip/pip.conf /root/.pip/pip.conf /root/.config/pip/pip.conf /usr/pip.conf \
                   && pip3 config set global.index-url http://pypi.chinatelecom.ai/simple \
                   && pip3 config set install.trusted-host pypi.chinatelecom.ai
                   cd  /nvfile-heatstorage/chatrl/users/hxh/code/refine_code/verl/
                   pip install -v -e .
                   echo $MASTER_PORT
-                  ray start --head  --port=$MASTER_PORT &
-                  sleep 10
-                  ./examples/grpo_trainer/run_qwen2-7b-2node-realbs256-lr4e-7_maxlen16k-vllm_0_8_2.sh 2>&1 | tee logs/run_qwen2-7b-2node-realbs256-lr4e-7_maxlen16k-vllm_0_8_2.log
+
+                  # install verl
+                  cp -r /nvfile-heatstorage/chatrl/users/heguoliang/hgl-verl .
+
+                  # 
+                  ray start --head  --port=$MASTER_PORT --block
+
+                  # sleep 10
+                  # ./examples/grpo_trainer/run_qwen2-7b-2node-realbs256-lr4e-7_maxlen16k-vllm_0_8_2.sh 2>&1 | tee logs/run_qwen2-7b-2node-realbs256-lr4e-7_maxlen16k-vllm_0_8_2.log
               securityContext:
                 privileged: true
                 # capabilities:
@@ -173,14 +171,22 @@ spec:
                 - |
                   export NCCL_IB_HCA=$(/ib-config/look_mlxdevice.sh) #必须有，不修改，本次升级改动
                   echo NCCL_IB_HCA=$NCCL_IB_HCA
+
                   rm -f /etc/pip.conf /etc/xdg/pip/pip.conf /root/.pip/pip.conf /root/.config/pip/pip.conf /usr/pip.conf \
                   && pip3 config set global.index-url http://pypi.chinatelecom.ai/simple \
                   && pip3 config set install.trusted-host pypi.chinatelecom.ai
                   cd  /nvfile-heatstorage/chatrl/users/hxh/code/refine_code/verl/
-                  # pip install flash_attn-2.7.4.post1+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl --no-build-isolation
                   pip install -v -e .
+                  echo $MASTER_PORT
+
+                  # install verl
+                  cp -r /nvfile-heatstorage/chatrl/users/heguoliang/hgl-verl .
+
+                  # 
                   ray start --address=${MASTER_ADDR}:${MASTER_PORT} --block
-                  # sleep infinity
+
+                  # sleep 10
+                  # ./examples/grpo_trainer/run_qwen2-7b-2node-realbs256-lr4e-7_maxlen16k-vllm_0_8_2.sh 2>&1 | tee logs/run_qwen2-7b-2node-realbs256-lr4e-7_maxlen16k-vllm_0_8_2.log
               securityContext:
                 privileged: true
                 # capabilities:

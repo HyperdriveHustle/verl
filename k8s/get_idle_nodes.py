@@ -349,14 +349,15 @@ def find_empty_nodes(
 
             ## filter labels (Any)
             node_labels = node["metadata"]["labels"]
-            if len(label_selector) > 0:
-                ok = False
-            else:
-                ok = True
+            ok = False
             for k, v in label_selector.items():
-                if k in node_labels and node_labels[k] == v:
-                    ok = True
-                    break
+                if k in node_labels:
+                    if isinstance(v, list) and node_labels[k] in v:
+                        ok = True
+                        break
+                    if node_labels[k] == v:
+                        ok = True
+                        break
             if not ok:
                 continue
 
