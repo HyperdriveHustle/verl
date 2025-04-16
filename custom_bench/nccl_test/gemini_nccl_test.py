@@ -88,6 +88,11 @@ def parse_args():
         type=int,
         default=60,
     )
+    parser.add_argument(
+        '--cap',
+        type=int,
+        default=2,
+    )
     # Potentially add --sizes argument later if needed:
     # parser.add_argument('--sizes', type=str, default=None, help='Comma-separated list of sizes (e.g., "1KB,1MB,1GB")')
     parser.add_argument('--backend',
@@ -121,8 +126,10 @@ def get_sizes(args):
         512 * 1024 * 1024,  # 512 MB
         1024 * 1024 * 1024,  # 1 GB
         # Add larger sizes cautiously, ensure sufficient GPU memory
-        # 2 * 1024 * 1024 * 1024, # 2 GB
-        # 4 * 1024 * 1024 * 1024, # 4 GB
+        2 * 1024 * 1024 * 1024,  # 2 GB
+        4 * 1024 * 1024 * 1024,  # 4 GB
+        8 * 1024 * 1024 * 1024,
+        16 * 1024 * 1024 * 1024,
     ]
     # Allow overriding sizes via command line if needed in the future
     # if args.sizes:
@@ -296,6 +303,9 @@ def measure_op_bandwidth(
         results = {}  # Store results {size: bandwidth}
 
         for size in sizes:
+            if size > args.cap * 1024 * 1024 * 1024:
+                continue
+
             num_elements = size // FLOAT32_BYTES
             if num_elements == 0:
                 if local_rank == args.r:
@@ -478,6 +488,8 @@ def measure_send_recv(
         for size in sizes:
             # skip if more than 512MB
             if size > 512 * 1024 * 1024:
+                continue
+            if size > args.cap * 1024 * 1024 * 1024:
                 continue
 
             num_elements = size // FLOAT32_BYTES
