@@ -43,11 +43,11 @@ spec:
               resources:
                 requests:
                   cpu: 64
-                  memory: 900G
+                  memory: 512G
                   nvidia.com/gpu: 8
                 limits:
                   cpu: 64
-                  memory: 1024G
+                  memory: 512G
                   nvidia.com/gpu: 8
               image: harbor.telecom-ai.com.cn/chatrl/verl:ngc-th2.6.0-cu120-vllm0.8.2
               command: ["/bin/bash"]
@@ -60,12 +60,25 @@ spec:
                   rm -f /etc/pip.conf /etc/xdg/pip/pip.conf /root/.pip/pip.conf /root/.config/pip/pip.conf /usr/pip.conf \
                   && pip3 config set global.index-url http://pypi.chinatelecom.ai/simple \
                   && pip3 config set install.trusted-host pypi.chinatelecom.ai
-                  cd  /nvfile-heatstorage/chatrl/users/hxh/code/refine_code/verl/
-                  pip install -v -e .
-                  echo $MASTER_PORT
+
+                  # cp model from shared storage
+                  mkdir models/
+                  cp -r /nvfile-heatstorage/chatrl/public/models/Qwen25-7B-Base-change-chat-template models/
+                  cp -r /nvfile-heatstorage/chatrl/public/models/DeepSeek-R1-Distill-Llama-8B models/
+
+                  mkdir datasets/
+                  mkdir -p datasets/dapo
+                  cp -r /nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k.parquet datasets/dapo/
+                  cp -r /nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data/aime-2024.parquet datasets/dapo/
+
 
                   # install verl
                   cp -r /nvfile-heatstorage/chatrl/users/heguoliang/hgl-verl .
+                  pip install -v -e .
+                  echo $MASTER_PORT
+
+                  # 
+                  pip install megatron-core==0.11.0
 
                   # 
                   ray start --head  --port=$MASTER_PORT --block
@@ -158,11 +171,11 @@ spec:
               resources:
                 requests:
                   cpu: 64
-                  memory: 900G
+                  memory: 512G
                   nvidia.com/gpu: 8
                 limits:
                   cpu: 64
-                  memory: 1024G
+                  memory: 512G
                   nvidia.com/gpu: 8
               image: harbor.telecom-ai.com.cn/chatrl/verl:ngc-th2.6.0-cu120-vllm0.8.2
               command: ["/bin/bash"]
@@ -175,15 +188,28 @@ spec:
                   rm -f /etc/pip.conf /etc/xdg/pip/pip.conf /root/.pip/pip.conf /root/.config/pip/pip.conf /usr/pip.conf \
                   && pip3 config set global.index-url http://pypi.chinatelecom.ai/simple \
                   && pip3 config set install.trusted-host pypi.chinatelecom.ai
-                  cd  /nvfile-heatstorage/chatrl/users/hxh/code/refine_code/verl/
-                  pip install -v -e .
-                  echo $MASTER_PORT
+
+                  # cp model from shared storage
+                  mkdir models/
+                  cp -r /nvfile-heatstorage/chatrl/public/models/Qwen25-7B-Base-change-chat-template models/
+                  cp -r /nvfile-heatstorage/chatrl/public/models/DeepSeek-R1-Distill-Llama-8B models/
+
+                  mkdir datasets/
+                  mkdir -p datasets/dapo
+                  cp -r /nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k.parquet datasets/dapo/
+                  cp -r /nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data/aime-2024.parquet datasets/dapo/
+
 
                   # install verl
                   cp -r /nvfile-heatstorage/chatrl/users/heguoliang/hgl-verl .
+                  pip install -v -e .
+                  echo $MASTER_PORT
 
                   # 
-                  ray start --address=${MASTER_ADDR}:${MASTER_PORT} --block
+                  pip install megatron-core==0.11.0
+
+                  # 
+                  ray start --head  --port=$MASTER_PORT --block
 
                   # sleep 10
                   # ./examples/grpo_trainer/run_qwen2-7b-2node-realbs256-lr4e-7_maxlen16k-vllm_0_8_2.sh 2>&1 | tee logs/run_qwen2-7b-2node-realbs256-lr4e-7_maxlen16k-vllm_0_8_2.log

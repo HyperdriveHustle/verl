@@ -71,7 +71,7 @@ spec:
                   cp -r /nvfile-heatstorage/chatrl/public/models/Qwen25-7B-Base-change-chat-template models/
 
                   # install packages
-                  pip install megatron-core==0.10.0
+                  pip install megatron-core==0.11.0
 
                   # install verl
                   #cp -r /nvfile-heatstorage/teleat-infra/heguoliang/verl .
@@ -185,7 +185,7 @@ spec:
                   cp -r /nvfile-heatstorage/chatrl/public/models/Qwen25-7B-Base-change-chat-template models/
 
                   # install packages
-                  pip install megatron-core==0.10.0
+                  pip install megatron-core==0.11.0
 
                   # install verl
                   #cp -r /nvfile-heatstorage/teleat-infra/heguoliang/verl .
