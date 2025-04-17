@@ -33,7 +33,7 @@ from tensordict import TensorDict
 from torch import nn
 
 from verl import DataProto
-from verl.utils.torch_functional import get_eos_mask, pad_sequence_to_length
+from verl.utils.torch_functional import get_response_mask, pad_sequence_to_length
 from verl.workers.rollout.base import BaseRollout
 from verl.third_party.vllm import LLM, vllm_version
 from verl.third_party.vllm import parallel_state as vllm_ps
@@ -46,20 +46,17 @@ from vllm import SamplingParams
 
 
 # NOTE(sgm): add for verl. We can optimize it by making the dataloader yield List[int] without padding.
-def _pre_process_inputs(pad_token_id,
-                        prompt_token_ids: torch.Tensor) -> List[int]:
+def _pre_process_inputs(pad_token_id, prompt_token_ids: torch.Tensor) -> List[int]:
     # remove the left padding in the prompt token_id
     # pad_token_id = self.llm_engine.tokenizer.pad_token_id if self.llm_engine.tokenizer.pad_token_id is not None else self.llm_engine.tokenizer.eos_token_id
-    non_pad_index = torch.nonzero(prompt_token_ids != pad_token_id,
-                                  as_tuple=False)[0][0]
+    non_pad_index = torch.nonzero(prompt_token_ids != pad_token_id, as_tuple=False)[0][0]
     token_ids = prompt_token_ids[non_pad_index:].tolist()
     return token_ids
 
 
 class vLLMRollout(BaseRollout):
 
-    def __init__(self, actor_module: nn.Module, config: DictConfig, tokenizer,
-                 model_hf_config, **kwargs):
+    def __init__(self, actor_module: nn.Module, config: DictConfig, tokenizer, model_hf_config, **kwargs):
         """A vLLM rollout. It requires the module is supported by the vllm.
 
         Args:
@@ -77,8 +74,7 @@ class vLLMRollout(BaseRollout):
         tensor_parallel_size = self.config.get('tensor_model_parallel_size', 1)
         assert tensor_parallel_size <= torch.distributed.get_world_size(), \
             "tensor parallel size should be less than or equal to the world size"
-        max_num_batched_tokens = int(
-            self.config.get('max_num_batched_tokens', 8192))
+        max_num_batched_tokens = int(self.config.get('max_num_batched_tokens', 8192))
 
         if kwargs.get('train_tp', None) is not None:
             # deployed with megatron
@@ -88,9 +84,8 @@ class vLLMRollout(BaseRollout):
             train_tp = kwargs.get('train_tp', None)
             num_tp_per_train_tp = train_tp // tensor_parallel_size
             if vllm_version in ('0.4.2', '0.5.4', '0.6.3'):
-                vllm_ps.initialize_parallel_state(
-                    tensor_model_parallel_size=tensor_parallel_size,
-                    num_tp_per_train_tp=num_tp_per_train_tp)
+                vllm_ps.initialize_parallel_state(tensor_model_parallel_size=tensor_parallel_size,
+                                                  num_tp_per_train_tp=num_tp_per_train_tp)
 
         assert model_hf_config.max_position_embeddings >= config.prompt_length + config.response_length, \
             "model context length should be greater than total sequence length"
@@ -100,10 +95,8 @@ class vLLMRollout(BaseRollout):
         max_model_len = int(max_model_len)
 
         if max_num_batched_tokens < max_model_len and self.config.enable_chunked_prefill:
-            raise ValueError(
-                'Enable chunked prefill, max_num_batched_tokens is smaller than max_model_len, \
-                             please increase max_num_batched_tokens or disable chunked prefill'
-            )
+            raise ValueError('Enable chunked prefill, max_num_batched_tokens is smaller than max_model_len, \
+                             please increase max_num_batched_tokens or disable chunked prefill')
 
         self.inference_engine = LLM(
             actor_module,
@@ -126,7 +119,7 @@ class vLLMRollout(BaseRollout):
 
         kwargs = dict(
             n=1,
-            logprobs=1,  # can be set to 0 and let actor to recompute
+            logprobs=0,  # can be set to 0 and let actor to recompute
             max_tokens=config.response_length,
         )
 
@@ -182,6 +175,7 @@ class vLLMRollout(BaseRollout):
             idx_list.append(_pre_process_inputs(self.pad_token_id, idx[i]))
 
         do_sample = prompts.meta_info.get('do_sample', True)
+        is_validate = prompts.meta_info.get('validate', False)
         if not do_sample:
             kwargs = {
                 'best_of': 1,
@@ -191,44 +185,43 @@ class vLLMRollout(BaseRollout):
                 'temperature': 0,
                 'n': 1  # if greedy, only 1 response
             }
+        elif is_validate:
+            # TODO: try **
+            kwargs = {
+                'top_k': self.config.val_kwargs.top_k,
+                'top_p': self.config.val_kwargs.top_p,
+                'temperature': self.config.val_kwargs.temperature,
+                'n': 1,  # if validate, already repeat in ray_trainer
+            }
 
         # users can customize different sampling_params at different run
         with self.update_sampling_params(**kwargs):
             output = self.inference_engine.generate(
-                prompts=
-                None,  # because we have already convert it to prompt token id
+                prompts=None,  # because we have already convert it to prompt token id
                 sampling_params=self.sampling_params,
                 prompt_token_ids=idx_list,
-                use_tqdm=True,
-                #use_tqdm=False,
-            )
-        # TODO(sgm): disable logprob when recompute_log_prob is enable
-        # if n = 1: (bs, response_length) ; if n > 1: (bs * n, response_length)
-        response = output[0].to(idx.device)
-        log_probs = output[1].to(idx.device)
+                use_tqdm=False)
 
-        if response.shape[1] < self.config.response_length:
-            response = pad_sequence_to_length(response,
-                                              self.config.response_length,
-                                              self.pad_token_id)
-            log_probs = pad_sequence_to_length(log_probs,
-                                               self.config.response_length,
-                                               self.pad_token_id)
+            # TODO(sgm): disable logprob when recompute_log_prob is enable
+            # if n = 1: (bs, response_length) ; if n > 1: (bs * n, response_length)
+            response = output[0].to(idx.device)
+            # log_probs = output[1].to(idx.device)
 
-        if self.config.n > 1 and do_sample:
-            idx = idx.repeat_interleave(self.config.n, dim=0)
-            attention_mask = attention_mask.repeat_interleave(self.config.n,
-                                                              dim=0)
-            position_ids = position_ids.repeat_interleave(self.config.n, dim=0)
-            batch_size = batch_size * self.config.n
-        seq = torch.cat([idx, response], dim=-1)
+            if response.shape[1] < self.config.response_length:
+                response = pad_sequence_to_length(response, self.config.response_length, self.pad_token_id)
+                # log_probs = pad_sequence_to_length(log_probs, self.config.response_length, self.pad_token_id)
+
+            # utilize current sampling params
+            if self.sampling_params.n > 1 and do_sample:
+                idx = idx.repeat_interleave(self.sampling_params.n, dim=0)
+                attention_mask = attention_mask.repeat_interleave(self.sampling_params.n, dim=0)
+                position_ids = position_ids.repeat_interleave(self.sampling_params.n, dim=0)
+                batch_size = batch_size * self.sampling_params.n
+            seq = torch.cat([idx, response], dim=-1)
 
         response_length = response.size(1)
-        delta_position_id = torch.arange(1,
-                                         response_length + 1,
-                                         device=position_ids.device)
-        delta_position_id = delta_position_id.unsqueeze(0).repeat(
-            batch_size, 1)
+        delta_position_id = torch.arange(1, response_length + 1, device=position_ids.device)
+        delta_position_id = delta_position_id.unsqueeze(0).repeat(batch_size, 1)
 
         # TODO(sgm): fix position_ids on right_pad
         # prompt: left pad + response: right pad
@@ -236,11 +229,10 @@ class vLLMRollout(BaseRollout):
         # position_ids:   [0,0,0,0,0,1,2,3, | 4,5,6,7,8,9,10,11]
         response_position_ids = position_ids[:, -1:] + delta_position_id
         position_ids = torch.cat([position_ids, response_position_ids], dim=-1)
-        response_attention_mask = get_eos_mask(response_id=response,
-                                               eos_token=eos_token_id,
-                                               dtype=attention_mask.dtype)
-        attention_mask = torch.cat((attention_mask, response_attention_mask),
-                                   dim=-1)
+        response_attention_mask = get_response_mask(response_id=response,
+                                                    eos_token=eos_token_id,
+                                                    dtype=attention_mask.dtype)
+        attention_mask = torch.cat((attention_mask, response_attention_mask), dim=-1)
 
         # all the tp ranks should contain the same data here. data in all ranks are valid
         batch = TensorDict(

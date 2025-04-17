@@ -8,8 +8,7 @@ def compute_score(solution_str, ground_truth):
     # retval = 0.
     score = 0
     try:
-        format_score, answer_correct, cosine_reward, extracted_ans = evaluate_answer(
-            solution_str, solution_str)
+        format_score, answer_correct, cosine_reward, extracted_ans = evaluate_answer(solution_str, solution_str)
         # 格式完全不对
         if format_score == 0:
             score = -1
@@ -38,9 +37,7 @@ def compute_score(solution_str, ground_truth):
 def evaluate_answer(ans, ground_truth, is_base=True):
     '''判断答案和 gt 是否匹配'''
     # Initialize reward functions
-    cosine_scaled_reward = get_cosine_scaled_reward(min_value_correct=0.5,
-                                                    max_value_correct=1.0,
-                                                    max_len=2048)
+    cosine_scaled_reward = get_cosine_scaled_reward(min_value_correct=0.5, max_value_correct=1.0, max_len=2048)
 
     extracted_ans = None
     follow_format, answer_with_boxed, answer_correct = 0, 0, 0
@@ -48,13 +45,14 @@ def evaluate_answer(ans, ground_truth, is_base=True):
 
     ans = ans.split("assistant:")
     ans = ans[1:]
-    if len(ans) == 1: ans = ans[0]
-    else: ans = "assistant:".join(ans)
+    if len(ans) == 1:
+        ans = ans[0]
+    else:
+        ans = "assistant:".join(ans)
 
     ans = ans.strip()
     # 0. 对于 base model 先判断是否遵循指令
-    if ans.startswith("<think>") and ans.endswith(
-            "</answer>") and "<answer>" in ans and "</think>" in ans:
+    if ans.startswith("<think>") and ans.endswith("</answer>") and "<answer>" in ans and "</think>" in ans:
         follow_format = 1
     print(f">> follow_format = {follow_format}\n>> ans = {ans}")
     # 必须要 follow format 才可以继续训

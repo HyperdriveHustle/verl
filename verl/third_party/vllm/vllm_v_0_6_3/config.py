@@ -44,10 +44,7 @@ class LoadFormat(str, enum.Enum):
 class ModelConfig(ModelConfig):
 
     def __init__(self, hf_config: PretrainedConfig, *args, **kwargs) -> None:
-        super().__init__(model=hf_config._name_or_path,
-                         tokenizer=hf_config._name_or_path,
-                         *args,
-                         **kwargs)
+        super().__init__(model=hf_config._name_or_path, tokenizer=hf_config._name_or_path, *args, **kwargs)
         self.hf_config = hf_config
 
 
@@ -77,21 +74,17 @@ class LoadConfig:
 
     load_format: Union[str, LoadFormat, "BaseModelLoader"] = LoadFormat.AUTO
     download_dir: Optional[str] = None
-    model_loader_extra_config: Optional[Union[str, dict]] = field(
-        default_factory=dict)
+    model_loader_extra_config: Optional[Union[str, dict]] = field(default_factory=dict)
     ignore_patterns: Optional[Union[List[str], str]] = None
 
     def __post_init__(self):
         model_loader_extra_config = self.model_loader_extra_config or {}
         if isinstance(model_loader_extra_config, str):
-            self.model_loader_extra_config = json.loads(
-                model_loader_extra_config)
+            self.model_loader_extra_config = json.loads(model_loader_extra_config)
         self._verify_load_format()
 
         if self.ignore_patterns is not None and len(self.ignore_patterns) > 0:
-            logger.info(
-                "Ignoring the following patterns when downloading weights: %s",
-                self.ignore_patterns)
+            logger.info("Ignoring the following patterns when downloading weights: %s", self.ignore_patterns)
         else:
             self.ignore_patterns = ["original/**/*"]
 
@@ -105,10 +98,8 @@ class LoadConfig:
         rocm_not_supported_load_format: List[str] = []
         if is_hip() and load_format in rocm_not_supported_load_format:
             rocm_supported_load_format = [
-                f for f in LoadFormat.__members__
-                if (f not in rocm_not_supported_load_format)
+                f for f in LoadFormat.__members__ if (f not in rocm_not_supported_load_format)
             ]
-            raise ValueError(
-                f"load format '{load_format}' is not supported in ROCm. "
-                f"Supported load formats are "
-                f"{rocm_supported_load_format}")
+            raise ValueError(f"load format '{load_format}' is not supported in ROCm. "
+                             f"Supported load formats are "
+                             f"{rocm_supported_load_format}")

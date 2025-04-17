@@ -131,15 +131,13 @@ class SPMDGPUExecutor(ExecutorBase):
 
         return num_gpu_blocks, num_cpu_blocks
 
-    def initialize_cache(self, num_gpu_blocks: int,
-                         num_cpu_blocks: int) -> None:
+    def initialize_cache(self, num_gpu_blocks: int, num_cpu_blocks: int) -> None:
         """Initialize the KV cache in all workers."""
 
         # NOTE: We log here to avoid multiple logs when number of workers is
         # greater than one. We could log in the engine, but not all executors
         # have GPUs.
-        logger.info("# GPU blocks: %d, # CPU blocks: %d", num_gpu_blocks,
-                    num_cpu_blocks)
+        logger.info("# GPU blocks: %d, # CPU blocks: %d", num_gpu_blocks, num_cpu_blocks)
 
         self.cache_config.num_gpu_blocks = num_gpu_blocks
         self.cache_config.num_cpu_blocks = num_cpu_blocks
@@ -148,8 +146,7 @@ class SPMDGPUExecutor(ExecutorBase):
             print(
                 f"before init cache memory allocated: {torch.cuda.memory_allocated() / 1e9}GB, reserved: {torch.cuda.memory_reserved() / 1e9}GB"
             )
-        self.worker.initialize_cache(num_gpu_blocks=num_gpu_blocks,
-                                     num_cpu_blocks=num_cpu_blocks)
+        self.worker.initialize_cache(num_gpu_blocks=num_gpu_blocks, num_cpu_blocks=num_cpu_blocks)
         if torch.distributed.get_rank() == 0:
             print(
                 f"after init cache memory allocated: {torch.cuda.memory_allocated() / 1e9}GB, reserved: {torch.cuda.memory_reserved() / 1e9}GB"
@@ -163,8 +160,7 @@ class SPMDGPUExecutor(ExecutorBase):
         self.worker.free_cache_engine()
 
     def execute_model(self, execute_model_req) -> List[SamplerOutput]:
-        all_outputs = self.worker.execute_model(
-            execute_model_req=execute_model_req)
+        all_outputs = self.worker.execute_model(execute_model_req=execute_model_req)
 
         # NOTE(sgm):
         # Each GPU in vllm under verl has its own spmd_gpu_executor, therefore all GPUs should return the outputs
@@ -190,8 +186,7 @@ class SPMDGPUExecutor(ExecutorBase):
     # NOTE(sgm) add for verl to pass the abstract class test, not used
     from vllm.prompt_adapter.request import PromptAdapterRequest
 
-    def add_prompt_adapter(
-            self, prompt_adapter_request: PromptAdapterRequest) -> bool:
+    def add_prompt_adapter(self, prompt_adapter_request: PromptAdapterRequest) -> bool:
         assert prompt_adapter_request.prompt_adapter_id > 0, "prompt_adapter_id must be greater than 0."
         return self.worker.add_prompt_adapter(prompt_adapter_request)
 
@@ -214,10 +209,8 @@ class SPMDGPUExecutor(ExecutorBase):
     def offload_model_weights(self) -> None:
         self.worker.offload_model_weights()
 
-    def sync_model_weights(self, actor_weights: Dict[str, torch.Tensor],
-                           load_format: str) -> None:
-        self.worker.sync_model_weights(actor_weights=actor_weights,
-                                       load_format=load_format)
+    def sync_model_weights(self, actor_weights: Dict[str, torch.Tensor], load_format: str) -> None:
+        self.worker.sync_model_weights(actor_weights=actor_weights, load_format=load_format)
 
 
 def initialize_cluster(
@@ -253,9 +246,7 @@ def get_open_port():
 # TODO(sgm): not implemented async executor yet
 class SPMDGPUExecutorAsync(SPMDGPUExecutor, ExecutorAsyncBase):
 
-    async def execute_model_async(
-            self,
-            execute_model_req: ExecuteModelRequest) -> List[SamplerOutput]:
+    async def execute_model_async(self, execute_model_req: ExecuteModelRequest) -> List[SamplerOutput]:
         """Executes one model step on the given sequences."""
         raise NotImplementedError
 

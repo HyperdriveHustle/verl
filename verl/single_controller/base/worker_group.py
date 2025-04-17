@@ -26,10 +26,7 @@ from .decorator import MAGIC_ATTR, Dispatch, get_predefined_dispatch_fn, get_pre
 class ResourcePool:
     """The resource pool with meta info such as world_size."""
 
-    def __init__(self,
-                 process_on_nodes=None,
-                 max_collocate_count: int = 10,
-                 n_gpus_per_node=8) -> None:
+    def __init__(self, process_on_nodes=None, max_collocate_count: int = 10, n_gpus_per_node=8) -> None:
         if process_on_nodes is None:
             process_on_nodes = []
         self._store = process_on_nodes
@@ -51,14 +48,13 @@ class ResourcePool:
         return self._store
 
     def local_world_size_list(self) -> List[int]:
-        nested_local_world_size_list = [[
-            local_world_size for _ in range(local_world_size)
-        ] for local_world_size in self._store]
+        nested_local_world_size_list = [
+            [local_world_size for _ in range(local_world_size)] for local_world_size in self._store
+        ]
         return [item for row in nested_local_world_size_list for item in row]
 
     def local_rank_list(self) -> List[int]:
-        nested_local_rank_list = [[i for i in range(local_world_size)]
-                                  for local_world_size in self._store]
+        nested_local_rank_list = [[i for i in range(local_world_size)] for local_world_size in self._store]
         return [item for row in nested_local_rank_list for item in row]
 
 
@@ -83,15 +79,12 @@ class ClassWithInitArgs:
         return self.cls(*self.args, **self.kwargs)
 
 
-def check_workers_alive(workers: List,
-                        is_alive: Callable,
-                        gap_time: float = 1) -> None:
+def check_workers_alive(workers: List, is_alive: Callable, gap_time: float = 1) -> None:
     import time
     while True:
         for worker in workers:
             if not is_alive(worker):
-                logging.warning(f"worker {worker} is not alive" +
-                                " sending signal to main thread")
+                logging.warning(f"worker {worker} is not alive" + " sending signal to main thread")
                 signal.raise_signal(signal.SIGABRT)
         time.sleep(gap_time)
 
@@ -117,15 +110,11 @@ class WorkerGroup:
         self._checker_thread: threading.Thread = None
 
     def _is_worker_alive(self, worker):
-        raise NotImplementedError(
-            f"WorkerGroup._is_worker_alive called, should be implemented in derived class."
-        )
+        raise NotImplementedError(f"WorkerGroup._is_worker_alive called, should be implemented in derived class.")
 
     def _block_until_all_workers_alive(self) -> None:
         while True:
-            all_state = [
-                self._is_worker_alive(worker) for worker in self._workers
-            ]
+            all_state = [self._is_worker_alive(worker) for worker in self._workers]
             if False in all_state:
                 time.sleep(1)
             else:
@@ -136,9 +125,7 @@ class WorkerGroup:
         self._block_until_all_workers_alive()
 
         self._checker_thread = threading.Thread(target=check_workers_alive,
-                                                args=(self._workers,
-                                                      self._is_worker_alive,
-                                                      every_n_seconds))
+                                                args=(self._workers, self._is_worker_alive, every_n_seconds))
         self._checker_thread.start()
 
     @property
@@ -157,9 +144,7 @@ class WorkerGroup:
 
             try:
                 method = getattr(user_defined_cls, method_name)
-                assert callable(
-                    method
-                ), f"{method_name} in {user_defined_cls} is not callable"
+                assert callable(method), f"{method_name} in {user_defined_cls} is not callable"
             except Exception as e:
                 # if it is a property, it will fail because Class doesn't have instance property
                 continue
@@ -167,9 +152,7 @@ class WorkerGroup:
             if hasattr(method, MAGIC_ATTR):
                 # this method is decorated by register
                 attribute = getattr(method, MAGIC_ATTR)
-                assert isinstance(
-                    attribute, Dict
-                ), f'attribute must be a dictionary. Got {type(attribute)}'
+                assert isinstance(attribute, Dict), f'attribute must be a dictionary. Got {type(attribute)}'
                 assert 'dispatch_mode' in attribute, f'attribute must contain dispatch_mode in its key'
 
                 dispatch_mode = attribute['dispatch_mode']
@@ -179,8 +162,7 @@ class WorkerGroup:
                 # get dispatch fn
                 if isinstance(dispatch_mode, Dispatch):
                     # get default dispatch fn
-                    fn = get_predefined_dispatch_fn(
-                        dispatch_mode=dispatch_mode)
+                    fn = get_predefined_dispatch_fn(dispatch_mode=dispatch_mode)
                     dispatch_fn = fn['dispatch_fn']
                     collect_fn = fn['collect_fn']
                 else:
@@ -191,8 +173,7 @@ class WorkerGroup:
                     collect_fn = dispatch_mode['collect_fn']
 
                 # get execute_fn_name
-                execute_mode = get_predefined_execute_fn(
-                    execute_mode=execute_mode)
+                execute_mode = get_predefined_execute_fn(execute_mode=execute_mode)
                 wg_execute_fn_name = execute_mode['execute_fn_name']
 
                 # get execute_fn from string

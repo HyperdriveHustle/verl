@@ -17,25 +17,18 @@ import torch
 from typing import Dict, Optional, Union, Type
 
 import vllm.envs as envs
-from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig,
-                         EngineConfig, LoRAConfig, MultiModalConfig,
-                         ObservabilityConfig, ParallelConfig,
-                         PromptAdapterConfig, SchedulerConfig,
-                         SpeculativeConfig)
+from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig, EngineConfig, LoRAConfig, MultiModalConfig,
+                         ObservabilityConfig, ParallelConfig, PromptAdapterConfig, SchedulerConfig, SpeculativeConfig)
 from vllm.core.scheduler import Scheduler
-from vllm.engine.output_processor.interfaces import (
-    SequenceGroupOutputProcessor)
+from vllm.engine.output_processor.interfaces import (SequenceGroupOutputProcessor)
 from vllm.engine.output_processor.stop_checker import StopChecker
 from vllm.executor.executor_base import ExecutorBase
 from vllm.inputs import INPUT_REGISTRY, LLMInputs, PromptInputs
 from vllm.logger import init_logger
 from vllm.transformers_utils.detokenizer import Detokenizer
-from vllm.engine.metrics import (LoggingStatLogger, PrometheusStatLogger,
-                                 StatLoggerBase, Stats)
-from vllm.tracing import (SpanAttributes, SpanKind, extract_trace_context,
-                          init_tracer)
-from vllm.usage.usage_lib import (UsageContext, is_usage_stats_enabled,
-                                  usage_message)
+from vllm.engine.metrics import (LoggingStatLogger, PrometheusStatLogger, StatLoggerBase, Stats)
+from vllm.tracing import (SpanAttributes, SpanKind, extract_trace_context, init_tracer)
+from vllm.usage.usage_lib import (UsageContext, is_usage_stats_enabled, usage_message)
 from vllm.utils import Counter
 from vllm.engine.llm_engine import _load_generation_config_dict
 from vllm.engine.llm_engine import LLMEngine
@@ -84,7 +77,7 @@ class LLMEngine(LLMEngine):
     def __init__(
         self,
         # NOTE(sgm): first two arguments are added for verl
-        model: Union[nn.Module, Dict],  # model itself or its parameter dict
+        model: Union[nn.Module, Dict], # model itself or its parameter dict
         tokenizer: nn.Module,
         # NOTE(sgm): vllm original arguments
         model_config: ModelConfig,
@@ -160,8 +153,7 @@ class LLMEngine(LLMEngine):
         self.load_config = load_config
         self.decoding_config = decoding_config or DecodingConfig()
         self.prompt_adapter_config = prompt_adapter_config
-        self.observability_config = observability_config or ObservabilityConfig(
-        )
+        self.observability_config = observability_config or ObservabilityConfig()
         self.log_stats = log_stats
 
         # self.model = model # should not store the model, it should be deleted
@@ -174,14 +166,12 @@ class LLMEngine(LLMEngine):
             self.detokenizer = None
 
         self.seq_counter = Counter()
-        self.generation_config_fields = _load_generation_config_dict(
-            model_config)
+        self.generation_config_fields = _load_generation_config_dict(model_config)
 
-        self.input_processor = INPUT_REGISTRY.create_input_processor(
-            self.model_config)
+        self.input_processor = INPUT_REGISTRY.create_input_processor(self.model_config)
 
         self.model_executor = executor_class(
-            model=model,  # add for spmd_gpu_executor
+            model=model, # add for spmd_gpu_executor
             model_config=model_config,
             cache_config=cache_config,
             parallel_config=parallel_config,
@@ -200,39 +190,27 @@ class LLMEngine(LLMEngine):
 
         # If usage stat is enabled, collect relevant info.
         if is_usage_stats_enabled():
-            from vllm.model_executor.model_loader import (
-                get_architecture_class_name)
+            from vllm.model_executor.model_loader import (get_architecture_class_name)
             usage_message.report_usage(
                 get_architecture_class_name(model_config),
                 usage_context,
                 extra_kvs={
                     # Common configuration
-                    "dtype":
-                    str(model_config.dtype),
-                    "tensor_parallel_size":
-                    parallel_config.tensor_parallel_size,
-                    "block_size":
-                    cache_config.block_size,
-                    "gpu_memory_utilization":
-                    cache_config.gpu_memory_utilization,
+                    "dtype": str(model_config.dtype),
+                    "tensor_parallel_size": parallel_config.tensor_parallel_size,
+                    "block_size": cache_config.block_size,
+                    "gpu_memory_utilization": cache_config.gpu_memory_utilization,
 
                     # Quantization
-                    "quantization":
-                    model_config.quantization,
-                    "kv_cache_dtype":
-                    str(cache_config.cache_dtype),
+                    "quantization": model_config.quantization,
+                    "kv_cache_dtype": str(cache_config.cache_dtype),
 
                     # Feature flags
-                    "enable_lora":
-                    bool(lora_config),
-                    "enable_prompt_adapter":
-                    bool(prompt_adapter_config),
-                    "enable_prefix_caching":
-                    cache_config.enable_prefix_caching,
-                    "enforce_eager":
-                    model_config.enforce_eager,
-                    "disable_custom_all_reduce":
-                    parallel_config.disable_custom_all_reduce,
+                    "enable_lora": bool(lora_config),
+                    "enable_prompt_adapter": bool(prompt_adapter_config),
+                    "enable_prefix_caching": cache_config.enable_prefix_caching,
+                    "enforce_eager": model_config.enforce_eager,
+                    "disable_custom_all_reduce": parallel_config.disable_custom_all_reduce,
                 })
 
         if self.tokenizer:
@@ -244,8 +222,7 @@ class LLMEngine(LLMEngine):
         # NOTE: the cache_config here have been updated with the numbers of
         # GPU and CPU blocks, which are profiled in the distributed executor.
         self.scheduler = [
-            Scheduler(scheduler_config, cache_config, lora_config,
-                      parallel_config.pipeline_parallel_size)
+            Scheduler(scheduler_config, cache_config, lora_config, parallel_config.pipeline_parallel_size)
             for _ in range(parallel_config.pipeline_parallel_size)
         ]
 
@@ -256,37 +233,31 @@ class LLMEngine(LLMEngine):
             else:
                 self.stat_loggers = {
                     "logging":
-                    LoggingStatLogger(
-                        local_interval=_LOCAL_LOGGING_INTERVAL_SEC),
+                        LoggingStatLogger(local_interval=_LOCAL_LOGGING_INTERVAL_SEC),
                     "prometheus":
-                    PrometheusStatLogger(
-                        local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
-                        labels=dict(model_name=model_config.served_model_name),
-                        max_model_len=self.model_config.max_model_len),
+                        PrometheusStatLogger(local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
+                                             labels=dict(model_name=model_config.served_model_name),
+                                             max_model_len=self.model_config.max_model_len),
                 }
-                self.stat_loggers["prometheus"].info("cache_config",
-                                                     self.cache_config)
+                self.stat_loggers["prometheus"].info("cache_config", self.cache_config)
 
         self.tracer = None
         if self.observability_config.otlp_traces_endpoint:
-            self.tracer = init_tracer(
-                "vllm.llm_engine",
-                self.observability_config.otlp_traces_endpoint)
+            self.tracer = init_tracer("vllm.llm_engine", self.observability_config.otlp_traces_endpoint)
 
         # Create sequence output processor, e.g. for beam search or
         # speculative decoding.
-        self.output_processor = (
-            SequenceGroupOutputProcessor.create_output_processor(
-                self.scheduler_config,
-                self.detokenizer,
-                self.scheduler,
-                self.seq_counter,
+        self.output_processor = (SequenceGroupOutputProcessor.create_output_processor(
+            self.scheduler_config,
+            self.detokenizer,
+            self.scheduler,
+            self.seq_counter,
+            self.get_tokenizer_for_seq,
+            stop_checker=StopChecker(
+                self.scheduler_config.max_model_len,
                 self.get_tokenizer_for_seq,
-                stop_checker=StopChecker(
-                    self.scheduler_config.max_model_len,
-                    self.get_tokenizer_for_seq,
-                ),
-            ))
+            ),
+        ))
 
     # TODO(sgm): add for verl but we may not tokenizer in Rollout
     def _init_tokenizer(self, tokenizer, **tokenizer_init_kwargs):
@@ -307,8 +278,7 @@ class LLMEngine(LLMEngine):
     # NOTE(sgm): currently, we only support GPU executor
     # The GPUExecutor remove the Ray dependency
     @classmethod
-    def _get_executor_cls(cls,
-                          engine_config: EngineConfig) -> Type[ExecutorBase]:
+    def _get_executor_cls(cls, engine_config: EngineConfig) -> Type[ExecutorBase]:
         assert engine_config.device_config.device_type == "cuda", \
             "Currently, the vllm in verl only support running on GPU"
 
@@ -351,10 +321,8 @@ class LLMEngine(LLMEngine):
         )
         return engine
 
-    def sync_model_weights(self, actor_weights: Dict[str, torch.Tensor],
-                           load_format: str) -> None:
-        self.model_executor.sync_model_weights(actor_weights=actor_weights,
-                                               load_format=load_format)
+    def sync_model_weights(self, actor_weights: Dict[str, torch.Tensor], load_format: str) -> None:
+        self.model_executor.sync_model_weights(actor_weights=actor_weights, load_format=load_format)
 
     def offload_model_weights(self) -> None:
         self.model_executor.offload_model_weights()

@@ -113,16 +113,13 @@ def copy(src: str, dst: str, **kwargs) -> bool:
 def _copy(from_path: str, to_path: str, timeout: int = None) -> bool:
     if to_path.startswith("hdfs"):
         if from_path.startswith("hdfs"):
-            returncode = _run_cmd(_hdfs_cmd(f"-cp -f {from_path} {to_path}"),
-                                  timeout=timeout)
+            returncode = _run_cmd(_hdfs_cmd(f"-cp -f {from_path} {to_path}"), timeout=timeout)
         else:
-            returncode = _run_cmd(_hdfs_cmd(f"-put -f {from_path} {to_path}"),
-                                  timeout=timeout)
+            returncode = _run_cmd(_hdfs_cmd(f"-put -f {from_path} {to_path}"), timeout=timeout)
     else:
         if from_path.startswith("hdfs"):
             returncode = _run_cmd(_hdfs_cmd(f"-get \
-                {from_path} {to_path}"),
-                                  timeout=timeout)
+                {from_path} {to_path}"), timeout=timeout)
         else:
             try:
                 shutil.copy(from_path, to_path)

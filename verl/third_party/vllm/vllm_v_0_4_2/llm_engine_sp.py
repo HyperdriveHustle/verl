@@ -17,19 +17,16 @@ import torch
 from typing import Dict, Optional, Union, Type
 
 import vllm
-from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig, LoRAConfig,
-                         ParallelConfig, SchedulerConfig, SpeculativeConfig,
-                         VisionLanguageConfig)
+from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig, LoRAConfig, ParallelConfig, SchedulerConfig,
+                         SpeculativeConfig, VisionLanguageConfig)
 from vllm.core.scheduler import Scheduler
-from vllm.engine.output_processor.interfaces import (
-    SequenceGroupOutputProcessor)
+from vllm.engine.output_processor.interfaces import (SequenceGroupOutputProcessor)
 from vllm.engine.output_processor.stop_checker import StopChecker
 from vllm.executor.executor_base import ExecutorBase
 from vllm.logger import init_logger
 from vllm.transformers_utils.detokenizer import Detokenizer
 from vllm.engine.metrics import StatLogger
-from vllm.usage.usage_lib import (UsageContext, is_usage_stats_enabled,
-                                  usage_message)
+from vllm.usage.usage_lib import (UsageContext, is_usage_stats_enabled, usage_message)
 from vllm.utils import Counter
 from vllm.engine.llm_engine import _load_generation_config_dict
 from vllm.engine.llm_engine import LLMEngine
@@ -77,7 +74,7 @@ class LLMEngine(LLMEngine):
     def __init__(
         self,
         # NOTE(sgm): first two arguments are added for verl
-        model: Union[nn.Module, Dict],  # model itself or its parameter dict
+        model: Union[nn.Module, Dict], # model itself or its parameter dict
         tokenizer: nn.Module,
         # NOTE(sgm): vllm original arguments
         model_config: ModelConfig,
@@ -154,11 +151,10 @@ class LLMEngine(LLMEngine):
 
         self.seq_counter = Counter()
         # TODO: don't know what's the usage
-        self.generation_config_fields = _load_generation_config_dict(
-            model_config)
+        self.generation_config_fields = _load_generation_config_dict(model_config)
 
         self.model_executor = executor_class(
-            model=model,  # add for spmd_gpu_executor
+            model=model, # add for spmd_gpu_executor
             model_config=model_config,
             cache_config=cache_config,
             parallel_config=parallel_config,
@@ -175,37 +171,26 @@ class LLMEngine(LLMEngine):
 
         # If usage stat is enabled, collect relevant info.
         if is_usage_stats_enabled():
-            from vllm.model_executor.model_loader import (
-                get_architecture_class_name)
+            from vllm.model_executor.model_loader import (get_architecture_class_name)
             usage_message.report_usage(
                 get_architecture_class_name(model_config),
                 usage_context,
                 extra_kvs={
                     # Common configuration
-                    "dtype":
-                    str(model_config.dtype),
-                    "tensor_parallel_size":
-                    parallel_config.tensor_parallel_size,
-                    "block_size":
-                    cache_config.block_size,
-                    "gpu_memory_utilization":
-                    cache_config.gpu_memory_utilization,
+                    "dtype": str(model_config.dtype),
+                    "tensor_parallel_size": parallel_config.tensor_parallel_size,
+                    "block_size": cache_config.block_size,
+                    "gpu_memory_utilization": cache_config.gpu_memory_utilization,
 
                     # Quantization
-                    "quantization":
-                    model_config.quantization,
-                    "kv_cache_dtype":
-                    cache_config.cache_dtype,
+                    "quantization": model_config.quantization,
+                    "kv_cache_dtype": cache_config.cache_dtype,
 
                     # Feature flags
-                    "enable_lora":
-                    bool(lora_config),
-                    "enable_prefix_caching":
-                    cache_config.enable_prefix_caching,
-                    "enforce_eager":
-                    model_config.enforce_eager,
-                    "disable_custom_all_reduce":
-                    parallel_config.disable_custom_all_reduce,
+                    "enable_lora": bool(lora_config),
+                    "enable_prefix_caching": cache_config.enable_prefix_caching,
+                    "enforce_eager": model_config.enforce_eager,
+                    "disable_custom_all_reduce": parallel_config.disable_custom_all_reduce,
                 })
 
         if self.tokenizer:
@@ -221,26 +206,24 @@ class LLMEngine(LLMEngine):
 
         # Metric Logging.
         if self.log_stats:
-            self.stat_logger = StatLogger(
-                local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
-                labels=dict(model_name=model_config.served_model_name),
-                max_model_len=self.model_config.max_model_len)
+            self.stat_logger = StatLogger(local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
+                                          labels=dict(model_name=model_config.served_model_name),
+                                          max_model_len=self.model_config.max_model_len)
             self.stat_logger.info("cache_config", self.cache_config)
 
         # Create sequence output processor, e.g. for beam search or
         # speculative decoding.
-        self.output_processor = (
-            SequenceGroupOutputProcessor.create_output_processor(
-                self.scheduler_config,
-                self.detokenizer,
-                self.scheduler,
-                self.seq_counter,
+        self.output_processor = (SequenceGroupOutputProcessor.create_output_processor(
+            self.scheduler_config,
+            self.detokenizer,
+            self.scheduler,
+            self.seq_counter,
+            self.get_tokenizer_for_seq,
+            stop_checker=StopChecker(
+                self.scheduler_config.max_model_len,
                 self.get_tokenizer_for_seq,
-                stop_checker=StopChecker(
-                    self.scheduler_config.max_model_len,
-                    self.get_tokenizer_for_seq,
-                ),
-            ))
+            ),
+        ))
 
     # TODO(sgm): add for verl but we may not tokenizer in Rollout
     def _init_tokenizer(self, tokenizer, **tokenizer_init_kwargs):
@@ -248,8 +231,7 @@ class LLMEngine(LLMEngine):
                            max_num_seqs=self.scheduler_config.max_num_seqs,
                            max_input_length=None)
         init_kwargs.update(tokenizer_init_kwargs)
-        self.tokenizer: TokenizerGroup = TokenizerGroup(
-            tokenizer, **init_kwargs)
+        self.tokenizer: TokenizerGroup = TokenizerGroup(tokenizer, **init_kwargs)
 
     def init_cache_engine(self):
         # TODO: check whether we should rebuild the CUDAGraph every iter when offload/load KVCache
@@ -294,10 +276,8 @@ class LLMEngine(LLMEngine):
         )
         return engine
 
-    def sync_model_weights(self, actor_weights: Dict[str, torch.Tensor],
-                           load_format: str) -> None:
-        self.model_executor.sync_model_weights(actor_weights=actor_weights,
-                                               load_format=load_format)
+    def sync_model_weights(self, actor_weights: Dict[str, torch.Tensor], load_format: str) -> None:
+        self.model_executor.sync_model_weights(actor_weights=actor_weights, load_format=load_format)
 
     def offload_model_weights(self) -> None:
         self.model_executor.offload_model_weights()

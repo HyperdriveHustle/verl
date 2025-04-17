@@ -1,0 +1,233 @@
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata:
+  name: sherry-verl-grpo-32b-4node-realbs256-vllm082
+  # namespace: wxe
+spec:
+  minAvailable: 4
+  schedulerName: volcano
+  queue: chatrl
+  # policies:
+  #   - event: PodEvicted
+  #     action: CompleteJob
+  plugins:
+    pytorch: ["--port=25431"]
+    svc: ["--disable-network-policy=true"]
+  tasks:
+    - replicas: 1
+      name: master
+      template:
+        spec:
+          restartPolicy: Never
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: team
+                        operator: In
+                        values:
+                          -  rlib-debug
+                      # - key: kubernetes.io/hostname 
+                      #   operator: In
+                      #   values:
+                      #     - zjzx1h-402-c-16-a1p1-sev-h100-08u05
+                          # - zjzx1h-402-b-15-a1p1-sev-h100-08u05
+          initContainers: #不修改，本次升级改动
+            - name: init
+              image: harbor.telecom-ai.com.cn/teleinfra/alpine:latest
+              command: ["/bin/ash"]
+              args: 
+                - "-c"
+                - cp /nvfile-heatstorage/teleai-infra/look_mlxdevice.sh /ib-config
+              volumeMounts:
+                - name: shared-volume
+                  mountPath: /nvfile-heatstorage
+                - name: ib-config
+                  mountPath: /ib-config
+          containers:
+            - name: worker
+              resources:
+                requests:
+                  cpu: 64
+                  memory: 900G
+                  nvidia.com/gpu: 8
+                limits:
+                  cpu: 64
+                  memory: 1024G
+                  nvidia.com/gpu: 8
+              image: harbor.telecom-ai.com.cn/chatrl/verl:ngc-th2.6.0-cu120-vllm0.8.2
+              command: ["/bin/bash"]
+              args:
+                - "-c"
+                - |
+                  export NCCL_IB_HCA=$(/ib-config/look_mlxdevice.sh) #必须有，不修改，本次升级改动
+                  echo NCCL_IB_HCA=$NCCL_IB_HCA
+                  rm -f /etc/pip.conf /etc/xdg/pip/pip.conf /root/.pip/pip.conf /root/.config/pip/pip.conf /usr/pip.conf \
+                  && pip3 config set global.index-url http://pypi.chinatelecom.ai/simple \
+                  && pip3 config set install.trusted-host pypi.chinatelecom.ai
+                  cd  /nvfile-heatstorage/chatrl/users/hxh/code/refine_code/verl/
+                  # pip install flash_attn-2.7.4.post1+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl --no-build-isolation
+                  pip install -v -e . --index-url http://pypi.chinatelecom.ai/simple/ --trusted-host pypi.chinatelecom.ai
+                  echo $MASTER_PORT
+                  ray start --head  --port=$MASTER_PORT &
+                  sleep 10
+                  ray status
+                  ./examples/grpo_trainer/run_qwen2-32b-4node-realbs256-tp4-maxlen16k-vllm_0_8_2.sh 2>&1 | tee logs/run_qwen2-32b-4node-realbs256-tp4-maxlen16k-vllm_0_8_2.log 
+              securityContext:
+                privileged: true
+                # capabilities:
+                #   add: [ "IPC_LOCK" ]
+              # ports:
+              #   - containerPort: 5670
+              # workingDir: /nvfile-heatstorage/teleai-infra/adk/t2v
+              volumeMounts:
+                - name: dshm
+                  mountPath: /dev/shm
+                - name: shared-volume
+                  mountPath: /nvfile-heatstorage
+                - name: ib-config #必须有，不修改，本次升级改动
+                  mountPath: /ib-config
+                - name: data02
+                  mountPath: /data02
+                - name: vscode
+                  mountPath: /root
+                - name: vsixs
+                  mountPath: /workspace/vsixs
+          volumes:
+            - name: dshm
+              emptyDir:
+                medium: Memory
+              # hostPath:
+              #   path: /dev/shm
+              #   type: Directory
+            - name: shared-volume
+              hostPath:
+                path: /nvfile-heatstorage
+                type: Directory
+            - name: ib-config #必须有，不修改，本次升级改动
+              emptyDir:
+                medium: ""
+                sizeLimit: "500Mi"
+            - name: vscode
+              hostPath:
+                path: /nvfile-heatstorage/tele_data_share/public
+                type: Directory
+            - name: data02
+              hostPath:
+                path: /data02
+                type: Directory
+            - name: vsixs
+              hostPath:
+                path: /nvfile-heatstorage/tele_data_share/public/vsixs
+          securityContext:
+            runAsUser: 0
+    - replicas: 3
+      name: worker
+      template:
+        spec:
+          restartPolicy: Never
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: team
+                        operator: In
+                        values:
+                          -  rlib-debug
+                      # - key: kubernetes.io/hostname 
+                      #   operator: In
+                      #   values:
+                      #     - zjzx1h-402-b-15-a1p1-sev-h100-08u05
+                          # - zjzx1h-402-b-15-a1p1-sev-h100-08u05
+          initContainers: #不修改，本次升级改动
+            - name: init
+              image: harbor.telecom-ai.com.cn/teleinfra/alpine:latest
+              command: ["/bin/ash"]
+              args: 
+                - "-c"
+                - cp /nvfile-heatstorage/teleai-infra/look_mlxdevice.sh /ib-config
+              volumeMounts:
+                - name: shared-volume
+                  mountPath: /nvfile-heatstorage
+                - name: ib-config
+                  mountPath: /ib-config
+          containers:
+            - name: worker
+              resources:
+                requests:
+                  cpu: 64
+                  memory: 900G
+                  nvidia.com/gpu: 8
+                limits:
+                  cpu: 64
+                  memory: 1024G
+                  nvidia.com/gpu: 8
+              image: harbor.telecom-ai.com.cn/chatrl/verl:ngc-th2.6.0-cu120-vllm0.8.2
+              command: ["/bin/bash"]
+              args:
+                - "-c"
+                - |
+                  export NCCL_IB_HCA=$(/ib-config/look_mlxdevice.sh) #必须有，不修改，本次升级改动
+                  echo NCCL_IB_HCA=$NCCL_IB_HCA
+                  rm -f /etc/pip.conf /etc/xdg/pip/pip.conf /root/.pip/pip.conf /root/.config/pip/pip.conf /usr/pip.conf \
+                  && pip3 config set global.index-url http://pypi.chinatelecom.ai/simple \
+                  && pip3 config set install.trusted-host pypi.chinatelecom.ai
+                  cd  /nvfile-heatstorage/chatrl/users/hxh/code/refine_code/verl/
+                  # pip install flash_attn-2.7.4.post1+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl --no-build-isolation
+                  pip install -v -e . --index-url http://pypi.chinatelecom.ai/simple/ --trusted-host pypi.chinatelecom.ai
+                  ray start --address=${MASTER_ADDR}:${MASTER_PORT} --block
+                  # sleep infinity
+              securityContext:
+                privileged: true
+                # capabilities:
+                #   add: [ "IPC_LOCK" ]
+              # ports:
+              #   - containerPort: 5670
+              # workingDir: /nvfile-heatstorage/teleai-infra/adk/t2v
+              volumeMounts:
+                - name: dshm
+                  mountPath: /dev/shm
+                - name: shared-volume
+                  mountPath: /nvfile-heatstorage
+                - name: ib-config #必须有，不修改，本次升级改动
+                  mountPath: /ib-config
+                - name: data02
+                  mountPath: /data02
+                - name: vscode
+                  mountPath: /root
+                - name: vsixs
+                  mountPath: /workspace/vsixs
+          volumes:
+            - name: dshm
+              emptyDir:
+                medium: Memory
+              # hostPath:
+              #   path: /dev/shm
+              #   type: Directory
+            - name: shared-volume
+              hostPath:
+                path: /nvfile-heatstorage
+                type: Directory
+            - name: ib-config #必须有，不修改，本次升级改动
+              emptyDir:
+                medium: ""
+                sizeLimit: "500Mi"
+            - name: vscode
+              hostPath:
+                path: /nvfile-heatstorage/tele_data_share/public
+                type: Directory
+            - name: data02
+              hostPath:
+                path: /data02
+                type: Directory
+            - name: vsixs
+              hostPath:
+                path: /nvfile-heatstorage/tele_data_share/public/vsixs
+          securityContext:
+            runAsUser: 0

@@ -22,8 +22,7 @@ from transformers import PretrainedConfig, PreTrainedModel
 from megatron.core.tensor_parallel.utils import VocabUtility
 
 from vllm.model_executor.models import ModelRegistry
-from vllm.model_executor.weight_utils import (get_quant_config,
-                                              initialize_dummy_weights)
+from vllm.model_executor.weight_utils import (get_quant_config, initialize_dummy_weights)
 
 from .config import ModelConfig
 from vllm.config import DeviceConfig, LoRAConfig
@@ -50,9 +49,8 @@ def _get_model_architecture(config: PretrainedConfig) -> Type[nn.Module]:
         model_cls = ModelRegistry.load_model_cls(arch)
         if model_cls is not None:
             return model_cls
-    raise ValueError(
-        f"Model architectures {architectures} are not supported for now. "
-        f"Supported architectures: {ModelRegistry.get_supported_archs()}")
+    raise ValueError(f"Model architectures {architectures} are not supported for now. "
+                     f"Supported architectures: {ModelRegistry.get_supported_archs()}")
 
 
 from vllm.model_executor.layers.linear import *
@@ -107,22 +105,16 @@ def vocab_init(self,
     self.tp_size = get_tensor_model_parallel_world_size()
     # Divide the weight matrix along the vocaburaly dimension.
 
-    self.vocab_start_index, self.vocab_end_index = (
-        VocabUtility.vocab_range_from_global_vocab_size(
-            self.num_embeddings, get_tensor_model_parallel_rank(),
-            self.tp_size))
-    self.num_embeddings_per_partition = (self.vocab_end_index -
-                                         self.vocab_start_index)
+    self.vocab_start_index, self.vocab_end_index = (VocabUtility.vocab_range_from_global_vocab_size(
+        self.num_embeddings, get_tensor_model_parallel_rank(), self.tp_size))
+    self.num_embeddings_per_partition = (self.vocab_end_index - self.vocab_start_index)
     self.weight = Parameter(
         torch.empty(
             self.num_embeddings_per_partition,
             self.embedding_dim,
             # device=torch.cuda.current_device(),
             dtype=params_dtype))
-    set_weight_attrs(self.weight, {
-        "parallel_dim": 0,
-        "weight_loader": self.weight_loader
-    })
+    set_weight_attrs(self.weight, {"parallel_dim": 0, "weight_loader": self.weight_loader})
 
 
 VocabParallelEmbedding.__init__ = vocab_init
@@ -131,9 +123,8 @@ VocabParallelEmbedding.__init__ = vocab_init
 def _get_model_weight_loader(arch: str):
     if arch in __MODEL_WEIGHT_LOADER_REGISTRY__:
         return __MODEL_WEIGHT_LOADER_REGISTRY__[arch]
-    raise ValueError(
-        f"Model architectures {arch} are not supported for now. "
-        f"Supported architectures: {ModelRegistry.get_supported_archs()}")
+    raise ValueError(f"Model architectures {arch} are not supported for now. "
+                     f"Supported architectures: {ModelRegistry.get_supported_archs()}")
 
 
 def get_model(actor_model: Union[PreTrainedModel, Dict],
@@ -146,24 +137,20 @@ def get_model(actor_model: Union[PreTrainedModel, Dict],
     linear_method = None
     quant_config = None
     if model_config.quantization is not None:
-        quant_config = get_quant_config(model_config.quantization,
-                                        model_config.model,
-                                        model_config.hf_config,
+        quant_config = get_quant_config(model_config.quantization, model_config.model, model_config.hf_config,
                                         model_config.download_dir)
         capability = torch.cuda.get_device_capability()
         capability = capability[0] * 10 + capability[1]
         if capability < quant_config.get_min_capability():
-            raise ValueError(
-                f"The quantization method {model_config.quantization} is not "
-                "supported for the current GPU. "
-                f"Minimum capability: {quant_config.get_min_capability()}. "
-                f"Current capability: {capability}.")
+            raise ValueError(f"The quantization method {model_config.quantization} is not "
+                             "supported for the current GPU. "
+                             f"Minimum capability: {quant_config.get_min_capability()}. "
+                             f"Current capability: {capability}.")
         supported_dtypes = quant_config.get_supported_act_dtypes()
         if model_config.dtype not in supported_dtypes:
-            raise ValueError(
-                f"{model_config.dtype} is not supported for quantization "
-                f"method {model_config.quantization}. Supported dtypes: "
-                f"{supported_dtypes}")
+            raise ValueError(f"{model_config.dtype} is not supported for quantization "
+                             f"method {model_config.quantization}. Supported dtypes: "
+                             f"{supported_dtypes}")
         linear_method = quant_config.get_linear_method()
 
     with _set_default_torch_dtype(model_config.dtype):
@@ -181,15 +168,12 @@ def get_model(actor_model: Union[PreTrainedModel, Dict],
         elif model_config.load_format == 'model' or model_config.load_format == 'auto':
             # NOTE(shengguangming) Load the weights from the actor model
             if isinstance(actor_model, nn.Module):
-                load_weights(actor_weights=dict(
-                    actor_model.named_parameters(remove_duplicate=False)),
-                             vllm_model=model)
+                load_weights(actor_weights=dict(actor_model.named_parameters(remove_duplicate=False)), vllm_model=model)
             else:
                 load_weights(actor_weights=actor_model, vllm_model=model)
 
         # NOTE(sgm) Some weights are point to gpu, but still need this.
-        model = model.cuda(
-        )  # NOTE (zhangchi.usc1992) We need this for vllm to profile memory usage
+        model = model.cuda()  # NOTE (zhangchi.usc1992) We need this for vllm to profile memory usage
     return model.eval()
 
 
@@ -249,15 +233,12 @@ def forward(
 
     # Prepare sampling tensors with pinned memory to avoid blocking.
     (sampling_tensors, do_penalties, do_top_p_top_k,
-     do_min_p) = SamplingTensors.from_sampling_metadata(
-         sampling_metadata, vocab_size, logits.device, logits.dtype)
+     do_min_p) = SamplingTensors.from_sampling_metadata(sampling_metadata, vocab_size, logits.device, logits.dtype)
 
     # Apply presence and frequency penalties.
     if do_penalties:
-        logits = _apply_penalties(logits, sampling_tensors.prompt_tokens,
-                                  sampling_tensors.output_tokens,
-                                  sampling_tensors.presence_penalties,
-                                  sampling_tensors.frequency_penalties,
+        logits = _apply_penalties(logits, sampling_tensors.prompt_tokens, sampling_tensors.output_tokens,
+                                  sampling_tensors.presence_penalties, sampling_tensors.frequency_penalties,
                                   sampling_tensors.repetition_penalties)
 
     # Apply temperature scaling.
@@ -265,8 +246,7 @@ def forward(
     logits.div_(sampling_tensors.temperatures.unsqueeze_(dim=1))
 
     if do_top_p_top_k:
-        logits = _apply_top_k_top_p(logits, sampling_tensors.top_ps,
-                                    sampling_tensors.top_ks)
+        logits = _apply_top_k_top_p(logits, sampling_tensors.top_ps, sampling_tensors.top_ks)
 
     if do_min_p:
         logits = _apply_min_p(logits, sampling_tensors.min_ps)
@@ -284,12 +264,9 @@ def forward(
     # Get the logprobs query results.
     # prompt_logprobs, sample_logprobs = _get_logprobs(
     #     logprobs, sampling_metadata, sample_results)
-    prompt_logprobs, sample_logprobs = _get_logprobs(origin_logprobs,
-                                                     sampling_metadata,
-                                                     sample_results)
+    prompt_logprobs, sample_logprobs = _get_logprobs(origin_logprobs, sampling_metadata, sample_results)
 
-    return _build_sampler_output(sample_results, sampling_metadata,
-                                 prompt_logprobs, sample_logprobs)
+    return _build_sampler_output(sample_results, sampling_metadata, prompt_logprobs, sample_logprobs)
 
 
 from vllm.model_executor.layers.sampler import Sampler

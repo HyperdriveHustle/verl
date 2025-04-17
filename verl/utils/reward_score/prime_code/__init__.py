@@ -30,10 +30,7 @@ def compute_score(completion, test_cases, continuous=False):
 
         # Complete check on all in-out pairs first. If there is no failure, per-sample test can be skipped.
         try:
-            res, metadata = apps_check_correctness(in_outs=test_cases,
-                                                   generation=solution,
-                                                   timeout=5,
-                                                   debug=False)
+            res, metadata = apps_check_correctness(in_outs=test_cases, generation=solution, timeout=5, debug=False)
             metadata = dict(enumerate(metadata))[0]
             success = all(map(lambda x: x == True, res))
             if success:
@@ -45,10 +42,7 @@ def compute_score(completion, test_cases, continuous=False):
         inputs = test_cases["inputs"]
         outputs = test_cases["outputs"]
         for i in range(len(inputs)):
-            test_cases_list.append({
-                "inputs": [inputs[i]],
-                "outputs": [outputs[i]]
-            })
+            test_cases_list.append({"inputs": [inputs[i]], "outputs": [outputs[i]]})
 
         if continuous:
             # per sample test: if continuous score is needed, test first 10 samples regardless of failures
@@ -56,13 +50,9 @@ def compute_score(completion, test_cases, continuous=False):
             metadata_list = []
             res_list = []
             for test_case_id, test_case in enumerate(test_cases_list):
-                res, metadata = apps_check_correctness(in_outs=test_case,
-                                                       generation=solution,
-                                                       timeout=5,
-                                                       debug=False)
+                res, metadata = apps_check_correctness(in_outs=test_case, generation=solution, timeout=5, debug=False)
                 try:
-                    metadata = dict(enumerate(metadata))[
-                        0]  # metadata can be empty occasionally
+                    metadata = dict(enumerate(metadata))[0]  # metadata can be empty occasionally
                 except Exception as e:
                     metadata = {}
                 metadata["test_case"] = {}

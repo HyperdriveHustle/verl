@@ -24,10 +24,8 @@ import torch.nn as nn
 from transformers import PretrainedConfig
 from .config import ModelConfig, LoadConfig
 
-from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig,
-                         EngineConfig, LoRAConfig, ParallelConfig,
-                         SchedulerConfig, SpeculativeConfig,
-                         TokenizerPoolConfig, VisionLanguageConfig)
+from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig, EngineConfig, LoRAConfig, ParallelConfig,
+                         SchedulerConfig, SpeculativeConfig, TokenizerPoolConfig, VisionLanguageConfig)
 from vllm.model_executor.layers.quantization import QUANTIZATION_METHODS
 from vllm.utils import str_to_int_tuple
 
@@ -105,35 +103,30 @@ class EngineArgs:
     ngram_prompt_lookup_min: Optional[int] = None
 
     @staticmethod
-    def add_cli_args(
-            parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    def add_cli_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         """Shared CLI arguments for vLLM engine."""
         # Model arguments
         # TODO(shengguangming): delete the unused args
-        parser.add_argument(
-            '--model',
-            type=str,
-            default='facebook/opt-125m',
-            help='name or path of the huggingface model to use')
-        parser.add_argument(
-            '--tokenizer',
-            type=str,
-            default=EngineArgs.tokenizer,
-            help='name or path of the huggingface tokenizer to use')
-        parser.add_argument(
-            '--revision',
-            type=str,
-            default=None,
-            help='the specific model version to use. It can be a branch '
-            'name, a tag name, or a commit id. If unspecified, will use '
-            'the default version.')
-        parser.add_argument(
-            '--tokenizer-revision',
-            type=str,
-            default=None,
-            help='the specific tokenizer version to use. It can be a branch '
-            'name, a tag name, or a commit id. If unspecified, will use '
-            'the default version.')
+        parser.add_argument('--model',
+                            type=str,
+                            default='facebook/opt-125m',
+                            help='name or path of the huggingface model to use')
+        parser.add_argument('--tokenizer',
+                            type=str,
+                            default=EngineArgs.tokenizer,
+                            help='name or path of the huggingface tokenizer to use')
+        parser.add_argument('--revision',
+                            type=str,
+                            default=None,
+                            help='the specific model version to use. It can be a branch '
+                            'name, a tag name, or a commit id. If unspecified, will use '
+                            'the default version.')
+        parser.add_argument('--tokenizer-revision',
+                            type=str,
+                            default=None,
+                            help='the specific tokenizer version to use. It can be a branch '
+                            'name, a tag name, or a commit id. If unspecified, will use '
+                            'the default version.')
         parser.add_argument('--tokenizer-mode',
                             type=str,
                             default=EngineArgs.tokenizer_mode,
@@ -141,41 +134,35 @@ class EngineArgs:
                             help='tokenizer mode. "auto" will use the fast '
                             'tokenizer if available, and "slow" will '
                             'always use the slow tokenizer.')
-        parser.add_argument('--trust-remote-code',
-                            action='store_true',
-                            help='trust remote code from huggingface')
+        parser.add_argument('--trust-remote-code', action='store_true', help='trust remote code from huggingface')
         parser.add_argument('--download-dir',
                             type=str,
                             default=EngineArgs.download_dir,
                             help='directory to download and load the weights, '
                             'default to the default cache dir of '
                             'huggingface')
-        parser.add_argument(
-            '--load-format',
-            type=str,
-            default=EngineArgs.load_format,
-            choices=['auto', 'pt', 'safetensors', 'npcache', 'dummy'],
-            help='The format of the model weights to load. '
-            '"auto" will try to load the weights in the safetensors format '
-            'and fall back to the pytorch bin format if safetensors format '
-            'is not available. '
-            '"pt" will load the weights in the pytorch bin format. '
-            '"safetensors" will load the weights in the safetensors format. '
-            '"npcache" will load the weights in pytorch format and store '
-            'a numpy cache to speed up the loading. '
-            '"dummy" will initialize the weights with random values, '
-            'which is mainly for profiling.')
-        parser.add_argument(
-            '--dtype',
-            type=str,
-            default=EngineArgs.dtype,
-            choices=[
-                'auto', 'half', 'float16', 'bfloat16', 'float', 'float32'
-            ],
-            help='data type for model weights and activations. '
-            'The "auto" option will use FP16 precision '
-            'for FP32 and FP16 models, and BF16 precision '
-            'for BF16 models.')
+        parser.add_argument('--load-format',
+                            type=str,
+                            default=EngineArgs.load_format,
+                            choices=['auto', 'pt', 'safetensors', 'npcache', 'dummy'],
+                            help='The format of the model weights to load. '
+                            '"auto" will try to load the weights in the safetensors format '
+                            'and fall back to the pytorch bin format if safetensors format '
+                            'is not available. '
+                            '"pt" will load the weights in the pytorch bin format. '
+                            '"safetensors" will load the weights in the safetensors format. '
+                            '"npcache" will load the weights in pytorch format and store '
+                            'a numpy cache to speed up the loading. '
+                            '"dummy" will initialize the weights with random values, '
+                            'which is mainly for profiling.')
+        parser.add_argument('--dtype',
+                            type=str,
+                            default=EngineArgs.dtype,
+                            choices=['auto', 'half', 'float16', 'bfloat16', 'float', 'float32'],
+                            help='data type for model weights and activations. '
+                            'The "auto" option will use FP16 precision '
+                            'for FP32 and FP16 models, and BF16 precision '
+                            'for BF16 models.')
         parser.add_argument('--max-model-len',
                             type=int,
                             default=None,
@@ -203,10 +190,7 @@ class EngineArgs:
                             choices=[8, 16, 32],
                             help='token block size')
         # TODO(woosuk): Support fine-grained seeds (e.g., seed per request).
-        parser.add_argument('--seed',
-                            type=int,
-                            default=EngineArgs.seed,
-                            help='random seed')
+        parser.add_argument('--seed', type=int, default=EngineArgs.seed, help='random seed')
         parser.add_argument('--swap-space',
                             type=int,
                             default=EngineArgs.swap_space,
@@ -225,9 +209,7 @@ class EngineArgs:
                             type=int,
                             default=EngineArgs.max_num_seqs,
                             help='maximum number of sequences per iteration')
-        parser.add_argument('--disable-log-stats',
-                            action='store_true',
-                            help='disable logging statistics')
+        parser.add_argument('--disable-log-stats', action='store_true', help='disable logging statistics')
         # Quantization settings.
         parser.add_argument('--quantization',
                             '-q',
@@ -245,26 +227,22 @@ class EngineArgs:
         engine_args = cls(**{attr: getattr(args, attr) for attr in attrs})
         return engine_args
 
-    def create_engine_config(self, ) -> EngineConfig:
+    def create_engine_config(
+        self,
+    ) -> EngineConfig:
         device_config = DeviceConfig(self.device)
         # NOTE(sgm): we only modify ModelConfig, other configs are import from vllm
-        model_config = ModelConfig(
-            self.model_hf_config, self.dtype, self.seed, self.revision,
-            self.code_revision, self.tokenizer_revision, self.max_model_len,
-            self.quantization, self.quantization_param_path,
-            self.enforce_eager, self.max_context_len_to_capture,
-            self.max_seq_len_to_capture, self.max_logprobs,
-            self.skip_tokenizer_init, self.served_model_name)
-        cache_config = CacheConfig(self.block_size,
-                                   self.gpu_memory_utilization,
-                                   self.swap_space, self.kv_cache_dtype,
-                                   self.num_gpu_blocks_override,
-                                   model_config.get_sliding_window(),
-                                   self.enable_prefix_caching)
+        model_config = ModelConfig(self.model_hf_config, self.dtype, self.seed, self.revision, self.code_revision,
+                                   self.tokenizer_revision, self.max_model_len, self.quantization,
+                                   self.quantization_param_path, self.enforce_eager, self.max_context_len_to_capture,
+                                   self.max_seq_len_to_capture, self.max_logprobs, self.skip_tokenizer_init,
+                                   self.served_model_name)
+        cache_config = CacheConfig(self.block_size, self.gpu_memory_utilization,
+                                   self.swap_space, self.kv_cache_dtype, self.num_gpu_blocks_override,
+                                   model_config.get_sliding_window(), self.enable_prefix_caching)
         parallel_config = ParallelConfig(
-            self.pipeline_parallel_size, self.tensor_parallel_size,
-            self.worker_use_ray, self.max_parallel_loading_workers,
-            self.disable_custom_all_reduce,
+            self.pipeline_parallel_size, self.tensor_parallel_size, self.worker_use_ray,
+            self.max_parallel_loading_workers, self.disable_custom_all_reduce,
             TokenizerPoolConfig.create_config(
                 self.tokenizer_pool_size,
                 self.tokenizer_pool_type,
@@ -296,20 +274,18 @@ class EngineArgs:
             model_config.max_model_len,
             self.use_v2_block_manager,
             num_lookahead_slots=(self.num_lookahead_slots
-                                 if speculative_config is None else
-                                 speculative_config.num_lookahead_slots),
+                                 if speculative_config is None else speculative_config.num_lookahead_slots),
             delay_factor=self.scheduler_delay_factor,
             enable_chunked_prefill=self.enable_chunked_prefill,
         )
 
-        lora_config = LoRAConfig(
-            max_lora_rank=self.max_lora_rank,
-            max_loras=self.max_loras,
-            fully_sharded_loras=self.fully_sharded_loras,
-            lora_extra_vocab_size=self.lora_extra_vocab_size,
-            lora_dtype=self.lora_dtype,
-            max_cpu_loras=self.max_cpu_loras if self.max_cpu_loras
-            and self.max_cpu_loras > 0 else None) if self.enable_lora else None
+        lora_config = LoRAConfig(max_lora_rank=self.max_lora_rank,
+                                 max_loras=self.max_loras,
+                                 fully_sharded_loras=self.fully_sharded_loras,
+                                 lora_extra_vocab_size=self.lora_extra_vocab_size,
+                                 lora_dtype=self.lora_dtype,
+                                 max_cpu_loras=self.max_cpu_loras if self.max_cpu_loras and self.max_cpu_loras > 0 else
+                                 None) if self.enable_lora else None
 
         load_config = LoadConfig(
             load_format=self.load_format,
@@ -318,14 +294,11 @@ class EngineArgs:
         )
 
         if self.image_input_type:
-            if (not self.image_token_id or not self.image_input_shape
-                    or not self.image_feature_size):
-                raise ValueError(
-                    'Specify `image_token_id`, `image_input_shape` and '
-                    '`image_feature_size` together with `image_input_type`.')
+            if (not self.image_token_id or not self.image_input_shape or not self.image_feature_size):
+                raise ValueError('Specify `image_token_id`, `image_input_shape` and '
+                                 '`image_feature_size` together with `image_input_type`.')
             vision_language_config = VisionLanguageConfig(
-                image_input_type=VisionLanguageConfig.
-                get_image_input_enum_type(self.image_input_type),
+                image_input_type=VisionLanguageConfig.get_image_input_enum_type(self.image_input_type),
                 image_token_id=self.image_token_id,
                 image_input_shape=str_to_int_tuple(self.image_input_shape),
                 image_feature_size=self.image_feature_size,
@@ -333,8 +306,7 @@ class EngineArgs:
         else:
             vision_language_config = None
 
-        decoding_config = DecodingConfig(
-            guided_decoding_backend=self.guided_decoding_backend)
+        decoding_config = DecodingConfig(guided_decoding_backend=self.guided_decoding_backend)
 
         return EngineConfig(model_config=model_config,
                             cache_config=cache_config,

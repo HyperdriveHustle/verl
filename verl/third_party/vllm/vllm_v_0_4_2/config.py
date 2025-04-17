@@ -126,8 +126,7 @@ class ModelConfig(ModelConfig):
         if self.max_context_len_to_capture is not None:
             raise ValueError("`max_context_len_to_capture` is deprecated. "
                              "Use `max_seq_len_to_capture` instead.")
-        self.max_seq_len_to_capture = (max_seq_len_to_capture
-                                       or max_context_len_to_capture)
+        self.max_seq_len_to_capture = (max_seq_len_to_capture or max_context_len_to_capture)
         self.max_logprobs = max_logprobs
         self.skip_tokenizer_init = skip_tokenizer_init
 
@@ -136,8 +135,7 @@ class ModelConfig(ModelConfig):
         self.hf_text_config = get_hf_text_config(hf_config)
         # TODO: for multimodal model
         self.dtype = _get_and_verify_dtype(self.hf_config, dtype)
-        self.max_model_len = _get_and_verify_max_len(self.hf_config,
-                                                     max_model_len)
+        self.max_model_len = _get_and_verify_max_len(self.hf_config, max_model_len)
         # self.served_model_name = get_served_model_name(model,
         #                                                served_model_name)
         # self._verify_load_format()
@@ -177,14 +175,12 @@ class LoadConfig:
 
     load_format: Union[str, LoadFormat, "BaseModelLoader"] = LoadFormat.AUTO
     download_dir: Optional[str] = None
-    model_loader_extra_config: Optional[Union[str, dict]] = field(
-        default_factory=dict)
+    model_loader_extra_config: Optional[Union[str, dict]] = field(default_factory=dict)
 
     def __post_init__(self):
         model_loader_extra_config = self.model_loader_extra_config or {}
         if isinstance(model_loader_extra_config, str):
-            self.model_loader_extra_config = json.loads(
-                model_loader_extra_config)
+            self.model_loader_extra_config = json.loads(model_loader_extra_config)
         self._verify_load_format()
 
     def _verify_load_format(self) -> None:
@@ -197,10 +193,8 @@ class LoadConfig:
         rocm_not_supported_load_format: List[str] = []
         if is_hip() and load_format in rocm_not_supported_load_format:
             rocm_supported_load_format = [
-                f for f in LoadFormat.__members__
-                if (f not in rocm_not_supported_load_format)
+                f for f in LoadFormat.__members__ if (f not in rocm_not_supported_load_format)
             ]
-            raise ValueError(
-                f"load format '{load_format}' is not supported in ROCm. "
-                f"Supported load formats are "
-                f"{rocm_supported_load_format}")
+            raise ValueError(f"load format '{load_format}' is not supported in ROCm. "
+                             f"Supported load formats are "
+                             f"{rocm_supported_load_format}")

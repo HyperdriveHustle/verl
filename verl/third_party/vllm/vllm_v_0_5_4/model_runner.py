@@ -21,20 +21,17 @@ import warnings
 
 import vllm.envs as envs
 from vllm.attention import (AttentionMetadata, get_attn_backend)
-from vllm.config import (CacheConfig, DeviceConfig, LoRAConfig,
-                         MultiModalConfig, ParallelConfig, PromptAdapterConfig,
+from vllm.config import (CacheConfig, DeviceConfig, LoRAConfig, MultiModalConfig, ParallelConfig, PromptAdapterConfig,
                          SchedulerConfig)
 from vllm.logger import init_logger
 from vllm.lora.layers import LoRAMapping
 from vllm.lora.request import LoRARequest
 from vllm.lora.worker_manager import LRUCacheWorkerLoRAManager
 from vllm.model_executor import SamplingMetadata
-from vllm.model_executor.models.interfaces import (supports_lora,
-                                                   supports_vision)
+from vllm.model_executor.models.interfaces import (supports_lora, supports_vision)
 from vllm.utils import (CudaMemoryProfiler, is_hip, is_pin_memory_available)
 from vllm.worker.model_runner import ModelRunner, CUDAGraphRunner
-from vllm.prompt_adapter.worker_manager import (
-    LRUCacheWorkerPromptAdapterManager)
+from vllm.prompt_adapter.worker_manager import (LRUCacheWorkerPromptAdapterManager)
 
 from .model_loader import get_model
 from .config import ModelConfig, LoadConfig
@@ -56,8 +53,7 @@ class ModelRunner(ModelRunner):
 
     def __init__(
         self,
-        model: Union[nn.Module,
-                     Dict],  # [verl] model itself or its parameter dict
+        model: Union[nn.Module, Dict], # [verl] model itself or its parameter dict
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
@@ -103,14 +99,11 @@ class ModelRunner(ModelRunner):
                                    multimodal_config=self.multimodal_config,
                                    cache_config=self.cache_config)
         self.model_memory_usage = m.consumed_memory
-        logger.info("Loading model weights took %.4f GB",
-                    self.model_memory_usage / float(2**30))
+        logger.info("Loading model weights took %.4f GB", self.model_memory_usage / float(2**30))
 
         if self.lora_config:
             assert supports_lora(self.model), "Model does not support LoRA"
-            assert not supports_vision(
-                self.model
-            ), "To be tested: vision language model with LoRA settings."
+            assert not supports_vision(self.model), "To be tested: vision language model with LoRA settings."
 
             self.lora_manager = LRUCacheWorkerLoRAManager(
                 self.scheduler_config.max_num_seqs,
@@ -120,19 +113,15 @@ class ModelRunner(ModelRunner):
                 self.device,
                 self.model.embedding_modules,
                 self.model.embedding_padding_modules,
-                max_position_embeddings=self.model.config.
-                max_position_embeddings,
+                max_position_embeddings=self.model.config.max_position_embeddings,
             )
             self.model = self.lora_manager.create_lora_manager(self.model)
 
         if self.prompt_adapter_config:
             self.prompt_adapter_manager = LRUCacheWorkerPromptAdapterManager(
-                self.scheduler_config.max_num_seqs,
-                self.scheduler_config.max_num_batched_tokens, self.device,
+                self.scheduler_config.max_num_seqs, self.scheduler_config.max_num_batched_tokens, self.device,
                 self.prompt_adapter_config)
-            self.model = (
-                self.prompt_adapter_manager.create_prompt_adapter_manager(
-                    self.model))
+            self.model = (self.prompt_adapter_manager.create_prompt_adapter_manager(self.model))
 
         if self.kv_cache_dtype == "fp8" and is_hip():
             # Currently only ROCm accepts kv-cache scaling factors
@@ -146,22 +135,16 @@ class ModelRunner(ModelRunner):
                         "kv cache scaling factors in the model checkpoint.",
                         FutureWarning,
                         stacklevel=2)
-                    self.model.load_kv_cache_scales(
-                        self.model_config.quantization_param_path)
-                    logger.info("Loaded KV cache scaling factors from %s",
-                                self.model_config.quantization_param_path)
+                    self.model.load_kv_cache_scales(self.model_config.quantization_param_path)
+                    logger.info("Loaded KV cache scaling factors from %s", self.model_config.quantization_param_path)
                 else:
                     raise RuntimeError(
                         "Using FP8 KV cache and scaling factors provided but "
-                        "model %s does not support loading scaling factors.",
-                        self.model.__class__)
+                        "model %s does not support loading scaling factors.", self.model.__class__)
             else:
-                logger.warning(
-                    "Using FP8 KV cache but no scaling factors "
-                    "provided. Defaulting to scaling factors of 1.0. "
-                    "This may lead to less accurate results!")
+                logger.warning("Using FP8 KV cache but no scaling factors "
+                               "provided. Defaulting to scaling factors of 1.0. "
+                               "This may lead to less accurate results!")
 
         if envs.VLLM_TEST_DYNAMO_GRAPH_CAPTURE:
-            self.model = torch.compile(self.model,
-                                       fullgraph=True,
-                                       backend="eager")
+            self.model = torch.compile(self.model, fullgraph=True, backend="eager")

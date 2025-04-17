@@ -22,8 +22,7 @@ from tensordict import TensorDict
 import copy
 
 
-def karmarkar_karp(seqlen_list: List[int], k_partitions: int,
-                   equal_size: bool):
+def karmarkar_karp(seqlen_list: List[int], k_partitions: int, equal_size: bool):
     # see: https://en.wikipedia.org/wiki/Largest_differencing_method
     class Set:
 
@@ -101,13 +100,10 @@ def karmarkar_karp(seqlen_list: List[int], k_partitions: int,
             repr_str += "]"
             return repr_str
 
-    sorted_seqlen_list = sorted([(seqlen, i)
-                                 for i, seqlen in enumerate(seqlen_list)])
+    sorted_seqlen_list = sorted([(seqlen, i) for i, seqlen in enumerate(seqlen_list)])
     states_pq = []
     if equal_size:
-        assert len(
-            seqlen_list
-        ) % k_partitions == 0, f"{len(seqlen_list)} % {k_partitions} != 0"
+        assert len(seqlen_list) % k_partitions == 0, f"{len(seqlen_list)} % {k_partitions} != 0"
         for offset in range(0, len(sorted_seqlen_list), k_partitions):
             items = []
             for i in range(k_partitions):
@@ -116,8 +112,7 @@ def karmarkar_karp(seqlen_list: List[int], k_partitions: int,
             heapq.heappush(states_pq, State(items=items, k=k_partitions))
     else:
         for seqlen, idx in sorted_seqlen_list:
-            heapq.heappush(states_pq,
-                           State(items=[(idx, seqlen)], k=k_partitions))
+            heapq.heappush(states_pq, State(items=[(idx, seqlen)], k=k_partitions))
 
     while len(states_pq) > 1:
         state0 = heapq.heappop(states_pq)
@@ -135,11 +130,9 @@ def karmarkar_karp(seqlen_list: List[int], k_partitions: int,
     return partitions
 
 
-def greedy_partition(seqlen_list: List[int], k_partitions: int,
-                     equal_size: bool):
+def greedy_partition(seqlen_list: List[int], k_partitions: int, equal_size: bool):
     bias = sum(seqlen_list) + 1 if equal_size else 0
-    sorted_seqlen = [(seqlen + bias, i)
-                     for i, seqlen in enumerate(seqlen_list)]
+    sorted_seqlen = [(seqlen + bias, i) for i, seqlen in enumerate(seqlen_list)]
     partitions = [[] for _ in range(k_partitions)]
     partition_sums = [0 for _ in range(k_partitions)]
     for seqlen, i in sorted_seqlen:
@@ -156,8 +149,7 @@ def greedy_partition(seqlen_list: List[int], k_partitions: int,
     return partitions
 
 
-def get_seqlen_balanced_partitions(seqlen_list: List[int], k_partitions: int,
-                                   equal_size: bool):
+def get_seqlen_balanced_partitions(seqlen_list: List[int], k_partitions: int, equal_size: bool):
     """ get order of seq lengths to make partitions balanced, this is
         used in balacing sum of seqlength across dp ranks and microbatches
     Parameters:
@@ -173,13 +165,10 @@ def get_seqlen_balanced_partitions(seqlen_list: List[int], k_partitions: int,
         partitions (List[List[int]]):
             return k_partitions list containing the index of items.
     """
-    assert len(
-        seqlen_list
-    ) >= k_partitions, f"number of items:[{len(seqlen_list)}] < k_partitions:[{k_partitions}]"
+    assert len(seqlen_list) >= k_partitions, f"number of items:[{len(seqlen_list)}] < k_partitions:[{k_partitions}]"
 
     def _check_and_sort_partitions(partitions):
-        assert len(
-            partitions) == k_partitions, f"{len(partitions)} != {k_partitions}"
+        assert len(partitions) == k_partitions, f"{len(partitions)} != {k_partitions}"
         seen_idx = set()
         sorted_partitions = [None] * k_partitions
         for i, partition in enumerate(partitions):
@@ -190,14 +179,11 @@ def get_seqlen_balanced_partitions(seqlen_list: List[int], k_partitions: int,
         assert seen_idx == set(range(len(seqlen_list)))
         return sorted_partitions
 
-    partitions = karmarkar_karp(seqlen_list=seqlen_list,
-                                k_partitions=k_partitions,
-                                equal_size=equal_size)
+    partitions = karmarkar_karp(seqlen_list=seqlen_list, k_partitions=k_partitions, equal_size=equal_size)
     return _check_and_sort_partitions(partitions)
 
 
-def log_seqlen_unbalance(seqlen_list: List[int], partitions: List[List[int]],
-                         prefix):
+def log_seqlen_unbalance(seqlen_list: List[int], partitions: List[List[int]], prefix):
     # add some metrics of seqlen sum on dp ranks
     k_partition = len(partitions)
     # assert len(seqlen_list) % k_partition == 0
@@ -249,17 +235,13 @@ def rearrange_micro_batches(batch: TensorDict, max_token_len, dp_group=None):
     num_micro_batches = ceildiv(total_seqlen, max_token_len)
     if dist.is_initialized():
         num_micro_batches = torch.tensor([num_micro_batches], device='cuda')
-        dist.all_reduce(num_micro_batches,
-                        op=dist.ReduceOp.MAX,
-                        group=dp_group)
+        dist.all_reduce(num_micro_batches, op=dist.ReduceOp.MAX, group=dp_group)
         num_micro_batches = num_micro_batches.cpu().item()
 
     seq_len_effective = seq_len_effective.tolist()
     assert num_micro_batches <= len(seq_len_effective)
 
-    micro_bsz_idx = get_seqlen_balanced_partitions(seq_len_effective,
-                                                   num_micro_batches,
-                                                   equal_size=False)
+    micro_bsz_idx = get_seqlen_balanced_partitions(seq_len_effective, num_micro_batches, equal_size=False)
 
     micro_batches = []
 

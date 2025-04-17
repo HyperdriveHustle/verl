@@ -154,21 +154,18 @@ class ModelConfig(ModelConfig):
         #                                                served_model_name)
         # self._verify_load_format()
         # self._verify_tokenizer_mode()
-        if (not self.disable_sliding_window
-                and self.hf_text_config.model_type == "gemma2"
-                and self.hf_text_config.sliding_window is not None):
-            print_warning_once(
-                "Gemma 2 uses sliding window attention for every odd layer, "
-                "which is currently not supported by vLLM. Disabling sliding "
-                "window and capping the max length to the sliding window size "
-                f"({self.hf_text_config.sliding_window}).")
+        if (not self.disable_sliding_window and self.hf_text_config.model_type == "gemma2" and
+                self.hf_text_config.sliding_window is not None):
+            print_warning_once("Gemma 2 uses sliding window attention for every odd layer, "
+                               "which is currently not supported by vLLM. Disabling sliding "
+                               "window and capping the max length to the sliding window size "
+                               f"({self.hf_text_config.sliding_window}).")
             self.disable_sliding_window = True
 
-        self.max_model_len = _get_and_verify_max_len(
-            hf_config=self.hf_text_config,
-            max_model_len=max_model_len,
-            disable_sliding_window=self.disable_sliding_window,
-            sliding_window_len=self.get_hf_config_sliding_window())
+        self.max_model_len = _get_and_verify_max_len(hf_config=self.hf_text_config,
+                                                     max_model_len=max_model_len,
+                                                     disable_sliding_window=self.disable_sliding_window,
+                                                     sliding_window_len=self.get_hf_config_sliding_window())
         self.served_model_name = get_served_model_name(
             self.model,  # str
             served_model_name)
@@ -218,21 +215,17 @@ class LoadConfig:
 
     load_format: Union[str, LoadFormat, "BaseModelLoader"] = LoadFormat.AUTO
     download_dir: Optional[str] = None
-    model_loader_extra_config: Optional[Union[str, dict]] = field(
-        default_factory=dict)
+    model_loader_extra_config: Optional[Union[str, dict]] = field(default_factory=dict)
     ignore_patterns: Optional[Union[List[str], str]] = None
 
     def __post_init__(self):
         model_loader_extra_config = self.model_loader_extra_config or {}
         if isinstance(model_loader_extra_config, str):
-            self.model_loader_extra_config = json.loads(
-                model_loader_extra_config)
+            self.model_loader_extra_config = json.loads(model_loader_extra_config)
         self._verify_load_format()
 
         if self.ignore_patterns is not None and len(self.ignore_patterns) > 0:
-            logger.info(
-                "Ignoring the following patterns when downloading weights: %s",
-                self.ignore_patterns)
+            logger.info("Ignoring the following patterns when downloading weights: %s", self.ignore_patterns)
         else:
             self.ignore_patterns = ["original/**/*"]
 
@@ -246,10 +239,8 @@ class LoadConfig:
         rocm_not_supported_load_format: List[str] = []
         if is_hip() and load_format in rocm_not_supported_load_format:
             rocm_supported_load_format = [
-                f for f in LoadFormat.__members__
-                if (f not in rocm_not_supported_load_format)
+                f for f in LoadFormat.__members__ if (f not in rocm_not_supported_load_format)
             ]
-            raise ValueError(
-                f"load format '{load_format}' is not supported in ROCm. "
-                f"Supported load formats are "
-                f"{rocm_supported_load_format}")
+            raise ValueError(f"load format '{load_format}' is not supported in ROCm. "
+                             f"Supported load formats are "
+                             f"{rocm_supported_load_format}")

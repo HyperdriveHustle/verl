@@ -23,33 +23,27 @@ from vllm.model_executor.models import ModelRegistry
 
 
 # NOTE(shengguangming): replace the origin weight loader function in the class
-def parallel_weight_loader(self, param: torch.Tensor,
-                           loaded_weight: torch.Tensor) -> None:
+def parallel_weight_loader(self, param: torch.Tensor, loaded_weight: torch.Tensor) -> None:
     """Parallel Linear weight loader."""
-    assert (
-        param.size() == loaded_weight.size()
-    ), "the parameter size is not align with the loaded weight size, param size: {}, loaded_weight size: {}".format(
+    assert (param.size() == loaded_weight.size(
+    )), "the parameter size is not align with the loaded weight size, param size: {}, loaded_weight size: {}".format(
         param.size(), loaded_weight.size())
-    assert (
-        param.data.dtype == loaded_weight.data.dtype
-    ), "if we want to shared weights, the data type should also be the same"
+    assert (param.data.dtype == loaded_weight.data.dtype
+           ), "if we want to shared weights, the data type should also be the same"
 
     param.data = loaded_weight.data
 
 
-def default_weight_loader(param: torch.Tensor,
-                          loaded_weight: torch.Tensor) -> None:
+def default_weight_loader(param: torch.Tensor, loaded_weight: torch.Tensor) -> None:
     """Default weight loader."""
     assert param.size() == loaded_weight.size()
-    assert (
-        param.data.dtype == loaded_weight.data.dtype
-    ), "if we want to shared weights, the data type should also be the same"
+    assert (param.data.dtype == loaded_weight.data.dtype
+           ), "if we want to shared weights, the data type should also be the same"
 
     param.data = loaded_weight.data
 
 
-def gpt2_weight_loader(actor_weights: Dict,
-                       vllm_model: nn.Module) -> nn.Module:
+def gpt2_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn.Module:
     params_dict = dict(vllm_model.named_parameters(remove_duplicate=False))
     for name, loaded_weight in actor_weights.items():
         if "lm_head.weight" in name:
@@ -77,8 +71,7 @@ def gpt2_weight_loader(actor_weights: Dict,
         weight_loader(param, loaded_weight)
 
 
-def llama_megatron_weight_loader(actor_weights: Dict,
-                                 vllm_model: nn.Module) -> nn.Module:
+def llama_megatron_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn.Module:
     # NOTE(shengguangming): the megatron llama may have this prefix
     params_dict = dict(vllm_model.named_parameters())
     for name, loaded_weight in actor_weights.items():
@@ -86,13 +79,11 @@ def llama_megatron_weight_loader(actor_weights: Dict,
             continue
         else:
             param = params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
+            weight_loader = getattr(param, "weight_loader", default_weight_loader)
             weight_loader(param, loaded_weight)
 
 
-def qwen2_megatron_weight_loader(actor_weights: Dict,
-                                 vllm_model: nn.Module) -> nn.Module:
+def qwen2_megatron_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn.Module:
     params_dict = dict(vllm_model.named_parameters())
     for name, loaded_weight in actor_weights.items():
         if "rotary_emb.inv_freq" in name:
@@ -104,20 +95,17 @@ def qwen2_megatron_weight_loader(actor_weights: Dict,
         weight_loader(param, loaded_weight)
 
 
-def llama_megatron_core_te_weight_loader(actor_weights: Dict,
-                                         vllm_model: nn.Module) -> nn.Module:
+def llama_megatron_core_te_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn.Module:
     params_mapping = [
         # (megatron core gpt model name, vllm model name)
         ("embedding.word_embeddings", "model.embed_tokens"),
-        ("self_attention.linear_qkv.layer_norm_weight",
-         "input_layernorm.weight"),
+        ("self_attention.linear_qkv.layer_norm_weight", "input_layernorm.weight"),
         ("self_attention.linear_qkv.layer_norm_bias", "input_layernorm.bias"),
         ("self_attention.linear_qkv", "self_attn.qkv_proj"),
         ("self_attention.linear_qkv", "self_attn.qkv_proj"),
         ("self_attention.linear_proj", "self_attn.o_proj"),
         ("pre_mlp_layernorm", "post_attention_layernorm"),
-        ("mlp.linear_fc1.layer_norm_weight",
-         "post_attention_layernorm.weight"),
+        ("mlp.linear_fc1.layer_norm_weight", "post_attention_layernorm.weight"),
         ("mlp.linear_fc1.layer_norm_bias", "post_attention_layernorm.bias"),
         ("mlp.linear_fc1", "mlp.gate_up_proj"),
         ("mlp.linear_fc2", "mlp.down_proj"),
@@ -134,13 +122,11 @@ def llama_megatron_core_te_weight_loader(actor_weights: Dict,
             continue
         else:
             param = params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
+            weight_loader = getattr(param, "weight_loader", default_weight_loader)
             weight_loader(param, loaded_weight)
 
 
-def llama_megatron_core_weight_loader(actor_weights: Dict,
-                                      vllm_model: nn.Module) -> nn.Module:
+def llama_megatron_core_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn.Module:
     params_mapping = [
         # (megatron core gpt model name, vllm model name)
         ("embedding.word_embeddings", "model.embed_tokens"),
@@ -166,8 +152,7 @@ def llama_megatron_core_weight_loader(actor_weights: Dict,
             continue
         else:
             param = params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
+            weight_loader = getattr(param, "weight_loader", default_weight_loader)
             weight_loader(param, loaded_weight)
 
 
@@ -194,20 +179,17 @@ def _replace_name(megatron_name, name_mapping):
             return param_name
 
 
-def llama_megatron_core_te_weight_loader(actor_weights: Dict,
-                                         vllm_model: nn.Module) -> nn.Module:
+def llama_megatron_core_te_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn.Module:
     params_mapping = [
         # (megatron core gpt model name, vllm model name)
         ("embedding.word_embeddings", "model.embed_tokens"),
-        ("self_attention.linear_qkv.layer_norm_weight",
-         "input_layernorm.weight"),
+        ("self_attention.linear_qkv.layer_norm_weight", "input_layernorm.weight"),
         ("self_attention.linear_qkv.layer_norm_bias", "input_layernorm.bias"),
         ("self_attention.linear_qkv", "self_attn.qkv_proj"),
         ("self_attention.linear_qkv", "self_attn.qkv_proj"),
         ("self_attention.linear_proj", "self_attn.o_proj"),
         ("pre_mlp_layernorm", "post_attention_layernorm"),
-        ("mlp.linear_fc1.layer_norm_weight",
-         "post_attention_layernorm.weight"),
+        ("mlp.linear_fc1.layer_norm_weight", "post_attention_layernorm.weight"),
         ("mlp.linear_fc1.layer_norm_bias", "post_attention_layernorm.bias"),
         ("mlp.linear_fc1", "mlp.gate_up_proj"),
         ("mlp.linear_fc2", "mlp.down_proj"),
@@ -224,13 +206,11 @@ def llama_megatron_core_te_weight_loader(actor_weights: Dict,
             continue
         else:
             param = params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
+            weight_loader = getattr(param, "weight_loader", default_weight_loader)
             weight_loader(param, loaded_weight)
 
 
-def llama_megatron_core_weight_loader(actor_weights: Dict,
-                                      vllm_model: nn.Module) -> nn.Module:
+def llama_megatron_core_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn.Module:
     params_mapping = [
         # (megatron core gpt model name, vllm model name)
         ("embedding.word_embeddings", "model.embed_tokens"),
@@ -256,8 +236,7 @@ def llama_megatron_core_weight_loader(actor_weights: Dict,
             continue
         else:
             param = params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
+            weight_loader = getattr(param, "weight_loader", default_weight_loader)
             weight_loader(param, loaded_weight)
 
 
@@ -284,8 +263,7 @@ def _replace_name(megatron_name, name_mapping):
             return param_name
 
 
-def mistral_megatron_weight_loader(actor_weights: Dict,
-                                   vllm_model: nn.Module) -> nn.Module:
+def mistral_megatron_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn.Module:
     # TODO: need to implement a general way to deal with prefix
     params_dict = dict(vllm_model.named_parameters())
     for name, loaded_weight in actor_weights.items():
@@ -293,8 +271,7 @@ def mistral_megatron_weight_loader(actor_weights: Dict,
             continue
         else:
             param = params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
+            weight_loader = getattr(param, "weight_loader", default_weight_loader)
             weight_loader(param, loaded_weight)
 
 
@@ -315,8 +292,7 @@ __LAYER_WEIGHT_MEGATRON_LOADER_REGISTRY__ = {
 
 __MODEL_MEGATRON_WEIGHT_LOADER_REGISTRY__ = {
     "GPT2LMHeadModel": gpt2_weight_loader,
-    "LlamaForCausalLM":
-    llama_megatron_weight_loader,  # use te backend for open-source megatron
+    "LlamaForCausalLM": llama_megatron_weight_loader,  # use te backend for open-source megatron
     "LLaMAForCausalLM": llama_megatron_weight_loader,
     "MistralForCausalLM": mistral_megatron_weight_loader,
     'Qwen2ForCausalLM': qwen2_megatron_weight_loader,
@@ -336,12 +312,10 @@ def load_megatron_weights(actor_weights: Dict, vllm_model: nn.Module):
 def _get_model_weight_loader(arch: str):
     if arch in __MODEL_MEGATRON_WEIGHT_LOADER_REGISTRY__:
         return __MODEL_MEGATRON_WEIGHT_LOADER_REGISTRY__[arch]
-    raise ValueError(
-        f"Model architectures {arch} are not supported for now. "
-        f"Supported architectures: {ModelRegistry.get_supported_archs()}")
+    raise ValueError(f"Model architectures {arch} are not supported for now. "
+                     f"Supported architectures: {ModelRegistry.get_supported_archs()}")
 
 
 def update_megatron_weight_loader():
-    for layer_class, weight_loader in __LAYER_WEIGHT_MEGATRON_LOADER_REGISTRY__.items(
-    ):
+    for layer_class, weight_loader in __LAYER_WEIGHT_MEGATRON_LOADER_REGISTRY__.items():
         layer_class.weight_loader = weight_loader
