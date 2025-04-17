@@ -1,4 +1,4 @@
-et -x
+set -x
 export VLLM_ATTENTION_BACKEND=XFORMERS
 
 #dapo_train_path=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k.parquet
