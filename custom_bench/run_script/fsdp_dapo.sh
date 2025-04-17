@@ -42,7 +42,8 @@ export experiment_name=Qwen2.5-7B-1M-Instruct_dapo_math_grpo_vllm_0_8_2_${nnode}
 export TENSORBOARD_DIR=/workspace/tmp
 
 #data.max_batch_size=${train_prompt_batch_size} \
-python3 -u -m verl.trainer.main_ppo \
+#python3 -u -m verl.trainer.main_ppo \
+python3 -u -m verl.trainer.main_ppo_with_time \
     algorithm.adv_estimator=grpo \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
