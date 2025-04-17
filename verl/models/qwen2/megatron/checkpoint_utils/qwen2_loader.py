@@ -26,12 +26,14 @@ def print_rank_0(message):
     else:
         print(message, flush=True)
 
+
 from megatron.core import DistributedDataParallel as DDP
 try:
     from megatron.core.distributed import TorchFullyShardedDataParallel as torch_FSDP
     ALL_MODULE_WRAPPER_CLASSNAMES = (DDP, torch_FSDP)
 except ImportError:
     ALL_MODULE_WRAPPER_CLASSNAMES = (DDP)
+
 
 def unwrap_model(model, module_instances=ALL_MODULE_WRAPPER_CLASSNAMES):
     return_list = True
@@ -46,6 +48,7 @@ def unwrap_model(model, module_instances=ALL_MODULE_WRAPPER_CLASSNAMES):
     if not return_list:
         return unwrapped_model[0]
     return unwrapped_model
+
 
 def _megatron_calc_layer_map(config):
     """Calculate the mapping of global layer_idx to local layer_idx
@@ -360,4 +363,3 @@ def load_state_dict_to_megatron_qwen2(state_dict,
     dist.barrier()
     torch.cuda.empty_cache()
     print_rank_0(f"loading megatron ckpt done, time elapsed {time.time() - start_time}s")
-

@@ -783,7 +783,7 @@ class CriticWorker(Worker):
         from verl.workers.critic import DataParallelPPOCritic
         self.critic_module, self.critic_optimizer, self.critic_lr_scheduler = self._build_critic_model_optimizer(
             self.config)
-        
+
         if self._is_offload_param:
             offload_fsdp_model_to_cpu(self.critic_module)
         if self._is_offload_optimizer:
