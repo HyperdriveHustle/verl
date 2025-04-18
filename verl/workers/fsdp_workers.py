@@ -319,9 +319,11 @@ class ActorRolloutRefWorker(Worker):
         elif rollout_name == 'vllm':
             from verl.workers.rollout.vllm_rollout import vLLMRollout, vllm_mode
             from verl.workers.sharding_manager import FSDPVLLMShardingManager
-            log_gpu_memory_usage(f'Before building {rollout_name} rollout', logger=None)
+
+            #log_gpu_memory_usage(f'Before building {rollout_name} rollout', logger=None)
+            log_gpu_memory_usage(f'[ROLLOUT-INIT] before rollout')
+
             local_path = copy_to_local(self.config.model.path)
-            print(vllm_mode)
             if vllm_mode == 'customized':
                 rollout = vLLMRollout(actor_module=self.actor_module_fsdp,
                                       config=self.config.rollout,
@@ -336,7 +338,12 @@ class ActorRolloutRefWorker(Worker):
                                       trust_remote_code=trust_remote_code)
             else:
                 raise NotImplementedError("vllm_mode must be 'customized' or 'spmd'")
-            log_gpu_memory_usage(f'After building {rollout_name} rollout', logger=None)
+
+            config = self.config.rollout
+            print(f'[ROLLOUT-INIT] {vLLMRollout}, {rollout_device_mesh.shape}, {local_path}, {config.tensor_model_parallel_size=}, {config.max_model_len=}, {config.max_num_batched_tokens=}, {config.enforce_eager=}')
+            #log_gpu_memory_usage(f'After building {rollout_name} rollout', logger=None)
+            log_gpu_memory_usage(f'[ROLLOUT-INIT] after rollout')
+
             if torch.distributed.get_world_size() == 1:
                 self.config.rollout.load_format = 'dummy_hf'
             rollout_sharding_manager = FSDPVLLMShardingManager(module=self.actor_module_fsdp,
@@ -492,6 +499,20 @@ class ActorRolloutRefWorker(Worker):
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def generate_sequences(self, prompts: DataProto):
+
+        # gh512; print
+        device = torch.cuda.current_device()
+        rank = torch.distributed.get_rank()
+        worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
+        local_rank = os.environ.get("LOCAL_RANK", "None")
+        bs = prompts.batch.batch_size
+        idx = prompts.batch['input_ids']  # (bs, prompt_length)
+        attention_mask = prompts.batch['attention_mask']
+        position_ids = prompts.batch['position_ids']
+        print(
+            f'[GEN]: {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {rank=}, {local_rank}, {worker_gpus}, {device}'
+        )
+
         # Support all hardwares
         prompts = prompts.to(torch.cuda.current_device())
 

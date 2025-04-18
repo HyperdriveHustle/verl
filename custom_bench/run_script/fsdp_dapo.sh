@@ -26,6 +26,7 @@ real_train_batch_size=$((train_prompt_batch_size * grpo_rollout_n))
 lr=1e-6
 shuffle=True
 vllm_tp=4
+vllm_mem=0.8
 
 train_prompt_batch_size=$((real_train_batch_size / grpo_rollout_n))
 
@@ -69,7 +70,7 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     actor_rollout_ref.rollout.log_prob_micro_batch_size=${infer_micro_batch_size} \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${vllm_tp} \
     actor_rollout_ref.rollout.name=vllm \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=${vllm_mem} \
     actor_rollout_ref.rollout.max_num_batched_tokens=${max_tokens} \
     actor_rollout_ref.rollout.n=${grpo_rollout_n} \
     actor_rollout_ref.rollout.enforce_eager=True \
