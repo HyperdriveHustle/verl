@@ -78,7 +78,7 @@ class ActorRolloutRefWorker(Worker):
         self.config = config
         import torch.distributed
         if not torch.distributed.is_initialized():
-            torch.distributed.init_process_group()
+            torch.distributed.init_process_group(backend='nccl')
 
         # build device mesh for FSDP
         world_size = torch.distributed.get_world_size()
@@ -137,6 +137,15 @@ class ActorRolloutRefWorker(Worker):
             self.config.ref.log_prob_micro_batch_size //= (self.device_mesh.size() //
                                                            self.ulysses_sequence_parallel_size)
             self.config.ref.log_prob_micro_batch_size_per_gpu = self.config.ref.log_prob_micro_batch_size
+
+        device = torch.cuda.current_device()
+        rank = torch.distributed.get_rank()
+        worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
+        local_rank = os.environ.get("LOCAL_RANK", "None")
+        #torch.cuda.set_device(local_rank)
+        print(
+            f'[ActorRollout-INIT]: {role=} {rank=} {local_rank=} {world_size=}, CUDA_VISIBLE_DEVICES: {worker_gpus} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}'
+        )
 
     def _build_model_optimizer(self,
                                model_path,
@@ -643,14 +652,6 @@ class CriticWorker(Worker):
         self._is_offload_param = self.config.model.fsdp_config.param_offload
         self._is_offload_optimizer = self.config.model.fsdp_config.optimizer_offload
 
-        device = torch.cuda.current_device()
-        rank = torch.distributed.get_rank()
-        worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
-        local_rank = os.environ.get("LOCAL_RANK", "None")
-        print(
-            f'[INIT] ray Critic: {rank=} {local_rank=} {world_size=}, CUDA_VISIBLE_DEVICES: {worker_gpus} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}'
-        )
-
         # normalize config
         self.config.ppo_mini_batch_size *= self.config.rollout_n
         self.config.ppo_mini_batch_size //= (torch.distributed.get_world_size() // self.ulysses_sequence_parallel_size)
@@ -665,6 +666,14 @@ class CriticWorker(Worker):
                 f'normalized ppo_mini_batch_size {self.config.ppo_mini_batch_size} should be divisible by ppo_micro_batch_size_per_gpu {self.config.ppo_micro_batch_size_per_gpu}'
             assert self.config.ppo_mini_batch_size // self.config.ppo_micro_batch_size_per_gpu > 0, \
                 f'normalized ppo_mini_batch_size {self.config.ppo_mini_batch_size} should be larger than ppo_micro_batch_size_per_gpu {self.config.ppo_micro_batch_size_per_gpu}'
+
+        device = torch.cuda.current_device()
+        rank = torch.distributed.get_rank()
+        worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
+        local_rank = os.environ.get("LOCAL_RANK", "None")
+        print(
+            f'[Critic-INIT]: {rank=} {local_rank=} {world_size=}, CUDA_VISIBLE_DEVICES: {worker_gpus} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}'
+        )
 
     def _build_critic_model_optimizer(self, config):
         # the following line is necessary
