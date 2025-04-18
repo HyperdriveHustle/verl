@@ -129,7 +129,7 @@ class RLHFDataset(Dataset):
             dataframes.append(dataframe)
         self.dataframe = pd.concat(dataframes)
 
-        print(f'dataset len: {len(self.dataframe)}')
+        print(f'[DATASET]: {len(self.dataframe)=}')
 
         # filter out too long prompts
         if self.filter_overlong_prompts:
@@ -139,7 +139,7 @@ class RLHFDataset(Dataset):
                 tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True)) <= self.max_prompt_length,
                                                                  axis=1)]
 
-            print(f'filter dataset len: {len(self.dataframe)}')
+            print(f'[DATASET] filter dataset: {len(self.dataframe)=}')
 
     def resume_dataset_state(self):
         self.serialize_dataset = False if hasattr(self, 'original_parquet_files') else True

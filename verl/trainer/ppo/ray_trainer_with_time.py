@@ -113,120 +113,95 @@ import torch
 from verl.utils.torch_functional import masked_mean
 
 
-def apply_kl_penalty(data: DataProto,
-                     kl_ctrl: core_algos.AdaptiveKLController,
-                     kl_penalty='kl'):
-    responses = data.batch['responses']
+def apply_kl_penalty(data: DataProto, kl_ctrl: core_algos.AdaptiveKLController, kl_penalty="kl"):
+    responses = data.batch["responses"]
     response_length = responses.size(1)
-    token_level_scores = data.batch['token_level_scores']
+    token_level_scores = data.batch["token_level_scores"]
     batch_size = data.batch.batch_size[0]
-    attention_mask = data.batch['attention_mask']
+    attention_mask = data.batch["attention_mask"]
     response_mask = attention_mask[:, -response_length:]
 
     # compute kl between ref_policy and current policy
-    if 'ref_log_prob' in data.batch.keys():
-        kld = core_algos.kl_penalty(
-            data.batch['old_log_probs'],
-            data.batch['ref_log_prob'],
-            kl_penalty=kl_penalty)  # (batch_size, response_length)
-        kld = kld * response_mask
-        beta = kl_ctrl.value
-    else:
-        beta = 0
-        kld = torch.zeros_like(response_mask, dtype=torch.float32)
+    # When apply_kl_penalty, algorithm.use_kl_in_reward=True, so the reference model has been enabled.
+    kld = core_algos.kl_penalty(data.batch["old_log_probs"], data.batch["ref_log_prob"],
+                                kl_penalty=kl_penalty)  # (batch_size, response_length)
+    kld = kld * response_mask
+    beta = kl_ctrl.value
 
     token_level_rewards = token_level_scores - beta * kld
 
-    current_kl = masked_mean(kld, mask=response_mask,
-                             axis=-1)  # average over sequence
+    current_kl = masked_mean(kld, mask=response_mask, axis=-1)  # average over sequence
     current_kl = torch.mean(current_kl, dim=0).item()
 
     # according to https://github.com/huggingface/trl/blob/951ca1841f29114b969b57b26c7d3e80a39f75a0/trl/trainer/ppo_trainer.py#L837
     kl_ctrl.update(current_kl=current_kl, n_steps=batch_size)
-    data.batch['token_level_rewards'] = token_level_rewards
+    data.batch["token_level_rewards"] = token_level_rewards
 
-    metrics = {'critic/kl': current_kl, 'critic/kl_coeff': beta}
+    metrics = {
+        "actor/reward_kl_penalty": current_kl,
+        "actor/reward_kl_penalty_coeff": beta,
+    }
 
     return data, metrics
 
 
-def compute_advantage(data: DataProto,
-                      adv_estimator,
-                      gamma=1.0,
-                      lam=1.0,
-                      num_repeat=1):
+def compute_response_mask(data: DataProto):
+    responses = data.batch["responses"]
+    response_length = responses.size(1)
+    attention_mask = data.batch["attention_mask"]
+    return attention_mask[:, -response_length:]
+
+
+def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_repeat=1):
+    # Back-compatible with trainers that do not compute response mask in fit
+    if "response_mask" not in data.batch.keys():
+        data.batch["response_mask"] = compute_response_mask(data)
     # prepare response group
     # TODO: add other ways to estimate advantages
     if adv_estimator == AdvantageEstimator.GAE:
-        values = data.batch['values']
-        responses = data.batch['responses']
-        response_length = responses.size(-1)
-        attention_mask = data.batch['attention_mask']
-        response_mask = attention_mask[:, -response_length:]
-        token_level_rewards = data.batch['token_level_rewards']
+        values = data.batch["values"]
         advantages, returns = core_algos.compute_gae_advantage_return(
-            token_level_rewards=token_level_rewards,
-            values=values,
-            eos_mask=response_mask,
+            token_level_rewards=data.batch["token_level_rewards"],
+            values=data.batch["values"],
+            response_mask=data.batch["response_mask"],
             gamma=gamma,
-            lam=lam)
-        data.batch['advantages'] = advantages
-        data.batch['returns'] = returns
+            lam=lam,
+        )
+        data.batch["advantages"] = advantages
+        data.batch["returns"] = returns
     elif adv_estimator == AdvantageEstimator.GRPO:
-        token_level_rewards = data.batch['token_level_rewards']
-        index = data.non_tensor_batch['uid']
-        responses = data.batch['responses']
-        response_length = responses.size(-1)
-        attention_mask = data.batch['attention_mask']
-        response_mask = attention_mask[:, -response_length:]
         advantages, returns = core_algos.compute_grpo_outcome_advantage(
-            token_level_rewards=token_level_rewards,
-            eos_mask=response_mask,
-            index=index)
-        data.batch['advantages'] = advantages
-        data.batch['returns'] = returns
+            token_level_rewards=data.batch["token_level_rewards"],
+            response_mask=data.batch["response_mask"],
+            index=data.non_tensor_batch["uid"],
+        )
+        data.batch["advantages"] = advantages
+        data.batch["returns"] = returns
     elif adv_estimator == AdvantageEstimator.REINFORCE_PLUS_PLUS:
-        token_level_rewards = data.batch['token_level_rewards']
-        responses = data.batch['responses']
-        response_length = responses.size(-1)
-        attention_mask = data.batch['attention_mask']
-        response_mask = attention_mask[:, -response_length:]
         advantages, returns = core_algos.compute_reinforce_plus_plus_outcome_advantage(
-            token_level_rewards=token_level_rewards,
-            eos_mask=response_mask,
-            gamma=gamma)
-        data.batch['advantages'] = advantages
-        data.batch['returns'] = returns
+            token_level_rewards=data.batch["token_level_rewards"],
+            response_mask=data.batch["response_mask"],
+            gamma=gamma,
+        )
+        data.batch["advantages"] = advantages
+        data.batch["returns"] = returns
     elif adv_estimator == AdvantageEstimator.REMAX:
-        token_level_rewards = data.batch['token_level_rewards']
-        index = data.non_tensor_batch['uid']
-        responses = data.batch['responses']
-        response_length = responses.size(-1)
-        attention_mask = data.batch['attention_mask']
-        response_mask = attention_mask[:, -response_length:]
-
-        reward_baselines = data.batch['reward_baselines']
-
         advantages, returns = core_algos.compute_remax_outcome_advantage(
-            token_level_rewards=token_level_rewards,
-            reward_baselines=reward_baselines,
-            eos_mask=response_mask)
+            token_level_rewards=data.batch["token_level_rewards"],
+            reward_baselines=data.batch["reward_baselines"],
+            response_mask=data.batch["response_mask"],
+        )
 
-        data.batch['advantages'] = advantages
-        data.batch['returns'] = returns
+        data.batch["advantages"] = advantages
+        data.batch["returns"] = returns
     elif adv_estimator == AdvantageEstimator.RLOO:
-        token_level_rewards = data.batch['token_level_rewards']
-        index = data.non_tensor_batch['uid']
-        responses = data.batch['responses']
-        response_length = responses.size(-1)
-        attention_mask = data.batch['attention_mask']
-        response_mask = attention_mask[:, -response_length:]
         advantages, returns = core_algos.compute_rloo_outcome_advantage(
-            token_level_rewards=token_level_rewards,
-            eos_mask=response_mask,
-            index=index)
-        data.batch['advantages'] = advantages
-        data.batch['returns'] = returns
+            token_level_rewards=data.batch["token_level_rewards"],
+            response_mask=data.batch["response_mask"],
+            index=data.non_tensor_batch["uid"],
+        )
+        data.batch["advantages"] = advantages
+        data.batch["returns"] = returns
     else:
         raise NotImplementedError
     return data
@@ -604,7 +579,7 @@ class RayPPOTrainer(object):
             self.val_dataloader
         ) == 1, "Validation dataloader must have a single batch, which inference engines will schedule the memory themselves."
 
-        print(f'Size of train dataloader: {len(self.train_dataloader)}')
+        print(f'[DATASET] Size of train dataloader: {len(self.train_dataloader)}')
 
         # inject total_training_steps to actor/critic optim_config. This is hacky.
         total_training_steps = len(
@@ -614,7 +589,7 @@ class RayPPOTrainer(object):
             total_training_steps = self.config.trainer.total_training_steps
 
         self.total_training_steps = total_training_steps
-        print(f'Total training steps: {self.total_training_steps}')
+        print(f'[DATASET] Total training steps: {self.total_training_steps}')
 
         OmegaConf.set_struct(self.config, True)
         with open_dict(self.config):
@@ -1026,7 +1001,10 @@ class RayPPOTrainer(object):
         timings = []
 
         for epoch in range(self.config.trainer.total_epochs):
-            print(f"now in {epoch}")
+            print('*'*100)
+            print('='*100)
+            print(f"Epoch {epoch}: ")
+
             for bs_idx, batch_dict in enumerate(self.train_dataloader):
                 metrics = {}
                 timing_raw = {}
@@ -1058,7 +1036,7 @@ class RayPPOTrainer(object):
                 attention_mask = gen_batch.batch['attention_mask']
                 position_ids = gen_batch.batch['position_ids']
                 print(
-                    f'gen batch: {idx.shape}, {attention_mask.shape}, {position_ids.shape}'
+                    f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}'
                 )
 
                 with _timer('step', timing_raw):
@@ -1088,29 +1066,31 @@ class RayPPOTrainer(object):
                             del gen_baseline_batch, gen_baseline_output
 
                     with _timer('post_processing', timing_raw):
-                        batch.non_tensor_batch['uid'] = np.array([
-                            str(uuid.uuid4()) for _ in range(len(batch.batch))
-                        ],
-                                                                 dtype=object)
+                        batch.non_tensor_batch["uid"] = np.array(
+                            [str(uuid.uuid4()) for _ in range(len(batch.batch))],
+                            dtype=object,
+                        )
                         # repeat to align with repeated responses in rollout
-                        batch = batch.repeat(repeat_times=self.config.
-                                             actor_rollout_ref.rollout.n,
-                                             interleave=True)
+                        batch = batch.repeat(
+                            repeat_times=self.config.actor_rollout_ref.rollout.n,
+                            interleave=True,
+                        )
                         batch = batch.union(gen_batch_output)
+
+                        batch.batch["response_mask"] = compute_response_mask(batch)
+                        # balance the number of valid tokens on each dp rank.
+                        # Note that this breaks the order of data inside the batch.
+                        # Please take care when you implement group based adv computation such as GRPO and rloo
+                        if self.config.trainer.balance_batch:
+                            self._balance_batch(batch, metrics=metrics)
+
+                        # compute global_valid tokens
+                        batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
 
                         # gh512: data examine2
                         seq = gen_batch_output.batch['input_ids']
                         response = gen_batch_output.batch['responses']
-                        print(f'batch output: {seq.shape}, {response.shape}')
-
-                        # balance the number of valid tokens on each dp rank.
-                        # Note that this breaks the order of data inside the batch.
-                        # Please take care when you implement group based adv computation such as GRPO and rloo
-                        self._balance_batch(batch, metrics=metrics)
-
-                        # compute global_valid tokens
-                        batch.meta_info['global_token_num'] = torch.sum(
-                            batch.batch['attention_mask'], dim=-1).tolist()
+                        print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape}')
 
                     # recompute old_log_probs
                     with _timer('old_log_prob', timing_raw):

@@ -30,7 +30,7 @@ vllm_tp=4
 train_prompt_batch_size=$((real_train_batch_size / grpo_rollout_n))
 
 nnode=1
-offload=False
+offload=True
 #model=/nvfile-heatstorage/chatrl/public/models/Qwen2.5-7B-Instruct-1M
 model=/workspace/models/Qwen2.5-7B-Instruct-1M
 
@@ -83,7 +83,7 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     algorithm.kl_ctrl.kl_coef=0.00 \
     trainer.critic_warmup=0 \
     trainer.logger=['tensorboard'] \
-    trainer.default_local_dir=/nvfile-heatstorage/chatrl/users/hxh/models/verl_rl_models/${project_name}/${experiment_name} \
+    trainer.default_local_dir=/workspace/tmp_tensorboard \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
     trainer.n_gpus_per_node=8 \
