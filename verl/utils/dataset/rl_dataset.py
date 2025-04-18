@@ -129,7 +129,7 @@ class RLHFDataset(Dataset):
             dataframes.append(dataframe)
         self.dataframe = pd.concat(dataframes)
 
-        print(f'[DATASET]: {len(self.dataframe)=}')
+        print(f'[DATASET]: {len(self.dataframe)=} {list(self.dataframe.columns)}')
 
         # filter out too long prompts
         if self.filter_overlong_prompts:

@@ -535,7 +535,11 @@ class RayPPOTrainer(object):
             max_prompt_length=self.config.data.max_prompt_length,
             filter_prompts=True,
             return_raw_chat=self.config.data.get('return_raw_chat', False),
-            truncation='error')
+
+            # gh512 XXX disable for now 
+            #truncation='error',
+            truncation='left',
+            )
         # use sampler for better ckpt resume
         if self.config.data.shuffle:
             train_dataloader_generator = torch.Generator()
@@ -563,7 +567,11 @@ class RayPPOTrainer(object):
             max_prompt_length=self.config.data.max_prompt_length,
             filter_prompts=True,
             return_raw_chat=self.config.data.get('return_raw_chat', False),
-            truncation='error')
+
+            # gh512
+            #truncation='error',
+            truncation='left',
+            )
         self.val_dataloader = StatefulDataLoader(
             dataset=self.val_dataset,
             # Validation datasets are sent to inference engines as a whole batch,
@@ -1032,11 +1040,10 @@ class RayPPOTrainer(object):
 
                 # gh512: data examine
                 idx = gen_batch.batch['input_ids']  # (bs, prompt_length)
-                # left-padded attention_mask
                 attention_mask = gen_batch.batch['attention_mask']
                 position_ids = gen_batch.batch['position_ids']
                 print(
-                    f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}'
+                    f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()}'
                 )
 
                 with _timer('step', timing_raw):
