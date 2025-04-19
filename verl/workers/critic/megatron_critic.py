@@ -274,5 +274,3 @@ class MegatronPPOCritic(BasePPOCritic):
                 for key, value in state.items():
                     if isinstance(value, torch.Tensor):
                         state[key] = value.to(device_id, non_blocking=True)
-=======
->>>>>>> 0307_add_dapo
