@@ -642,6 +642,10 @@ class ActorRolloutRefWorker(Worker):
         if self._is_offload_optimizer:
             offload_fsdp_optimizer(self.actor_optimizer)
 
+    @register(Dispatch.ONE_TO_ALL)
+    def get_tokenizer_pad_id(self):
+        return self.tokenizer.pad_token_id
+
 
 class CriticWorker(Worker):
 
