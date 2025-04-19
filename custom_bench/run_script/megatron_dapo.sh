@@ -43,9 +43,10 @@ export experiment_name=Qwen2.5-7B-1M-Instruct_dapo_math_grpo_vllm_0_8_2_${nnode}
 #export TENSORBOARD_DIR=/nvfile-heatstorage/chatrl/users/hxh/models/verl_rl_models/${project_name}/${experiment_name}/tensorboard_log
 export TENSORBOARD_DIR=/workspace/tmp
 
-#data.max_batch_size=${train_prompt_batch_size} \
-#python3 -u -m verl.trainer.main_ppo \
+#python3 -m vllm.trainer.main_ppo 
 python3 -u -m verl.trainer.main_ppo_with_time \
+    --config-path=config \
+    --config-name='ppo_megatron_trainer.yaml' \
     algorithm.adv_estimator=grpo \
     algorithm.kl_ctrl.kl_coef=0.00 \
     data.train_files="$train_files" \
@@ -68,6 +69,7 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=${offload} \
     actor_rollout_ref.actor.use_dynamic_bsz=${use_dynamic_bsz} \
     actor_rollout_ref.actor.ppo_max_token_len_per_gpu=${max_tokens} \
+    actor_rollout_ref.actor.megatron.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.log_prob_micro_batch_size=${infer_micro_batch_size} \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${vllm_tp} \
     actor_rollout_ref.rollout.name=vllm \
@@ -77,9 +79,6 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     actor_rollout_ref.rollout.free_cache_engine=True \
     actor_rollout_ref.rollout.max_num_batched_tokens=${max_tokens} \
     actor_rollout_ref.rollout.log_prob_max_token_len_per_gpu=${max_tokens} \
-    actor_rollout_ref.ref.log_prob_use_dynamic_bsz=${use_dynamic_bsz} \
-    actor_rollout_ref.ref.log_prob_micro_batch_size=${infer_micro_batch_size} \
-    actor_rollout_ref.ref.fsdp_config.param_offload=${offload} \
     trainer.critic_warmup=0 \
     trainer.logger=['tensorboard'] \
     trainer.default_local_dir=/workspace/tmp_tensorboard \
