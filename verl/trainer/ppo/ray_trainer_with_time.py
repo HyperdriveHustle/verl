@@ -1274,8 +1274,8 @@ class RayPPOTrainer(object):
                 print(timing_raw)
                 print('*' * 100)
                 timings.append(timing_raw)
-                if bs_idx >= 5:
-                    break
+                # if bs_idx >= 5:
+                #     break
 
         # print time
         keys = timings[0].keys()
