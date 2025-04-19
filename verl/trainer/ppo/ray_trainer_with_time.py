@@ -28,6 +28,9 @@ from pprint import pprint
 from typing import Type, Dict
 from copy import deepcopy
 from time import sleep
+import json
+import glob
+
 
 import numpy as np
 from codetiming import Timer
@@ -56,6 +59,57 @@ def suppress_stdout():
     finally:
         sys.stdout = old_stdout
 
+def log_seqlen(data, prefix):
+    lengths = []
+    for i, sublist in enumerate(data):
+        length = len(sublist)
+        lengths.append(length)
+    
+    log_dir = "/workspace/tmp_seq"
+    os.makedirs(log_dir, exist_ok=True)
+    data_files = glob.glob(f"{log_dir}/{prefix}_len_*.json")
+    file_num = len(data_files) + 1
+    output_file = f"{log_dir}/{prefix}_len_{file_num}.json"
+    with open(output_file, 'w') as f:
+        json.dump({'lengths': lengths}, f)
+
+
+def unpad_responses(padded_tensor, pad_token_id):
+    if isinstance(pad_token_id, list):
+        # from all worker
+        pid = pad_token_id[0]
+        for worker_pad_token_id in pad_token_id:
+            if worker_pad_token_id != pid:
+                raise ValueError("pad_token_id is not the same across all workers")
+        pad_token_id = pid
+
+    padded_tensor = padded_tensor.cpu()
+    # Convert tensor to list if it's a tensor
+    if isinstance(padded_tensor, torch.Tensor):
+        padded_list = padded_tensor.tolist()
+    else:
+        padded_list = padded_tensor
+    
+    # Reconstruct original responses by removing padding tokens
+    unpadded_responses = []
+    for padded_response in padded_list:
+        # Find where padding starts (first occurrence of pad_token_id)
+        try:
+            pad_start_idx = padded_response.index(pad_token_id)
+            # Get only the tokens before padding
+            original_response = padded_response[:pad_start_idx]
+        except ValueError:
+            # No padding found, use the full response
+            original_response = padded_response
+        
+        unpadded_responses.append(original_response)
+    
+    # Print the length of each response
+    # print(f"Response lengths: {len(padded_list)}")
+    # for i, response in enumerate(unpadded_responses):
+    #     print(f"{len(response)}",end=', ')
+    # print()
+    return unpadded_responses
 
 class Role(Enum):
     """
@@ -1042,6 +1096,9 @@ class RayPPOTrainer(object):
                 idx = gen_batch.batch['input_ids']  # (bs, prompt_length)
                 attention_mask = gen_batch.batch['attention_mask']
                 position_ids = gen_batch.batch['position_ids']
+                raw_prompt_ids = gen_batch.non_tensor_batch['raw_prompt_ids'] #(bs, varlen)
+
+                log_seqlen(raw_prompt_ids, f'E{epoch}_B{bs_idx}_input')
                 print(
                     f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()}'
                 )
@@ -1097,6 +1154,8 @@ class RayPPOTrainer(object):
                         # gh512: data examine2
                         seq = gen_batch_output.batch['input_ids']
                         response = gen_batch_output.batch['responses']
+                        pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
+                        log_seqlen(unpad_responses(response, pad_ids), f'E{epoch}_B{bs_idx}_output')
                         print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape}')
 
                     # recompute old_log_probs
@@ -1209,12 +1268,14 @@ class RayPPOTrainer(object):
                                 (self.global_steps - 1) % self.config.trainer.save_freq != 0:
                             with _timer('save_checkpoint', timing_raw):
                                 self._save_checkpoint()
-
+                # gh512
                 # print _timer
                 print(f'{epoch=}: {bs_idx=}')
                 print(timing_raw)
                 print('*' * 100)
                 timings.append(timing_raw)
+                if bs_idx >= 5:
+                    break
 
         # print time
         keys = timings[0].keys()

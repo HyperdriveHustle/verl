@@ -71,7 +71,6 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${vllm_tp} \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=${vllm_mem} \
-    actor_rollout_ref.rollout.max_num_batched_tokens=${max_tokens} \
     actor_rollout_ref.rollout.n=${grpo_rollout_n} \
     actor_rollout_ref.rollout.enforce_eager=True \
     actor_rollout_ref.rollout.free_cache_engine=True \
