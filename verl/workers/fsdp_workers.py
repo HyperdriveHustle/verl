@@ -344,7 +344,7 @@ class ActorRolloutRefWorker(Worker):
             max_num_batched_tokens = config.get('max_num_batched_tokens', 8192)
             max_model_len = config.max_model_len if config.max_model_len \
                             else config.prompt_length + config.response_length
-            print(f'[ROLLOUT-INIT] {vLLMRollout}, {rollout_device_mesh.shape}, {local_path}, {tensor_parallel_size=}, {config.response_length} {max_num_batched_tokens}, {max_model_len}, {config.enforce_eager}')
+            print(f'[ROLLOUT-INIT] {vLLMRollout}, {rollout_device_mesh.shape}, {local_path}, {tensor_parallel_size=}, {config.response_length} {max_num_batched_tokens}, {max_model_len}, {config.enforce_eager}, {rollout.inference_engine.llm_engine.parallel_config=}')
             #log_gpu_memory_usage(f'After building {rollout_name} rollout', logger=None)
             log_gpu_memory_usage(f'[ROLLOUT-INIT] after rollout')
 
