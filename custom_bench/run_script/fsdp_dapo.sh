@@ -33,9 +33,10 @@ train_prompt_batch_size=$((real_train_batch_size / grpo_rollout_n))
 nnode=1
 offload=True
 #model=/nvfile-heatstorage/chatrl/public/models/Qwen2.5-7B-Instruct-1M
-model=/workspace/models/Qwen2.5-7B-Instruct-1M
+#model=/workspace/models/Qwen2.5-7B-Instruct-1M
+model=/workspace/models/llama7b
 
-echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model"
+echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem"
 
 sleep 1
 

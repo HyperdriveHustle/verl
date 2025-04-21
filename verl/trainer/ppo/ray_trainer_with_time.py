@@ -33,6 +33,7 @@ import glob
 
 
 import numpy as np
+import pandas as pd
 from codetiming import Timer
 from omegaconf import OmegaConf, open_dict
 from verl import DataProto
@@ -110,6 +111,66 @@ def unpad_responses(padded_tensor, pad_token_id):
     #     print(f"{len(response)}",end=', ')
     # print()
     return unpadded_responses
+
+class RLHFDatasetFilter(RLHFDataset):
+    def __init__(self,
+                parquet_files,
+                tokenizer,
+                processor,
+                prompt_key='prompt',
+                image_key='images',
+                min_prompt_length=None,
+                max_prompt_length=1024,
+                filter_prompts=True,
+                cache_dir='~/.cache/verl/rlhf',
+                chat_template_func=None,
+                return_raw_chat=False,
+                truncation='error',
+                filter_overlong_prompts=False, # NOTE: this will filter too long or short seq
+        ):
+        self.min_prompt_length = min_prompt_length
+        super().__init__(
+            parquet_files=parquet_files,
+            tokenizer=tokenizer,
+            processor=processor,
+            prompt_key=prompt_key,
+            image_key=image_key,
+            max_prompt_length=max_prompt_length,
+            filter_prompts=filter_prompts,
+            cache_dir=cache_dir,
+            chat_template_func=chat_template_func,
+            return_raw_chat=return_raw_chat,
+            truncation=truncation,
+            filter_overlong_prompts=filter_overlong_prompts,
+        )
+
+    def _read_files_and_tokenize(self):
+        dataframes = []
+        for parquet_file in self.parquet_files:
+            # read parquet files and cache
+            dataframe = pd.read_parquet(parquet_file)
+            dataframes.append(dataframe)
+        self.dataframe = pd.concat(dataframes)
+
+        print(f'[DATASET]: {len(self.dataframe)=} {list(self.dataframe.columns)}')
+
+        # filter out too long prompts
+        if self.filter_overlong_prompts:
+            tokenizer = self.tokenizer
+            prompt_key = self.prompt_key
+
+            def filter_long(doc):
+                return len(tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True)) <= self.max_prompt_length
+            def filter_short(doc):
+                return len(tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True)) >= self.min_prompt_length
+
+            #self.dataframe = self.dataframe[self.dataframe.apply(lambda doc: len(
+            #    tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True)) <= self.max_prompt_length,
+            #                                                     axis=1)]
+            if self.min_prompt_length is not None:
+                self.dataframe = self.dataframe[self.dataframe.apply(filter_short, axis=1)]
+            self.dataframe = self.dataframe[self.dataframe.apply(filter_long, axis=1)]
+            print(f'[DATASET] filter dataset: {len(self.dataframe)=}')
 
 class Role(Enum):
     """
@@ -580,7 +641,18 @@ class RayPPOTrainer(object):
 
     def _create_dataloader(self):
         # TODO: we have to make sure the batch size is divisible by the dp size
-        self.train_dataset = RLHFDataset(
+        #self.train_dataset = RLHFDataset(
+        #    parquet_files=self.config.data.train_files,
+        #    tokenizer=self.tokenizer,
+        #    processor=self.processor,
+        #    prompt_key=self.config.data.prompt_key,
+        #    image_key=self.config.data.get('image_key', 'images'),
+        #    max_prompt_length=self.config.data.max_prompt_length,
+        #    filter_prompts=True,
+        #    return_raw_chat=self.config.data.get('return_raw_chat', False),
+        #    truncation='error',
+        #    )
+        self.train_dataset = RLHFDatasetFilter(
             parquet_files=self.config.data.train_files,
             tokenizer=self.tokenizer,
             processor=self.processor,
@@ -589,11 +661,9 @@ class RayPPOTrainer(object):
             max_prompt_length=self.config.data.max_prompt_length,
             filter_prompts=True,
             return_raw_chat=self.config.data.get('return_raw_chat', False),
-
-            # gh512 XXX disable for now 
-            #truncation='error',
             truncation='left',
-            )
+        )
+
         # use sampler for better ckpt resume
         if self.config.data.shuffle:
             train_dataloader_generator = torch.Generator()
@@ -612,7 +682,18 @@ class RayPPOTrainer(object):
             collate_fn=collate_fn,
             sampler=sampler)
 
-        self.val_dataset = RLHFDataset(
+        #self.val_dataset = RLHFDataset(
+        #    parquet_files=self.config.data.val_files,
+        #    tokenizer=self.tokenizer,
+        #    processor=self.processor,
+        #    prompt_key=self.config.data.prompt_key,
+        #    image_key=self.config.data.get('image_key', 'images'),
+        #    max_prompt_length=self.config.data.max_prompt_length,
+        #    filter_prompts=True,
+        #    return_raw_chat=self.config.data.get('return_raw_chat', False),
+        #    truncation='error',
+        #    )
+        self.val_dataset = RLHFDatasetFilter(
             parquet_files=self.config.data.val_files,
             tokenizer=self.tokenizer,
             processor=self.processor,
@@ -621,11 +702,8 @@ class RayPPOTrainer(object):
             max_prompt_length=self.config.data.max_prompt_length,
             filter_prompts=True,
             return_raw_chat=self.config.data.get('return_raw_chat', False),
-
-            # gh512
-            #truncation='error',
             truncation='left',
-            )
+        )
         self.val_dataloader = StatefulDataLoader(
             dataset=self.val_dataset,
             # Validation datasets are sent to inference engines as a whole batch,
