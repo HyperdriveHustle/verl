@@ -658,10 +658,12 @@ class RayPPOTrainer(object):
             processor=self.processor,
             prompt_key=self.config.data.prompt_key,
             image_key=self.config.data.get('image_key', 'images'),
+            min_prompt_length=None,
             max_prompt_length=self.config.data.max_prompt_length,
             filter_prompts=True,
             return_raw_chat=self.config.data.get('return_raw_chat', False),
             truncation='left',
+            filter_overlong_prompts=True,
         )
 
         # use sampler for better ckpt resume
