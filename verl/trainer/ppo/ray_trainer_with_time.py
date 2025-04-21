@@ -27,7 +27,7 @@ from enum import Enum
 from pprint import pprint
 from typing import Type, Dict
 from copy import deepcopy
-from time import sleep
+from time import sleep, time
 import json
 import glob
 
@@ -44,7 +44,9 @@ from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.ppo import core_algos
 from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance
 from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path
-from verl.utils.dataset.rl_dataset import RLHFDataset, collate_fn
+from verl.utils.dataset.rl_dataset import RLHFDataset, collate_fn, process_image
+from verl.utils.model import compute_position_id_with_mask
+import verl.utils.torch_functional as verl_F
 from torch.utils.data import RandomSampler, SequentialSampler
 from torchdata.stateful_dataloader import StatefulDataLoader
 
@@ -60,19 +62,25 @@ def suppress_stdout():
     finally:
         sys.stdout = old_stdout
 
-def log_seqlen(data, prefix):
-    lengths = []
-    for i, sublist in enumerate(data):
-        length = len(sublist)
-        lengths.append(length)
+def log_seqlen(raw_prompt_ids, responses, prefix):
+    # print(f'{type(raw_prompt_ids)}, {type(responses)}, {len(raw_prompt_ids)}, {len(responses)}')
+    # lengths = []
+    # for _, sublist in enumerate(data):
+    #     length = len(sublist)
+    #     lengths.append(length)
+    prompts = []
+    response = []
+    for p, r in zip(raw_prompt_ids, responses):
+        prompts.append(p)
+        response.append(r)
     
     log_dir = "/workspace/tmp_seq"
     os.makedirs(log_dir, exist_ok=True)
-    data_files = glob.glob(f"{log_dir}/{prefix}_len_*.json")
+    data_files = glob.glob(f"{log_dir}/{prefix}_*.json")
     file_num = len(data_files) + 1
-    output_file = f"{log_dir}/{prefix}_len_{file_num}.json"
+    output_file = f"{log_dir}/{prefix}_{file_num}.json"
     with open(output_file, 'w') as f:
-        json.dump({'lengths': lengths}, f)
+        json.dump({'prompts': prompts, 'response': response}, f)
 
 
 def unpad_responses(padded_tensor, pad_token_id):
@@ -129,6 +137,7 @@ class RLHFDatasetFilter(RLHFDataset):
                 filter_overlong_prompts=False, # NOTE: this will filter too long or short seq
         ):
         self.min_prompt_length = min_prompt_length
+
         super().__init__(
             parquet_files=parquet_files,
             tokenizer=tokenizer,
@@ -144,18 +153,57 @@ class RLHFDatasetFilter(RLHFDataset):
             filter_overlong_prompts=filter_overlong_prompts,
         )
 
+    def _generate_cache_id(self):
+        import hashlib
+        """Generate a unique identifier for the current dataset configuration"""
+        # Create a string containing all parameters that would affect filtering
+        config_str = str(sorted(self.parquet_files)) + str(self.max_prompt_length) + str(self.min_prompt_length)
+        # Hash the configuration string to create a shorter identifier
+        return hashlib.md5(config_str.encode()).hexdigest()[:10]
+
     def _read_files_and_tokenize(self):
+        import pickle
+        # Create a cache identifier based on input files and filtering parameters
+        cache_id = self._generate_cache_id()
+        cache_dir = os.path.dirname(self.parquet_files[0])
+        cache_file = os.path.join(cache_dir, f"filtered_data_{cache_id}.parquet")
+        cache_metadata = os.path.join(cache_dir, f"metadata_{cache_id}.pkl")
+        
+        # Check if cached filtered data exists
+        if os.path.exists(cache_file) and os.path.exists(cache_metadata):
+            try:
+                # Load metadata to verify cache is valid
+                with open(cache_metadata, 'rb') as f:
+                    metadata = pickle.load(f)
+                
+                # Verify the cache is still valid for our current parameters
+                if (metadata['max_prompt_length'] == self.max_prompt_length and
+                    metadata['min_prompt_length'] == self.min_prompt_length):
+                    print(f"[DATASET] Loading pre-filtered dataset from cache: {cache_file}")
+                    self.dataframe = pd.read_parquet(cache_file)
+                    print(f'[DATASET]: {len(self.dataframe)=} {list(self.dataframe.columns)}')
+                    return
+
+            except Exception as e:
+                print(f"[DATASET] Cache loading failed: {e}. Rebuilding cache.")
+
+        # If cache doesn't exist or is invalid, process the data
+        # Read and concatenate all input files
+        print("[DATASET] Processing data and building cache...")
         dataframes = []
         for parquet_file in self.parquet_files:
-            # read parquet files and cache
             dataframe = pd.read_parquet(parquet_file)
             dataframes.append(dataframe)
+
+        # XXX, for req scheduling, we need to build a table map from req_id to output len
+        # the dataset is too large, we just hacky downsmaple for now
         self.dataframe = pd.concat(dataframes)
-
+        self.dataframe = self.dataframe.iloc[:2048]
         print(f'[DATASET]: {len(self.dataframe)=} {list(self.dataframe.columns)}')
-
-        # filter out too long prompts
+        
+        # Filter based on prompt length
         if self.filter_overlong_prompts:
+            t1 = time()
             tokenizer = self.tokenizer
             prompt_key = self.prompt_key
 
@@ -164,13 +212,62 @@ class RLHFDatasetFilter(RLHFDataset):
             def filter_short(doc):
                 return len(tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True)) >= self.min_prompt_length
 
-            #self.dataframe = self.dataframe[self.dataframe.apply(lambda doc: len(
-            #    tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True)) <= self.max_prompt_length,
-            #                                                     axis=1)]
             if self.min_prompt_length is not None:
                 self.dataframe = self.dataframe[self.dataframe.apply(filter_short, axis=1)]
             self.dataframe = self.dataframe[self.dataframe.apply(filter_long, axis=1)]
-            print(f'[DATASET] filter dataset: {len(self.dataframe)=}')
+            t2 = time()
+            print(f'[DATASET] filter dataset: {len(self.dataframe)=}, {self.min_prompt_length}:{self.max_prompt_length},  time cost: {t2-t1:.2f}s')
+        
+            # Save the filtered dataset and metadata
+            self.dataframe.to_parquet(cache_file, index=False)
+            
+            # Save metadata to help validate cache in future runs
+            metadata = {
+                'creation_time': time(),
+                'max_prompt_length': self.max_prompt_length,
+                'min_prompt_length': self.min_prompt_length,
+                'source_files': self.parquet_files,
+                'row_count': len(self.dataframe)
+            }
+            with open(cache_metadata, 'wb') as f:
+                pickle.dump(metadata, f)
+            print(f"[DATASET] Cached filtered dataset to {cache_file}")
+    
+    def __getitem__(self, item):
+        # print(f'[DATASET] items: {item} {type(item)}, end=', ')
+        row_dict: dict = self.dataframe.iloc[item].to_dict()
+
+        chat = row_dict.pop(self.prompt_key)
+
+        prompt_with_chat_template = self.tokenizer.apply_chat_template(chat, add_generation_prompt=True, tokenize=False)
+
+        assert self.image_key not in row_dict, 'multi-modal is not supported yet'
+        raw_prompt = prompt_with_chat_template
+
+        input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(prompt=prompt_with_chat_template,
+                                                                         tokenizer=self.tokenizer,
+                                                                         max_length=self.max_prompt_length,
+                                                                         pad_token_id=self.tokenizer.pad_token_id,
+                                                                         left_pad=True,
+                                                                         truncation=self.truncation,
+                                                                        )
+        position_ids = compute_position_id_with_mask(attention_mask)
+
+        row_dict['input_ids'] = input_ids[0]
+        row_dict['attention_mask'] = attention_mask[0]
+        row_dict['position_ids'] = position_ids[0]
+        row_dict['raw_prompt_ids'] = self.tokenizer.encode(raw_prompt, add_special_tokens=False)
+
+        # encode prompts without chat template
+        if self.return_raw_chat:
+            row_dict['raw_prompt'] = chat.tolist()
+
+        # add index for each prompt
+        index = row_dict.get("extra_info", {}).get("index", 0)
+        row_dict["index"] = index
+
+        return row_dict
+
 
 class Role(Enum):
     """
@@ -663,7 +760,7 @@ class RayPPOTrainer(object):
             filter_prompts=True,
             return_raw_chat=self.config.data.get('return_raw_chat', False),
             truncation='left',
-            filter_overlong_prompts=True,
+            filter_overlong_prompts=False,
         )
 
         # use sampler for better ckpt resume
@@ -1152,7 +1249,7 @@ class RayPPOTrainer(object):
             for bs_idx, batch_dict in enumerate(self.train_dataloader):
                 metrics = {}
                 timing_raw = {}
-
+                # print(f'[BATCH] {len(batch_dict)} {batch_dict.keys()} {len(batch_dict["input_ids"])}')
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
 
                 # pop those keys for generation
@@ -1180,9 +1277,10 @@ class RayPPOTrainer(object):
                 position_ids = gen_batch.batch['position_ids']
                 raw_prompt_ids = gen_batch.non_tensor_batch['raw_prompt_ids'] #(bs, varlen)
 
-                log_seqlen(raw_prompt_ids, f'E{epoch}_B{bs_idx}_input')
+                # NOTE: we put raw_prompt_ids back to batch for repeated-interleave purpose and log seq len
+                batch.non_tensor_batch['raw_prompt_ids'] = raw_prompt_ids
                 print(
-                    f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()}'
+                    f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()} {type(raw_prompt_ids)}'
                 )
 
                 with _timer('step', timing_raw):
@@ -1233,12 +1331,16 @@ class RayPPOTrainer(object):
                         # compute global_valid tokens
                         batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
 
-                        # gh512: data examine2
-                        seq = gen_batch_output.batch['input_ids']
-                        response = gen_batch_output.batch['responses']
+                        # gh512: data examine2 (union-ed)
+                        seq = batch.batch['input_ids']
+                        response = batch.batch['responses']
+                        raw_prompt_ids = batch.non_tensor_batch['raw_prompt_ids']
                         pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
-                        log_seqlen(unpad_responses(response, pad_ids), f'E{epoch}_B{bs_idx}_output')
-                        print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape}')
+                        print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape} {len(batch)} {batch.batch.keys()} {batch.non_tensor_batch.keys()}')
+                        # gh512: log
+                        model = self.config.actor_rollout_ref.model.path.split('/')[-1]
+                        prefix = f'{model}_E{epoch}B_{bs_idx}_data'
+                        log_seqlen(raw_prompt_ids, unpad_responses(response, pad_ids), prefix)
 
                     # recompute old_log_probs
                     with _timer('old_log_prob', timing_raw):
