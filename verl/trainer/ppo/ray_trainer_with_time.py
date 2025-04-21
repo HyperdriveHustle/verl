@@ -1339,7 +1339,7 @@ class RayPPOTrainer(object):
                         print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape} {len(batch)} {batch.batch.keys()} {batch.non_tensor_batch.keys()}')
                         # gh512: log
                         model = self.config.actor_rollout_ref.model.path.split('/')[-1]
-                        prefix = f'{model}_E{epoch}B_{bs_idx}_data'
+                        prefix = f'{model}_E{epoch}B{bs_idx}_data'
                         log_seqlen(raw_prompt_ids, unpad_responses(response, pad_ids), prefix)
 
                     # recompute old_log_probs
