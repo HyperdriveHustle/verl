@@ -237,7 +237,9 @@ class vLLMRollout(BaseRollout):
             outputs = self.inference_engine.generate(
                 prompts=vllm_inputs,  # because we have already convert it to prompt token id
                 sampling_params=self.sampling_params,
-                use_tqdm=False)
+                #use_tqdm=False,
+                use_tqdm=True,
+            )
 
             # TODO(sgm): disable logprob when recompute_log_prob is enable
             # if n = 1: (bs, response_length) ; if n > 1: (bs * n, response_length)

@@ -515,8 +515,13 @@ class ActorRolloutRefWorker(Worker):
         idx = prompts.batch['input_ids']  # (bs, prompt_length)
         attention_mask = prompts.batch['attention_mask']
         position_ids = prompts.batch['position_ids']
+        do_sample = prompts.meta_info.get('do_sample', True)
+        is_validate = prompts.meta_info.get('validate', False)
+        vllm_inputs = [{
+            'prompt_token_ids': raw_prompt_ids
+        } for raw_prompt_ids in prompts.non_tensor_batch['raw_prompt_ids']]
         print(
-            f'[GEN]: {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {rank=}, {local_rank}, {worker_gpus}, {device}'
+            f'[GEN]: {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {do_sample}, {is_validate}, {len(vllm_inputs)}, {self.rollout.sampling_params=}, {rank=}, {local_rank}, {worker_gpus}, {device}'
         )
 
         # Support all hardwares
