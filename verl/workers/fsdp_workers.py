@@ -346,7 +346,8 @@ class ActorRolloutRefWorker(Worker):
                             else config.prompt_length + config.response_length
             print(f'[ROLLOUT-INIT] {rollout_device_mesh.shape}, {local_path}, {tensor_parallel_size=}, {config.response_length} {max_num_batched_tokens}, {max_model_len}, {config.enforce_eager}')
             vllm_worker = rollout.inference_engine.llm_engine.model_executor.driver_worker.worker
-            print(f'[ROLLOUT-INIT] {vLLMRollout}, {type(rollout.inference_engine.llm_engine.model_executor)}, {type(rollout.inference_engine.llm_engine.model_executor.driver_worker.worker)}, {vllm_worker.rank}, {vllm_worker.local_rank} {rollout.inference_engine.llm_engine.parallel_config=}')
+            model = rollout.inference_engine.llm_engine.model_executor.driver_worker.worker.model_runner.model
+            print(f'[ROLLOUT-INIT] {vLLMRollout}, {type(rollout.inference_engine.llm_engine.model_executor)}, {type(rollout.inference_engine.llm_engine.model_executor.driver_worker.worker)}, {vllm_worker.rank}, {vllm_worker.local_rank}, {type(model)}, {rollout.inference_engine.llm_engine.parallel_config=}')
             #log_gpu_memory_usage(f'After building {rollout_name} rollout', logger=None)
             log_gpu_memory_usage(f'[ROLLOUT-INIT] after rollout')
 
@@ -357,7 +358,8 @@ class ActorRolloutRefWorker(Worker):
                                                                model_config=self.actor_model_config,
                                                                full_params='hf' in self.config.rollout.load_format,
                                                                device_mesh=rollout_device_mesh)
-            log_gpu_memory_usage('After building sharding manager', logger=None)
+            #log_gpu_memory_usage('After building sharding manager', logger=None)
+            log_gpu_memory_usage(f'[ROLLOUT-INIT] sharding manager {rollout_sharding_manager.full_params} ')
 
         elif rollout_name == 'sglang':
             from verl.workers.rollout.sglang_rollout import SGLangRollout
@@ -517,11 +519,10 @@ class ActorRolloutRefWorker(Worker):
         position_ids = prompts.batch['position_ids']
         do_sample = prompts.meta_info.get('do_sample', True)
         is_validate = prompts.meta_info.get('validate', False)
-        vllm_inputs = [{
-            'prompt_token_ids': raw_prompt_ids
-        } for raw_prompt_ids in prompts.non_tensor_batch['raw_prompt_ids']]
+
+        # len(prompts.non_tensor_batch['raw_prompt_ids']) == bs, evenly distributed across GPUs
         print(
-            f'[GEN]: {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {do_sample}, {is_validate}, {len(vllm_inputs)}, {self.rollout.sampling_params=}, {rank=}, {local_rank}, {worker_gpus}, {device}'
+            f'[GEN]: {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {do_sample}, {is_validate}, {self.rollout.sampling_params=}, {rank=}, {local_rank}, {worker_gpus}, {device}'
         )
 
         # Support all hardwares
@@ -550,6 +551,10 @@ class ActorRolloutRefWorker(Worker):
 
             log_gpu_memory_usage('After entering rollout sharding manager', logger=logger)
             prompts = self.rollout_sharding_manager.preprocess_data(prompts)
+            #
+            # len(prompts.non_tensor_batch['raw_prompt_ids']) is all gathered! 
+            # evenly distributed across model replica!
+            #
             output = self.rollout.generate_sequences(prompts=prompts)
             log_gpu_memory_usage('After rollout generation', logger=logger)
 

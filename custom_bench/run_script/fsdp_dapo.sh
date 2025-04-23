@@ -26,7 +26,7 @@ real_train_batch_size=$((train_prompt_batch_size * grpo_rollout_n))
 lr=1e-6
 shuffle=False
 vllm_tp=4
-vllm_mem=0.8
+vllm_mem=0.7
 
 train_prompt_batch_size=$((real_train_batch_size / grpo_rollout_n))
 
