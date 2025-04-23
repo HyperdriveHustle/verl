@@ -43,7 +43,10 @@ offload=True
 #model=/workspace/models/DeepSeek-R1-Distill-Llama-8B
 model=/workspace/models/Qwen2.5-7B-Instruct-1M
 
-echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem"
+seq_dir=/workspace/tmp_seq
+cap_dataset_size=10000
+
+echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, cap_dataset_size = $cap_dataset_size"
 
 sleep 1
 
@@ -54,6 +57,8 @@ export TENSORBOARD_DIR=/workspace/tmp
 #data.max_batch_size=${train_prompt_batch_size} \
 #python3 -u -m verl.trainer.main_ppo \
 python3 -u -m verl.trainer.main_ppo_with_time \
+    --config-path=config \
+    --config-name='hgl_fsdp.yaml' \
     algorithm.adv_estimator=grpo \
     algorithm.kl_ctrl.kl_coef=0.00 \
     data.train_files="$train_files" \
@@ -61,6 +66,8 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     data.max_prompt_length=${max_prompt_length} \
     data.max_response_length=${max_response_length} \
     data.train_batch_size=${train_prompt_batch_size} \
+    data.seq_dir="$seq_dir" \
+    data.cap_dataset_size=${cap_dataset_size} \
     actor_rollout_ref.model.path=${model} \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.model.use_remove_padding=True \

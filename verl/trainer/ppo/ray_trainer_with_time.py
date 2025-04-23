@@ -62,7 +62,7 @@ def suppress_stdout():
     finally:
         sys.stdout = old_stdout
 
-def log_seqlen(raw_prompt_ids, responses, prefix):
+def log_seqlen(raw_prompt_ids, responses, prefix, path):
     # print(f'{type(raw_prompt_ids)}, {type(responses)}, {len(raw_prompt_ids)}, {len(responses)}')
     # lengths = []
     # for _, sublist in enumerate(data):
@@ -74,7 +74,8 @@ def log_seqlen(raw_prompt_ids, responses, prefix):
         prompts.append(p)
         response.append(r)
     
-    log_dir = "/workspace/tmp_seq"
+    #log_dir = "/workspace/tmp_seq"
+    log_dir = path
     os.makedirs(log_dir, exist_ok=True)
     data_files = glob.glob(f"{log_dir}/{prefix}_*.json")
     file_num = len(data_files) + 1
@@ -135,8 +136,10 @@ class RLHFDatasetFilter(RLHFDataset):
                 return_raw_chat=False,
                 truncation='error',
                 filter_overlong_prompts=False, # NOTE: this will filter too long or short seq
+                cap_dataset_size=None,
         ):
         self.min_prompt_length = min_prompt_length
+        self.cap_dataset_size = cap_dataset_size
 
         super().__init__(
             parquet_files=parquet_files,
@@ -198,8 +201,10 @@ class RLHFDatasetFilter(RLHFDataset):
         # XXX, for req scheduling, we need to build a table map from req_id to output len
         # the dataset is too large, we just hacky downsmaple for now
         self.dataframe = pd.concat(dataframes)
-        self.dataframe = self.dataframe.iloc[:2048]
-        print(f'[DATASET]: {len(self.dataframe)=} {list(self.dataframe.columns)}')
+        full_len = len(self.dataframe)
+        if self.cap_dataset_size is not None:
+            self.dataframe = self.dataframe.iloc[:self.cap_dataset_size]
+        print(f'[DATASET]: {full_len=} {len(self.dataframe)=} {list(self.dataframe.columns)}')
         
         # Filter based on prompt length
         if self.filter_overlong_prompts:
@@ -761,6 +766,7 @@ class RayPPOTrainer(object):
             return_raw_chat=self.config.data.get('return_raw_chat', False),
             truncation='left',
             filter_overlong_prompts=False,
+            cap_dataset_size=self.config.data.get('cap_dataset_size', None),
         )
 
         # use sampler for better ckpt resume
@@ -1340,7 +1346,7 @@ class RayPPOTrainer(object):
                         # gh512: log
                         model = self.config.actor_rollout_ref.model.path.split('/')[-1]
                         prefix = f'{model}_E{epoch}B{bs_idx}_data'
-                        log_seqlen(raw_prompt_ids, unpad_responses(response, pad_ids), prefix)
+                        log_seqlen(raw_prompt_ids, unpad_responses(response, pad_ids), prefix, self.config.data.seq_dir)
 
                     # recompute old_log_probs
                     with _timer('old_log_prob', timing_raw):
