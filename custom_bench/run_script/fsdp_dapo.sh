@@ -21,7 +21,9 @@ export project_name=verl_dapo_math_grpo_vllm082
 use_dynamic_bsz=True
 infer_micro_batch_size=null
 
+min_prompt_length=$((1 * 1))
 max_prompt_length=$((1024 * 2))
+min_response_length=$((1 * 1))
 max_response_length=$((1024 * 14))
 max_tokens=$((max_prompt_length + max_response_length))
 
@@ -63,11 +65,14 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     algorithm.kl_ctrl.kl_coef=0.00 \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
-    data.max_prompt_length=${max_prompt_length} \
-    data.max_response_length=${max_response_length} \
     data.train_batch_size=${train_prompt_batch_size} \
-    data.seq_dir="$seq_dir" \
     data.cap_dataset_size=${cap_dataset_size} \
+    data.min_prompt_length=${min_prompt_length} \
+    data.max_prompt_length=${max_prompt_length} \
+    data.min_response_length=${min_response_length} \
+    data.max_response_length=${max_response_length} \
+    req_scheduler.seq_dir="$seq_dir" \
+    req_scheduler.agg="mean" \
     actor_rollout_ref.model.path=${model} \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.model.use_remove_padding=True \
@@ -104,4 +109,4 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     trainer.nnodes=${nnode} \
     trainer.save_freq=50 \
     trainer.test_freq=50 \
-    trainer.total_epochs=1
+    trainer.total_epochs=5 

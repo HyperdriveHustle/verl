@@ -128,18 +128,28 @@ class RLHFDatasetFilter(RLHFDataset):
                 processor,
                 prompt_key='prompt',
                 image_key='images',
-                min_prompt_length=None,
-                max_prompt_length=1024,
                 filter_prompts=True,
                 cache_dir='~/.cache/verl/rlhf',
                 chat_template_func=None,
                 return_raw_chat=False,
                 truncation='error',
-                filter_overlong_prompts=False, # NOTE: this will filter too long or short seq
+                #
+                filter_overlong_prompts=False, # NOTE: this will filter both prompt and responses
+                min_prompt_length=None,
+                max_prompt_length=1024,
+                min_response_length=None,
+                max_response_length=None,
                 cap_dataset_size=None,
+                req_scheduler=None,
         ):
         self.min_prompt_length = min_prompt_length
+        self.max_prompt_length = max_prompt_length
+        self.min_response_length = min_response_length
+        self.max_response_length = max_response_length
+        #
+        self.filter_overlong_prompts = filter_overlong_prompts
         self.cap_dataset_size = cap_dataset_size
+        self.req_scheduler = req_scheduler
 
         super().__init__(
             parquet_files=parquet_files,
@@ -206,37 +216,62 @@ class RLHFDatasetFilter(RLHFDataset):
             self.dataframe = self.dataframe.iloc[:self.cap_dataset_size]
         print(f'[DATASET]: {full_len=} {len(self.dataframe)=} {list(self.dataframe.columns)}')
         
-        # Filter based on prompt length
+        # apply filter
         if self.filter_overlong_prompts:
-            t1 = time()
             tokenizer = self.tokenizer
             prompt_key = self.prompt_key
-
+            new_key = 'applied_chat_template_prompts'
+            self.dataframe[new_key] = tokenizer.apply_chat_template(self.dataframe[prompt_key], add_generation_prompt=True,
+                                                                                            )
+            # filter prompt
+            t1 = time()
             def filter_long(doc):
-                return len(tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True)) <= self.max_prompt_length
+                return len(doc[new_key]) <= self.max_prompt_length
             def filter_short(doc):
-                return len(tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True)) >= self.min_prompt_length
-
+                return len(doc[new_key]) >= self.min_prompt_length
             if self.min_prompt_length is not None:
                 self.dataframe = self.dataframe[self.dataframe.apply(filter_short, axis=1)]
-            self.dataframe = self.dataframe[self.dataframe.apply(filter_long, axis=1)]
+            if self.max_prompt_length is not None:
+                self.dataframe = self.dataframe[self.dataframe.apply(filter_long, axis=1)]
             t2 = time()
-            print(f'[DATASET] filter dataset: {len(self.dataframe)=}, {self.min_prompt_length}:{self.max_prompt_length},  time cost: {t2-t1:.2f}s')
-        
-            # Save the filtered dataset and metadata
-            self.dataframe.to_parquet(cache_file, index=False)
+            print(f'[DATASET] filter prompt: {len(self.dataframe)=}, {self.min_prompt_length}:{self.max_prompt_length},  time cost: {t2-t1:.2f}s')
+
+            # filter response
+            t1 = time()
+
+            def filter_long(doc):
+                outlen = self.req_scheduler.lookup_table(doc[new_key])
+                if outlen is None:
+                    return False
+                return outlen <= self.max_response_length
+            def filter_short(doc):
+                outlen = self.req_scheduler.lookup_table(doc[new_key])
+                if outlen is None:
+                    return False
+                return outlen >= self.min_response_length
+            # 
+            if self.min_prompt_length is not None:
+                self.dataframe = self.dataframe[self.dataframe.apply(filter_short, axis=1)]
+            if self.max_prompt_length is not None:
+                self.dataframe = self.dataframe[self.dataframe.apply(filter_long, axis=1)]
+            t2 = time()
+            print(f'[DATASET] filter response: {len(self.dataframe)=}, {self.min_response_length}:{self.max_response_length},  time cost: {t2-t1:.2f}s')
+
+
+            # Save the filtered dataset and metadata. XXX disable cache for now
+            # self.dataframe.to_parquet(cache_file, index=False)
             
-            # Save metadata to help validate cache in future runs
-            metadata = {
-                'creation_time': time(),
-                'max_prompt_length': self.max_prompt_length,
-                'min_prompt_length': self.min_prompt_length,
-                'source_files': self.parquet_files,
-                'row_count': len(self.dataframe)
-            }
-            with open(cache_metadata, 'wb') as f:
-                pickle.dump(metadata, f)
-            print(f"[DATASET] Cached filtered dataset to {cache_file}")
+            # # Save metadata to help validate cache in future runs
+            # metadata = {
+            #     'creation_time': time(),
+            #     'max_prompt_length': self.max_prompt_length,
+            #     'min_prompt_length': self.min_prompt_length,
+            #     'source_files': self.parquet_files,
+            #     'row_count': len(self.dataframe)
+            # }
+            # with open(cache_metadata, 'wb') as f:
+            #     pickle.dump(metadata, f)
+            # print(f"[DATASET] Cached filtered dataset to {cache_file}")
     
     def __getitem__(self, item):
         # print(f'[DATASET] items: {item} {type(item)}, end=', ')
@@ -272,6 +307,85 @@ class RLHFDatasetFilter(RLHFDataset):
         row_dict["index"] = index
 
         return row_dict
+
+
+class ReqScheduler:
+    def __init__(self, config):
+        self.config = config
+
+        # prompt -> len(reponse)
+        self.table: dict[tuple[int], int] = self.load_table()
+    
+    def load_table(self):
+        # Find all JSON files in the directory
+        json_files = glob.glob(os.path.join(self.config.seq_dir, "*.json"))
+
+        print(f"[ReqScheduler] Found {len(json_files)} JSON files to process")
+
+        # prompts -> list[responses]
+        ans = {}
+        for json_file in json_files:
+            filename = os.path.basename(json_file)
+            #if key not in filename:
+            #    continue
+            try:
+                with open(json_file, 'r') as f:
+                    data = json.load(f)
+                
+                ps: list[int] = data['prompts']
+                rs: list[int] = data['response']
+                for p, s in zip(ps, rs):
+                    p = tuple(p)
+                    r = tuple(s)
+                    if p not in ans:
+                        ans[p] = []
+                    ans[p].append(r)
+            except Exception as e:
+                print(f"[ReqScheduler] Error processing {filename}: {str(e)}")
+                raise e
+        
+        # Aggregate prompts -> responses
+        agg = self.config.get('agg', 'mean')
+        if agg == 'max':
+            ans = {k: max([len(x) for x in v]) for k, v in ans.items()}
+        elif agg == 'min':
+            ans = {k: min([len(x) for x in v]) for k, v in ans.items()}
+        elif agg == 'mean':
+            ans = {k: int(np.mean([len(x) for x in v])) for k, v in ans.items()}
+        elif agg =='median':
+            ans = {k: int(np.median([len(x) for x in v])) for k, v in ans.items()}
+        else:
+            raise ValueError(f"Unknown agg {agg}")
+        return ans
+
+    def lookup_table(self, prompt):
+        if isinstance(prompt, list):
+            prompt = tuple(prompt)
+        assert isinstance(prompt, tuple), f"prompt type {type(prompt)} is not supported"
+        if prompt in self.table:
+            return self.table[prompt]
+        return None
+
+    def update_table(self):
+        return
+
+    def sched(self, prompts):
+        return
+    
+
+
+
+
+
+
+
+############################ ############################
+############################ ############################
+############################ ############################
+############################ ############################
+############################ ############################
+############################ ############################
+############################ ############################
 
 
 class Role(Enum):
@@ -643,6 +757,11 @@ class RayPPOTrainer(object):
             self.use_critic = False
         else:
             raise NotImplementedError
+        
+        # gh512 - init Req Scheduler
+        self.req_scheduler = ReqScheduler(
+            config=self.config.req_scheduler,
+        )
 
         self._validate_config()
         self._create_dataloader()
@@ -760,13 +879,17 @@ class RayPPOTrainer(object):
             processor=self.processor,
             prompt_key=self.config.data.prompt_key,
             image_key=self.config.data.get('image_key', 'images'),
-            min_prompt_length=None,
-            max_prompt_length=self.config.data.max_prompt_length,
             filter_prompts=True,
             return_raw_chat=self.config.data.get('return_raw_chat', False),
             truncation='left',
-            filter_overlong_prompts=False,
+            # gh512
+            filter_overlong_prompts=self.config.data.get('filter_overlong_prompts', False),
+            min_prompt_length=self.config.data.min_prompt_length,
+            max_prompt_length=self.config.data.max_prompt_length,
+            min_response_length=self.config.data.min_response_length,
+            max_response_length=self.config.data.max_response_length,
             cap_dataset_size=self.config.data.get('cap_dataset_size', None),
+            req_scheduler=self.req_scheduler,
         )
 
         # use sampler for better ckpt resume
