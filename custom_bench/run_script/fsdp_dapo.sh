@@ -7,8 +7,14 @@ export VLLM_ATTENTION_BACKEND=XFORMERS
 dapo_train_path=/workspace/datasets/dapo/dapo-math-17k.parquet
 dapo_test_path=/workspace/datasets/dapo/aime-2024.parquet
 
-train_files=("$dapo_train_path")
-test_files=("$dapo_test_path")
+kk_train_path=/workspace/datasets/kk/train.parquet
+kk_test_path=/workspace/datasets/kk/test.parquet
+
+#train_files=("$dapo_train_path")
+#test_files=("$dapo_test_path")
+
+train_files=("$kk_train_path")
+test_files=("$kk_test_path")
 
 export project_name=verl_dapo_math_grpo_vllm082
 
@@ -33,9 +39,9 @@ train_prompt_batch_size=$((real_train_batch_size / grpo_rollout_n))
 nnode=1
 offload=True
 #model=/nvfile-heatstorage/chatrl/public/models/Qwen2.5-7B-Instruct-1M
-#model=/workspace/models/Qwen2.5-7B-Instruct-1M
 #model=/workspace/models/llama7b
-model=/workspace/models/DeepSeek-R1-Distill-Llama-8B
+#model=/workspace/models/DeepSeek-R1-Distill-Llama-8B
+model=/workspace/models/Qwen2.5-7B-Instruct-1M
 
 echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem"
 
