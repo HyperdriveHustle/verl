@@ -220,9 +220,15 @@ class RLHFDatasetFilter(RLHFDataset):
         if self.filter_overlong_prompts:
             tokenizer = self.tokenizer
             prompt_key = self.prompt_key
+
+            # add a new col for efficient filtering!
             new_key = 'applied_chat_template_prompts'
-            self.dataframe[new_key] = tokenizer.apply_chat_template(self.dataframe[prompt_key], add_generation_prompt=True,
-                                                                                            )
+            self.dataframe[new_key] = self.dataframe[prompt_key].apply(lambda prompt: tokenizer.apply_chat_template(prompt, add_generation_prompt=True,))
+            # for i, row in self.dataframe.iterrows():
+            #     out_len = self.req_scheduler.lookup_table(row[new_key])
+            #     #print(out_len, row[new_key], end=', ')
+            #     print(out_len, end='; ')
+
             # filter prompt
             t1 = time()
             def filter_long(doc):
@@ -238,7 +244,6 @@ class RLHFDatasetFilter(RLHFDataset):
 
             # filter response
             t1 = time()
-
             def filter_long(doc):
                 outlen = self.req_scheduler.lookup_table(doc[new_key])
                 if outlen is None:
