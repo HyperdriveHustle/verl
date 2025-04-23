@@ -47,8 +47,9 @@ model=/workspace/models/Qwen2.5-7B-Instruct-1M
 
 seq_dir=/workspace/tmp_seq
 cap_dataset_size=10000
+filter_overlong_prompts=True
 
-echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, cap_dataset_size = $cap_dataset_size"
+echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length"
 
 sleep 1
 
@@ -66,6 +67,7 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
     data.train_batch_size=${train_prompt_batch_size} \
+    data.filter_overlong_prompts=${filter_overlong_prompts} \
     data.cap_dataset_size=${cap_dataset_size} \
     data.min_prompt_length=${min_prompt_length} \
     data.max_prompt_length=${max_prompt_length} \
