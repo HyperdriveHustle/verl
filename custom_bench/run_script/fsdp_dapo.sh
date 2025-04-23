@@ -67,6 +67,7 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
     data.train_batch_size=${train_prompt_batch_size} \
+    data.shuffle=False \
     data.filter_overlong_prompts=${filter_overlong_prompts} \
     data.cap_dataset_size=${cap_dataset_size} \
     data.min_prompt_length=${min_prompt_length} \
