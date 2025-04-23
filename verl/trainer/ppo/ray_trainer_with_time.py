@@ -62,27 +62,6 @@ def suppress_stdout():
     finally:
         sys.stdout = old_stdout
 
-def log_seqlen(raw_prompt_ids, responses, prefix, path):
-    # print(f'{type(raw_prompt_ids)}, {type(responses)}, {len(raw_prompt_ids)}, {len(responses)}')
-    # lengths = []
-    # for _, sublist in enumerate(data):
-    #     length = len(sublist)
-    #     lengths.append(length)
-    prompts = []
-    response = []
-    for p, r in zip(raw_prompt_ids, responses):
-        prompts.append(p)
-        response.append(r)
-    
-    #log_dir = "/workspace/tmp_seq"
-    log_dir = path
-    os.makedirs(log_dir, exist_ok=True)
-    data_files = glob.glob(f"{log_dir}/{prefix}_*.json")
-    file_num = len(data_files) + 1
-    output_file = f"{log_dir}/{prefix}_{file_num}.json"
-    with open(output_file, 'w') as f:
-        json.dump({'prompts': prompts, 'response': response}, f)
-
 
 def unpad_responses(padded_tensor, pad_token_id):
     if isinstance(pad_token_id, list):
@@ -373,6 +352,31 @@ class ReqScheduler:
 
     def update_table(self):
         return
+
+    def log_seqlen(self, raw_prompt_ids, responses, prefix):
+        # print(f'{type(raw_prompt_ids)}, {type(responses)}, {len(raw_prompt_ids)}, {len(responses)}')
+        # lengths = []
+        # for _, sublist in enumerate(data):
+        #     length = len(sublist)
+        #     lengths.append(length)
+        prompts = []
+        response = []
+        for p, r in zip(raw_prompt_ids, responses):
+            prompts.append(p)
+            response.append(r)
+        
+        # NOTE should only log the 1st epoch!
+        log_dir = self.config.seq_dir
+        os.makedirs(log_dir, exist_ok=True)
+        data_files = glob.glob(f"{log_dir}/{prefix}_*.json")
+        if prefix in data_files:
+            return
+
+        file_num = len(data_files) + 1
+        output_file = f"{log_dir}/{prefix}_{file_num}.json"
+        with open(output_file, 'w') as f:
+            json.dump({'prompts': prompts, 'response': response}, f)
+
 
     def sched(self, prompts):
         return
@@ -1469,12 +1473,15 @@ class RayPPOTrainer(object):
                         seq = batch.batch['input_ids']
                         response = batch.batch['responses']
                         raw_prompt_ids = batch.non_tensor_batch['raw_prompt_ids']
-                        pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
                         print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape} {len(batch)} {batch.batch.keys()} {batch.non_tensor_batch.keys()}')
                         # gh512: log
+                        pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
                         model = self.config.actor_rollout_ref.model.path.split('/')[-1]
                         prefix = f'{model}_E{epoch}B{bs_idx}_data'
-                        log_seqlen(raw_prompt_ids, unpad_responses(response, pad_ids), prefix, self.config.data.seq_dir)
+                        self.req_scheduler.log_seqlen(raw_prompt_ids, 
+                            unpad_responses(response, pad_ids), 
+                            prefix, 
+                        )
 
                     # recompute old_log_probs
                     with _timer('old_log_prob', timing_raw):
