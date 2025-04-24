@@ -49,6 +49,8 @@ export experiment_name=Qwen2.5-7B-1M-Instruct_dapo_math_grpo_vllm_0_8_2_${nnode}
 #export TENSORBOARD_DIR=/nvfile-heatstorage/chatrl/users/hxh/models/verl_rl_models/${project_name}/${experiment_name}/tensorboard_log
 export TENSORBOARD_DIR=/workspace/tmp
 
+rm -rf /workspace/tmp_tensorboard/*
+
 #data.max_batch_size=${train_prompt_batch_size} \
 #python3 -u -m verl.trainer.main_ppo \
 python3 -u -m verl.trainer.main_ppo_with_time \
