@@ -365,13 +365,9 @@ class ReqScheduler:
             prompts.append(p)
             response.append(r)
         
-        # NOTE should only log the 1st epoch!
-        log_dir = self.config.seq_dir
+        log_dir = self.config.log_dir
         os.makedirs(log_dir, exist_ok=True)
         data_files = glob.glob(f"{log_dir}/{prefix}_*.json")
-        if prefix in data_files:
-            return
-
         file_num = len(data_files) + 1
         output_file = f"{log_dir}/{prefix}_{file_num}.json"
         with open(output_file, 'w') as f:
@@ -915,7 +911,7 @@ class RayPPOTrainer(object):
             dataset=self.train_dataset,
             batch_size=self.config.data.train_batch_size,
             num_workers=8,
-            drop_last=True,
+            drop_last=False,
             collate_fn=collate_fn,
             sampler=sampler)
 

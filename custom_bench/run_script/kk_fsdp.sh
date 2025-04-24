@@ -1,17 +1,8 @@
 set -x
 export VLLM_ATTENTION_BACKEND=XFORMERS
 
-#dapo_train_path=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k.parquet
-#dapo_test_path=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data/aime-2024.parquet
-
-dapo_train_path=/workspace/datasets/dapo/dapo-math-17k.parquet
-dapo_test_path=/workspace/datasets/dapo/aime-2024.parquet
-
 kk_train_path=/workspace/datasets/kk/train.parquet
 kk_test_path=/workspace/datasets/kk/test.parquet
-
-#train_files=("$dapo_train_path")
-#test_files=("$dapo_test_path")
 
 train_files=("$kk_train_path")
 test_files=("$kk_test_path")
@@ -33,7 +24,7 @@ real_train_batch_size=$((train_prompt_batch_size * grpo_rollout_n))
 
 lr=1e-6
 shuffle=False
-vllm_tp=4
+vllm_tp=1
 vllm_mem=0.7
 
 train_prompt_batch_size=$((real_train_batch_size / grpo_rollout_n))
@@ -46,10 +37,11 @@ offload=True
 model=/workspace/models/Qwen2.5-7B-Instruct-1M
 
 seq_dir=/workspace/tmp_seq
+log_dir=/workspace/tmp_log_seq
 cap_dataset_size=10000
 filter_overlong_prompts=True
 
-echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length"
+echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length"
 
 sleep 1
 
@@ -75,6 +67,7 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     data.min_response_length=${min_response_length} \
     data.max_response_length=${max_response_length} \
     req_scheduler.seq_dir="$seq_dir" \
+    req_scheduler.log_dir="$log_dir" \
     req_scheduler.agg="mean" \
     actor_rollout_ref.model.path=${model} \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \

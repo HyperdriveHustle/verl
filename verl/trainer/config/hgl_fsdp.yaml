@@ -22,6 +22,7 @@ data:
 # gh512
 req_scheduler:
   seq_dir: null
+  log_dir: null
   agg: mean
 
 actor_rollout_ref:
