@@ -41,8 +41,8 @@ model=/workspace/models/Qwen2.5-7B-Instruct-1M
 
 seq_dir=/workspace/tmp_seq
 log_dir=/workspace/tmp_log_seq
-cap_dataset_size=10000
-filter_overlong_prompts=True
+cap_dataset_size=$((1024 * 8))
+filter_overlong_prompts=False
 
 echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length"
 

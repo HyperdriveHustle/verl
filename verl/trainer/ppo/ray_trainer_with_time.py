@@ -1473,7 +1473,8 @@ class RayPPOTrainer(object):
                         # gh512: log
                         pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
                         model = self.config.actor_rollout_ref.model.path.split('/')[-1]
-                        prefix = f'{model}_E{epoch}B{bs_idx}_data'
+                        dataset = self.config.data.train_files.split('/')[-1]
+                        prefix = f'{dataset}_{model}_E{epoch}B{bs_idx}_data'
                         self.req_scheduler.log_seqlen(raw_prompt_ids, 
                             unpad_responses(response, pad_ids), 
                             prefix, 
