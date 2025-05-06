@@ -1,6 +1,7 @@
 {
     "python.analysis.extraPaths": [
         "../venv/lib/python3.11/site-packages/",
+        "../sglang/python",
         "../../mlSYS/vllm",
         "../../mlSYS/Megatron-LM",
         "../venv/**"

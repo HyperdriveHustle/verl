@@ -148,6 +148,22 @@ class FSDPVLLMShardingManager(BaseShardingManager):
         else:
             group = vllm_ps.get_tensor_model_parallel_group().device_group
 
+        # import os
+        # device = torch.cuda.current_device()
+        # rank = torch.distributed.get_rank()
+        # worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
+        # local_rank = os.environ.get("LOCAL_RANK", "None")
+
+        # tp_group = vllm_ps.get_tensor_model_parallel_group()
+        # pp_group = vllm_ps.get_pipeline_model_parallel_group()
+
+        # if rank % 2 == 0:
+        #     print(
+        #         f'[TP-SHARD]: {rank=}, {tp_group.rank}, {tp_group.unique_name}, {tp_group.ranks}, {tp_group.world_size}, {tp_group.rank_in_group}'
+        #     )
+        #     print(
+        #         f'[PP-SHARD]: {rank=}, {pp_group.rank}, {pp_group.unique_name}, {pp_group.ranks}, {pp_group.world_size}, {pp_group.rank_in_group}'
+        #     )
         all_gather_data_proto(data=data, process_group=group)
         return data
 
