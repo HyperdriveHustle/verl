@@ -399,9 +399,26 @@ class ReqScheduler:
         batch_dict['reqs_idx'] = res
     
     def _sched(self, outlens, dp_size, tp_size):
-        res = [0] * (len(outlens) - 1) + [1]
-        res = np.array(res)
+        algo = self.config.algo
+        method = getattr(self, algo)
+        res = method(outlens, dp_size, tp_size)
         return res
+    
+    def dummy(self, outlens, dp_size, tp_size):
+        res = [0] * (len(outlens) - 1) + [1]
+        res = np.array(res, dtype=np.int32)
+        return res
+
+    def load_balance(self, outlens, dp_size, tp_size):
+        per_dp = len(outlens) // dp_size
+        res = []
+        cnt = 0
+        for i in range(0, len(outlens), per_dp):
+            for j in range(per_dp):
+                res.append(cnt)
+            cnt += 1
+        return np.array(res, dtype=np.int32)
+    
     
 
 

@@ -44,7 +44,9 @@ log_dir=/workspace/tmp_log_seq
 cap_dataset_size=$((1024 * 8))
 filter_overlong_prompts=False
 
-echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length"
+req_algo="load_balance"
+
+echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length, req_algo = $req_algo"
 
 sleep 1
 
@@ -74,6 +76,7 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     req_scheduler.seq_dir="$seq_dir" \
     req_scheduler.log_dir="$log_dir" \
     req_scheduler.agg="mean" \
+    req_scheduler.algo="$req_algo" \
     actor_rollout_ref.model.path=${model} \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.model.use_remove_padding=True \
