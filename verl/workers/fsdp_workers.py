@@ -505,10 +505,9 @@ class ActorRolloutRefWorker(Worker):
             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
         return output
 
-    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    @register(dispatch_mode=Dispatch.REQ_DISTRIBUTION)
     def generate_sequences(self, prompts: DataProto):
-
-        # gh512; print
+        # gh512; ONE-TO-ALL get all seqs
         device = torch.cuda.current_device()
         rank = torch.distributed.get_rank()
         worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
@@ -520,10 +519,28 @@ class ActorRolloutRefWorker(Worker):
         do_sample = prompts.meta_info.get('do_sample', True)
         is_validate = prompts.meta_info.get('validate', False)
 
-        # len(prompts.non_tensor_batch['raw_prompt_ids']) == bs, evenly distributed across GPUs
         print(
             f'[GEN]: {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {do_sample}, {is_validate}, {self.rollout.sampling_params=}, {rank=}, {local_rank}, {worker_gpus}, {device}'
         )
+
+        # get reqs for my rank
+        config = self.config.rollout
+        tp_size = config.get('tensor_model_parallel_size', 1)
+        # 
+        # 0, 1, 2, 3 -> 0; 4, 5, 6, 7 -> 1
+        my_dp_group = rank // tp_size
+        reqs_idx = prompts.non_tensor_batch.pop('reqs_idx')
+        my_idx = [i for i, idx in enumerate(reqs_idx) if idx == my_dp_group]
+        prompts = prompts.select_idxs(my_idx)
+        # if rank % 4 == 0:
+        #     print(rank, len(prompts))
+        #     print(my_idx)
+        #     print(reqs_idx)
+        if len(my_idx) == 0:
+            # return DataProto.from_single_dict({})
+            # XXX there's a problem for empty dict,
+            # but not likely to get a empty req anyways
+            raise RuntimeError(f'Empty reqs {rank} {tp_size=} {my_dp_group} {reqs_idx}')
 
         # Support all hardwares
         prompts = prompts.to(torch.cuda.current_device())
@@ -550,7 +567,7 @@ class ActorRolloutRefWorker(Worker):
                 offload_fsdp_optimizer(optimizer=self.actor_optimizer)
 
             log_gpu_memory_usage('After entering rollout sharding manager', logger=logger)
-            prompts = self.rollout_sharding_manager.preprocess_data(prompts)
+            #prompts = self.rollout_sharding_manager.preprocess_data(prompts)
             #
             # len(prompts.non_tensor_batch['raw_prompt_ids']) is all gathered! 
             # evenly distributed across model replica!
@@ -564,6 +581,66 @@ class ActorRolloutRefWorker(Worker):
         # clear kv cache
         log_gpu_memory_usage('After recompute log prob', logger=logger)
         return output
+
+    # @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    # def generate_sequences(self, prompts: DataProto):
+
+    #     # gh512; print
+    #     device = torch.cuda.current_device()
+    #     rank = torch.distributed.get_rank()
+    #     worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
+    #     local_rank = os.environ.get("LOCAL_RANK", "None")
+    #     bs = prompts.batch.batch_size
+    #     idx = prompts.batch['input_ids']  # (bs, prompt_length)
+    #     attention_mask = prompts.batch['attention_mask']
+    #     position_ids = prompts.batch['position_ids']
+    #     do_sample = prompts.meta_info.get('do_sample', True)
+    #     is_validate = prompts.meta_info.get('validate', False)
+
+    #     # len(prompts.non_tensor_batch['raw_prompt_ids']) == bs, evenly distributed across GPUs
+    #     print(
+    #         f'[GEN]: {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {do_sample}, {is_validate}, {self.rollout.sampling_params=}, {rank=}, {local_rank}, {worker_gpus}, {device}'
+    #     )
+
+    #     # Support all hardwares
+    #     prompts = prompts.to(torch.cuda.current_device())
+
+    #     assert self._is_rollout
+    #     if self._is_offload_param:
+    #         load_fsdp_model_to_gpu(self.actor_module_fsdp)
+
+    #     meta_info = {
+    #         'eos_token_id':
+    #             self.generation_config.eos_token_id
+    #             if self.generation_config is not None else self.tokenizer.eos_token_id,
+    #         'pad_token_id':
+    #             self.generation_config.pad_token_id
+    #             if self.generation_config is not None else self.tokenizer.pad_token_id,
+    #     }
+    #     prompts.meta_info.update(meta_info)
+    #     with self.rollout_sharding_manager:
+
+    #         # after parameters sync with rollout, offload actor model to CPU
+    #         if self._is_offload_param:
+    #             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+    #         if self._is_offload_optimizer:
+    #             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
+
+    #         log_gpu_memory_usage('After entering rollout sharding manager', logger=logger)
+    #         prompts = self.rollout_sharding_manager.preprocess_data(prompts)
+    #         #
+    #         # len(prompts.non_tensor_batch['raw_prompt_ids']) is all gathered! 
+    #         # evenly distributed across model replica!
+    #         #
+    #         output = self.rollout.generate_sequences(prompts=prompts)
+    #         log_gpu_memory_usage('After rollout generation', logger=logger)
+
+    #         output = self.rollout_sharding_manager.postprocess_data(output)
+    #     output = output.to('cpu')
+
+    #     # clear kv cache
+    #     log_gpu_memory_usage('After recompute log prob', logger=logger)
+    #     return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_log_prob(self, data: DataProto):

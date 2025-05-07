@@ -297,7 +297,7 @@ class ReqScheduler:
     def __init__(self, config):
         self.config = config
 
-        # prompt -> len(reponse)
+        # prompt_ids -> len(reponse)
         self.table: dict[tuple[int], int] = self.load_table()
     
     def load_table(self):
@@ -373,9 +373,35 @@ class ReqScheduler:
         with open(output_file, 'w') as f:
             json.dump({'prompts': prompts, 'response': response}, f)
 
+    def sched(self, batch_dict: dict,
+            world_size: int,
+            config,
+        ):
+        # get OUT len
+        outlens = []
+        for raw_prompt_ids in batch_dict['raw_prompt_ids']:
+            outlen = self.lookup_table(raw_prompt_ids)
+            # if outlen is None:
+            #     print(f"prompt {raw_prompt_ids} not found in table")
+            #     for k, v in self.table.items():
+            #         print(f'k: {k}, v: {v}')
+            #         break
+            #     raise
+            outlens.append(outlen)
 
-    def sched(self, prompts):
-        return
+        # sched
+        tp_size = config.rollout.tensor_model_parallel_size
+        assert world_size % tp_size == 0, f'world_size {world_size} must be divisible by tp_size {tp_size}'
+        dp_size = world_size // tp_size
+        res = self._sched(outlens, dp_size, tp_size)
+
+        # idx -> dp group idx:
+        batch_dict['reqs_idx'] = res
+    
+    def _sched(self, outlens, dp_size, tp_size):
+        res = [0] * (len(outlens) - 1) + [1]
+        res = np.array(res)
+        return res
     
 
 
@@ -1381,6 +1407,12 @@ class RayPPOTrainer(object):
             print(f"Epoch {epoch}: ")
 
             for bs_idx, batch_dict in enumerate(self.train_dataloader):
+                # gh512; add sched results
+                self.req_scheduler.sched(batch_dict,
+                                        self.actor_rollout_wg.world_size,
+                                        self.config.actor_rollout_ref,
+                                    )
+
                 metrics = {}
                 timing_raw = {}
                 # print(f'[BATCH] {len(batch_dict)} {batch_dict.keys()} {len(batch_dict["input_ids"])}')
@@ -1402,7 +1434,7 @@ class RayPPOTrainer(object):
                         batch_keys=[
                             'input_ids', 'attention_mask', 'position_ids'
                         ],
-                        non_tensor_batch_keys=['raw_prompt_ids'],
+                        non_tensor_batch_keys=['raw_prompt_ids', 'reqs_idx'],
                     )
 
                 # gh512: data examine
