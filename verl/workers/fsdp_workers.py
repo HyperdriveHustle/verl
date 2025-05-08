@@ -519,10 +519,6 @@ class ActorRolloutRefWorker(Worker):
         do_sample = prompts.meta_info.get('do_sample', True)
         is_validate = prompts.meta_info.get('validate', False)
 
-        print(
-            f'[GEN]: {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {do_sample}, {is_validate}, {self.rollout.sampling_params=}, {rank=}, {local_rank}, {worker_gpus}, {device}'
-        )
-
         # get reqs for my rank
         config = self.config.rollout
         tp_size = config.get('tensor_model_parallel_size', 1)
@@ -541,6 +537,10 @@ class ActorRolloutRefWorker(Worker):
             # XXX there's a problem for empty dict,
             # but not likely to get a empty req anyways
             raise RuntimeError(f'Empty reqs {rank} {tp_size=} {my_dp_group} {reqs_idx}')
+
+        print(
+            f'[GEN]: {len(my_idx)=}, {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {do_sample}, {is_validate}, {self.rollout.sampling_params=}, {rank=}, {local_rank}, {worker_gpus}, {device}'
+        )
 
         # Support all hardwares
         prompts = prompts.to(torch.cuda.current_device())

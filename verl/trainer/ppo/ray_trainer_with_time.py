@@ -409,7 +409,7 @@ class ReqScheduler:
         res = np.array(res, dtype=np.int32)
         return res
 
-    def load_balance(self, outlens, dp_size, tp_size):
+    def even_prompt(self, outlens, dp_size, tp_size):
         per_dp = len(outlens) // dp_size
         res = []
         cnt = 0
@@ -419,6 +419,8 @@ class ReqScheduler:
             cnt += 1
         return np.array(res, dtype=np.int32)
     
+    def even_token(self, outlens, dp_size, tp_size):
+        return
     
 
 

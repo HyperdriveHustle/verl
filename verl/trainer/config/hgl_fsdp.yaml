@@ -24,7 +24,7 @@ req_scheduler:
   seq_dir: null
   log_dir: null
   agg: mean
-  algo: load_balance
+  algo: even_prompt
 
 actor_rollout_ref:
   hybrid_engine: True
