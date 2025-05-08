@@ -398,18 +398,32 @@ class ReqScheduler:
         # idx -> dp group idx:
         batch_dict['reqs_idx'] = res
     
+    def print_stats(self, outlens, res):
+        longest = max(outlens)
+        shortest = min(outlens)
+        avg = np.mean(outlens)
+        std = np.std(outlens)
+        print(f"[ReqScheduler] Stats: {longest=}, {shortest=}, avg: {avg:.2f}, std: {std:.2f}")
+        num_group = np.unique(res)
+        group = [0 for _ in range(len(num_group))]
+        for v in res:
+            group[v] += 1
+        print(f"[ReqScheduler] Group: {group}")
+    
     def _sched(self, outlens, dp_size, tp_size):
         algo = self.config.algo
         method = getattr(self, algo)
-        res = method(outlens, dp_size, tp_size)
+        res = method(outlens, dp_size, tp_size, self.config)
+
+        self.print_stats(outlens, res)
         return res
     
-    def dummy(self, outlens, dp_size, tp_size):
+    def dummy(self, outlens, dp_size, tp_size, config):
         res = [0] * (len(outlens) - 1) + [1]
         res = np.array(res, dtype=np.int32)
         return res
 
-    def even_prompt(self, outlens, dp_size, tp_size):
+    def even_prompt(self, outlens, dp_size, tp_size, config):
         per_dp = len(outlens) // dp_size
         res = []
         cnt = 0
@@ -419,8 +433,19 @@ class ReqScheduler:
             cnt += 1
         return np.array(res, dtype=np.int32)
     
-    def even_token(self, outlens, dp_size, tp_size):
-        return
+    def even_token(self, outlens, dp_size, tp_size, config):
+        total_num_token = sum(outlens)
+        per_dp = total_num_token // dp_size
+        res = []
+        group_idx = 0
+        cnt = 0
+        for i in range(0, len(outlens)):
+            cnt += outlens[i]
+            if cnt > per_dp:
+                group_idx += 1
+                cnt = 0
+            res.append(group_idx)
+        return np.array(res, dtype=np.int32)
     
 
 
@@ -1649,6 +1674,8 @@ class RayPPOTrainer(object):
                 timings.append(timing_raw)
                 # if bs_idx >= 5:
                 #     break
+                break
+            break
 
         # print time
         keys = timings[0].keys()
