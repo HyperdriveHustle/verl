@@ -37,8 +37,8 @@ offload=True
 #model=/nvfile-heatstorage/chatrl/public/models/Qwen2.5-7B-Instruct-1M
 #model=/workspace/models/llama7b
 #model=/workspace/models/DeepSeek-R1-Distill-Llama-8B
-#model=/workspace/models/Qwen2.5-7B-Instruct-1M
-model=/workspace/models/Qwen25-32B-Base
+#model=/workspace/models/Qwen25-32B-Base
+model=/workspace/models/Qwen2.5-7B-Instruct-1M
 
 seq_dir=/workspace/dapo_8k_seq
 log_dir=/workspace/tmp_log_seq

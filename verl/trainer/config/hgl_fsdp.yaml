@@ -25,6 +25,7 @@ req_scheduler:
   log_dir: null
   agg: mean
   algo: even_prompt
+  percentile: 20
 
 actor_rollout_ref:
   hybrid_engine: True

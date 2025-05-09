@@ -447,6 +447,34 @@ class ReqScheduler:
             res.append(group_idx)
         return np.array(res, dtype=np.int32)
     
+    def long_short(self, outlens, dp_size, tp_size, config):
+        p = np.percentile(outlens, config.percentile)
+        long = []
+        short = []
+        for i in range(len(outlens)):
+            if outlens[i] > p:
+                long.append(i)
+            else:
+                short.append(i)
+
+        # n_long_worker = dp_size//2
+        # n_short_worker = dp_size - n_long_worker
+
+        short_worker_cnt = 1
+
+        res = []
+        for i in range(len(outlens)):
+            if i in long:
+                res.append(0)
+            else:
+                res.append(short_worker_cnt)
+                short_worker_cnt += 1
+                if short_worker_cnt >= dp_size:
+                    short_worker_cnt = 1
+
+        print(f"[ReqScheduler] p: {p}, {res=}")
+        return np.array(res, dtype=np.int32)
+    
 
 
 
