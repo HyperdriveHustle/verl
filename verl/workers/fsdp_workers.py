@@ -41,6 +41,7 @@ from verl.utils.checkpoint.fsdp_checkpoint_manager import FSDPCheckpointManager
 from verl.workers.sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManager
 
 from codetiming import Timer
+from time import perf_counter
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv('VERL_PPO_LOGGING_LEVEL', 'WARN'))
@@ -572,7 +573,13 @@ class ActorRolloutRefWorker(Worker):
             # len(prompts.non_tensor_batch['raw_prompt_ids']) is all gathered! 
             # evenly distributed across model replica!
             #
+
+            t1 = perf_counter()
             output = self.rollout.generate_sequences(prompts=prompts)
+            t2 = perf_counter()
+            if rank % 2 == 0:
+                print(f'[GEN] {rank=}, {t2-t1:.2f}s')
+
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
             output = self.rollout_sharding_manager.postprocess_data(output)
