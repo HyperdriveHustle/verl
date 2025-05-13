@@ -534,15 +534,14 @@ class ActorRolloutRefWorker(Worker):
             my_req_idx = rank // tp_size
         else:
             cumulative_sum = 0
-            idx = -1
+            my_req_idx = -1
             for i, num in enumerate(self.model_deployment):
                 cumulative_sum += num
                 if rank < cumulative_sum:
-                    idx = i
+                    my_req_idx = i
                     break
-            if idx == -1:
+            if my_req_idx == -1:
                 raise ValueError(f'{self.model_deployment} is not valid')
-            my_req_idx = i
 
         # fetch req
         reqs_idx = prompts.non_tensor_batch.pop('reqs_idx')
