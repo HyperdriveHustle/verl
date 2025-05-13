@@ -465,8 +465,10 @@ class ReqScheduler:
         res = []
         for i in range(len(outlens)):
             if i in long:
+                # only one long worker
                 res.append(0)
             else:
+                # round-robin the rest prompts
                 res.append(short_worker_cnt)
                 short_worker_cnt += 1
                 if short_worker_cnt >= dp_size:

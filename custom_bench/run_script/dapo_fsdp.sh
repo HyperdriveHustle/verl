@@ -27,7 +27,9 @@ real_train_batch_size=$((train_prompt_batch_size * grpo_rollout_n))
 
 lr=1e-6
 shuffle=False
-vllm_tp=4
+
+# tp=1 -> OOM??
+vllm_tp=2
 vllm_mem=0.7
 
 train_prompt_batch_size=$((real_train_batch_size / grpo_rollout_n))
@@ -45,9 +47,10 @@ log_dir=/workspace/tmp_log_seq
 cap_dataset_size=$((1024 * 8))
 filter_overlong_prompts=False
 
-req_algo="even_prompt"
+req_algo="long_short"
+percentile=90
 
-echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length, req_algo = $req_algo"
+echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length, req_algo = $req_algo, percentile = $percentile"
 
 sleep 1
 
@@ -78,6 +81,7 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     req_scheduler.log_dir="$log_dir" \
     req_scheduler.agg="mean" \
     req_scheduler.algo="$req_algo" \
+    req_scheduler.percentile=$percentile \
     actor_rollout_ref.model.path=${model} \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.model.use_remove_padding=True \
