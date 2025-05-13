@@ -109,6 +109,21 @@ class vLLMRollout(BaseRollout):
 
         trust_remote_code = kwargs.get('trust_remote_code', False)
 
+        # gh512
+        model_deployment = kwargs.pop('model_deployment', None)
+        if model_deployment is not None:
+            rank = torch.distributed.get_rank()
+            cumulative_sum = 0
+            idx = -1
+            for i, num in enumerate(model_deployment):
+                cumulative_sum += num
+                if rank <= cumulative_sum:
+                    idx = i
+                    break
+            if idx == -1:
+                raise ValueError(f'{model_deployment} is not valid')
+            tensor_parallel_size = model_deployment[idx]
+
         self.inference_engine = LLM(
             model=model_path,
             enable_sleep_mode=True,

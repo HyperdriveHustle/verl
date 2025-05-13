@@ -74,9 +74,10 @@ class ActorRolloutRefWorker(Worker):
     or a hybrid engine based on the config.rollout
     """
 
-    def __init__(self, config: DictConfig, role: str):
+    def __init__(self, config: DictConfig, role: str, model_deployment=None):
         super().__init__()
         self.config = config
+        self.model_deployment = model_deployment
         import torch.distributed
         if not torch.distributed.is_initialized():
             torch.distributed.init_process_group(backend='nccl')
@@ -336,7 +337,9 @@ class ActorRolloutRefWorker(Worker):
                                       tokenizer=self.tokenizer,
                                       model_hf_config=self.actor_model_config,
                                       device_mesh=rollout_device_mesh,
-                                      trust_remote_code=trust_remote_code)
+                                      trust_remote_code=trust_remote_code,
+                                      model_deployment=self.model_deployment,
+                                      )
             else:
                 raise NotImplementedError("vllm_mode must be 'customized' or 'spmd'")
 
@@ -520,14 +523,30 @@ class ActorRolloutRefWorker(Worker):
         do_sample = prompts.meta_info.get('do_sample', True)
         is_validate = prompts.meta_info.get('validate', False)
 
-        # get reqs for my rank
+        # gh512
+        # get reqs idx for my rank
         config = self.config.rollout
         tp_size = config.get('tensor_model_parallel_size', 1)
         # 
-        # 0, 1, 2, 3 -> 0; 4, 5, 6, 7 -> 1
-        my_dp_group = rank // tp_size
+        #
+        if self.model_deployment is None:
+            # 0, 1, 2, 3 -> 0; 4, 5, 6, 7 -> 1
+            my_req_idx = rank // tp_size
+        else:
+            cumulative_sum = 0
+            idx = -1
+            for i, num in enumerate(self.model_deployment):
+                cumulative_sum += num
+                if rank < cumulative_sum:
+                    idx = i
+                    break
+            if idx == -1:
+                raise ValueError(f'{self.model_deployment} is not valid')
+            my_req_idx = i
+
+        # fetch req
         reqs_idx = prompts.non_tensor_batch.pop('reqs_idx')
-        my_idx = [i for i, idx in enumerate(reqs_idx) if idx == my_dp_group]
+        my_idx = [i for i, idx in enumerate(reqs_idx) if idx == my_req_idx]
         prompts = prompts.select_idxs(my_idx)
         # if rank % 4 == 0:
         #     print(rank, len(prompts))
@@ -537,7 +556,7 @@ class ActorRolloutRefWorker(Worker):
             # return DataProto.from_single_dict({})
             # XXX there's a problem for empty dict,
             # but not likely to get a empty req anyways
-            raise RuntimeError(f'Empty reqs {rank} {tp_size=} {my_dp_group} {reqs_idx}')
+            raise RuntimeError(f'Empty reqs {rank} {tp_size=} {my_req_idx} {reqs_idx}')
 
         print(
             f'[GEN]: {len(my_idx)=}, {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {do_sample}, {is_validate}, {self.rollout.sampling_params=}, {rank=}, {local_rank}, {worker_gpus}, {device}'
@@ -578,7 +597,7 @@ class ActorRolloutRefWorker(Worker):
             output = self.rollout.generate_sequences(prompts=prompts)
             t2 = perf_counter()
             if rank % 2 == 0:
-                print(f'[GEN] {rank=}, {t2-t1:.2f}s')
+                print(f'[GENTIME] {rank=}, {t2-t1:.2f}s')
 
             log_gpu_memory_usage('After rollout generation', logger=logger)
 

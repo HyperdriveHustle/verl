@@ -16,6 +16,9 @@ FSDP PPO Trainer with Ray-based single controller.
 This trainer supports model-agonistic model initialization with huggingface
 """
 
+# tp size for each worker
+MODEL_DEPLOYMENT = [1, 1, 1, 1, 1, 1, 1, 1]
+
 import os
 import sys
 import contextlib
@@ -457,8 +460,14 @@ class ReqScheduler:
             else:
                 short.append(i)
 
+        # TODO assume only 1 long workers, the rest is short worker 
         # n_long_worker = dp_size//2
         # n_short_worker = dp_size - n_long_worker
+        global MODEL_DEPLOYMENT
+        if MODEL_DEPLOYMENT is None:
+            n_short_worker = dp_size
+        else:
+            n_short_worker = sum(MODEL_DEPLOYMENT) - MODEL_DEPLOYMENT[0] + 1
 
         short_worker_cnt = 1
 
@@ -471,7 +480,7 @@ class ReqScheduler:
                 # round-robin the rest prompts
                 res.append(short_worker_cnt)
                 short_worker_cnt += 1
-                if short_worker_cnt >= dp_size:
+                if short_worker_cnt >= n_short_worker:
                     short_worker_cnt = 1
 
         print(f"[ReqScheduler] p: {p}, {res=}")
@@ -1236,7 +1245,9 @@ class RayPPOTrainer(object):
             actor_rollout_cls = RayClassWithInitArgs(
                 cls=self.role_worker_mapping[Role.ActorRollout],
                 config=self.config.actor_rollout_ref,
-                role='actor_rollout')
+                role='actor_rollout',
+                model_deployment=MODEL_DEPLOYMENT,
+                )
             self.resource_pool_to_cls[resource_pool][
                 'actor_rollout'] = actor_rollout_cls
         else:
