@@ -344,7 +344,7 @@ class ReqScheduler:
             ans = {k: int(np.median([len(x) for x in v])) for k, v in ans.items()}
         else:
             raise ValueError(f"Unknown agg {agg}")
-        print(f'[ReqScheduler] Table-Size: {len(self.table)=}')
+        print(f'[ReqScheduler] Table-Size: {len(ans)=}')
         return ans
 
     def lookup_table(self, prompt):
@@ -1747,11 +1747,11 @@ class RayPPOTrainer(object):
                 print(timing_raw)
                 print('*' * 100)
                 timings.append(timing_raw)
-                if bs_idx >= 5:
-                    break
+                # if bs_idx >= 5:
+                #     break
                 #break
-            if bs_idx >= 5:
-                break
+            # if bs_idx >= 5:
+            #     break
             #break
 
         # print time

@@ -598,7 +598,7 @@ class ActorRolloutRefWorker(Worker):
             t1 = perf_counter()
             output = self.rollout.generate_sequences(prompts=prompts)
             t2 = perf_counter()
-            if is_first_tp_rank == 0:
+            if is_first_tp_rank:
                 print(f'[GENTIME] {rank=}, {t2-t1:.2f}s')
 
             log_gpu_memory_usage('After rollout generation', logger=logger)
