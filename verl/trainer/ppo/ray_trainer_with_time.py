@@ -17,7 +17,8 @@ This trainer supports model-agonistic model initialization with huggingface
 """
 
 # tp size for each worker
-MODEL_DEPLOYMENT = [1, 1, 1, 1, 1, 1, 1, 1]
+#MODEL_DEPLOYMENT = [1, 1, 1, 1, 1, 1, 1, 1]
+MODEL_DEPLOYMENT = [2,2,2,2]
 
 import os
 import sys
@@ -353,8 +354,32 @@ class ReqScheduler:
             return self.table[prompt]
         return None
 
-    def update_table(self):
-        return
+    def update_table(self, raw_prompt_ids, responses):
+        new_table = {}
+        for p, r in zip(raw_prompt_ids, responses):
+            p = tuple(p)
+            r = tuple(r)
+            if p not in new_table:
+                new_table[p] = []
+            new_table[p].append(r)
+
+        # Aggregate prompts -> responses
+        agg = self.config.get('agg', 'mean')
+        if agg == 'max':
+            new_table = {k: max([len(x) for x in v]) for k, v in new_table.items()}
+        elif agg == 'min':
+            new_table = {k: min([len(x) for x in v]) for k, v in new_table.items()}
+        elif agg == 'mean':
+            new_table = {k: int(np.mean([len(x) for x in v])) for k, v in new_table.items()}
+        elif agg =='median':
+            new_table = {k: int(np.median([len(x) for x in v])) for k, v in new_table.items()}
+        else:
+            raise ValueError(f"Unknown agg {agg}")
+        
+        # add or overwrite
+        for k, v in new_table.items():
+            self.table[k] = v
+        print(f'[ReqScheduler] {len(self.table)=}')
 
     def log_seqlen(self, raw_prompt_ids, responses, prefix):
         # print(f'{type(raw_prompt_ids)}, {type(responses)}, {len(raw_prompt_ids)}, {len(responses)}')
@@ -467,7 +492,8 @@ class ReqScheduler:
         if MODEL_DEPLOYMENT is None:
             n_short_worker = dp_size
         else:
-            n_short_worker = sum(MODEL_DEPLOYMENT) - MODEL_DEPLOYMENT[0] + 1
+            #n_short_worker = sum(MODEL_DEPLOYMENT) - MODEL_DEPLOYMENT[0] + 1
+            n_short_worker = len(MODEL_DEPLOYMENT)-1
 
         short_worker_cnt = 1
 
@@ -480,7 +506,7 @@ class ReqScheduler:
                 # round-robin the rest prompts
                 res.append(short_worker_cnt)
                 short_worker_cnt += 1
-                if short_worker_cnt >= n_short_worker:
+                if short_worker_cnt > n_short_worker:
                     short_worker_cnt = 1
 
         print(f"[ReqScheduler] p: {p}, {res=}")
@@ -1594,9 +1620,14 @@ class RayPPOTrainer(object):
                         model = self.config.actor_rollout_ref.model.path.split('/')[-1]
                         dataset = self.config.data.train_files.split('/')[-1]
                         prefix = f'{dataset}_{model}_E{epoch}B{bs_idx}_data'
+                        unpadded = unpad_responses(response, pad_ids), 
                         self.req_scheduler.log_seqlen(raw_prompt_ids, 
-                            unpad_responses(response, pad_ids), 
+                            unpadded,
                             prefix, 
+                        )
+                        self.req_scheduler.update_table(
+                            raw_prompt_ids,
+                            unpadded,
                         )
 
                     # recompute old_log_probs
@@ -1715,10 +1746,12 @@ class RayPPOTrainer(object):
                 print(timing_raw)
                 print('*' * 100)
                 timings.append(timing_raw)
-                # if bs_idx >= 5:
-                #     break
+                if bs_idx >= 5:
+                    break
+                #break
+            if bs_idx >= 5:
                 break
-            break
+            #break
 
         # print time
         keys = timings[0].keys()
