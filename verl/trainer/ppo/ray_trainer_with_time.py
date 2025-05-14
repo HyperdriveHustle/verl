@@ -344,6 +344,7 @@ class ReqScheduler:
             ans = {k: int(np.median([len(x) for x in v])) for k, v in ans.items()}
         else:
             raise ValueError(f"Unknown agg {agg}")
+        print(f'[ReqScheduler] Table-Size: {len(self.table)=}')
         return ans
 
     def lookup_table(self, prompt):
@@ -379,7 +380,7 @@ class ReqScheduler:
         # add or overwrite
         for k, v in new_table.items():
             self.table[k] = v
-        print(f'[ReqScheduler] {len(self.table)=}')
+        print(f'[ReqScheduler] Table-Size: {len(self.table)=}')
 
     def log_seqlen(self, raw_prompt_ids, responses, prefix):
         # print(f'{type(raw_prompt_ids)}, {type(responses)}, {len(raw_prompt_ids)}, {len(responses)}')

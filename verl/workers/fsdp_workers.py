@@ -535,7 +535,10 @@ class ActorRolloutRefWorker(Worker):
         else:
             cumulative_sum = 0
             my_req_idx = -1
+            is_first_tp_rank = False
             for i, num in enumerate(self.model_deployment):
+                if rank == cumulative_sum:
+                    is_first_tp_rank = True
                 cumulative_sum += num
                 if rank < cumulative_sum:
                     my_req_idx = i
@@ -595,7 +598,7 @@ class ActorRolloutRefWorker(Worker):
             t1 = perf_counter()
             output = self.rollout.generate_sequences(prompts=prompts)
             t2 = perf_counter()
-            if rank % 2 == 0:
+            if is_first_tp_rank == 0:
                 print(f'[GENTIME] {rank=}, {t2-t1:.2f}s')
 
             log_gpu_memory_usage('After rollout generation', logger=logger)
