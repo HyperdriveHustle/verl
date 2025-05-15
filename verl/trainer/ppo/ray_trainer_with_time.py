@@ -18,7 +18,8 @@ This trainer supports model-agonistic model initialization with huggingface
 
 # tp size for each worker
 #MODEL_DEPLOYMENT = [1, 1, 1, 1, 1, 1, 1, 1]
-MODEL_DEPLOYMENT = [2,2,2,2]
+MODEL_DEPLOYMENT = [2, 1, 1, 1, 1, 1, 1]
+#MODEL_DEPLOYMENT = [2,2,2,2]
 
 import os
 import sys
@@ -478,13 +479,10 @@ class ReqScheduler:
     
     def long_short(self, outlens, dp_size, tp_size, config):
         p = np.percentile(outlens, config.percentile)
-        long = []
-        short = []
+        long = set()
         for i in range(len(outlens)):
             if outlens[i] > p:
-                long.append(i)
-            else:
-                short.append(i)
+                long.add(i)
 
         # TODO assume only 1 long workers, the rest is short worker 
         # n_long_worker = dp_size//2
@@ -496,19 +494,40 @@ class ReqScheduler:
             #n_short_worker = sum(MODEL_DEPLOYMENT) - MODEL_DEPLOYMENT[0] + 1
             n_short_worker = len(MODEL_DEPLOYMENT)-1
 
-        short_worker_cnt = 1
-
-        res = []
+        # 1. even_prompt for the rest:
+        #short_worker_cnt = 1
+        #res = []
+        #for i in range(len(outlens)):
+        #    if i in long:
+        #        # only one long worker
+        #        res.append(0)
+        #    else:
+        #        # round-robin the rest prompts
+        #        res.append(short_worker_cnt)
+        #        short_worker_cnt += 1
+        #        if short_worker_cnt > n_short_worker:
+        #            short_worker_cnt = 1
+        
+        # 2. even_token for the rest
+        res = [None for _ in range(len(outlens))]
+        total_num_token_for_short = 0
         for i in range(len(outlens)):
             if i in long:
                 # only one long worker
-                res.append(0)
+                res[i] = 0
             else:
-                # round-robin the rest prompts
-                res.append(short_worker_cnt)
-                short_worker_cnt += 1
-                if short_worker_cnt > n_short_worker:
-                    short_worker_cnt = 1
+                total_num_token_for_short += outlens[i]
+                
+        per_dp = total_num_token_for_short // n_short_worker + 1
+        group_idx = 1
+        cnt = 0
+        for i in range(len(outlens)):
+            if i not in long:
+                res[i] = group_idx
+                cnt += outlens[i]
+                if cnt >= per_dp:
+                    group_idx += 1
+                    cnt = 0
 
         print(f"[ReqScheduler] p: {p}, {res=}")
         return np.array(res, dtype=np.int32)
