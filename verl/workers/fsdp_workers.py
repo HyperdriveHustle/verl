@@ -529,13 +529,13 @@ class ActorRolloutRefWorker(Worker):
         tp_size = config.get('tensor_model_parallel_size', 1)
         # 
         #
+        is_first_tp_rank = False
         if self.model_deployment is None:
             # 0, 1, 2, 3 -> 0; 4, 5, 6, 7 -> 1
             my_req_idx = rank // tp_size
         else:
             cumulative_sum = 0
             my_req_idx = -1
-            is_first_tp_rank = False
             for i, num in enumerate(self.model_deployment):
                 if rank == cumulative_sum:
                     is_first_tp_rank = True

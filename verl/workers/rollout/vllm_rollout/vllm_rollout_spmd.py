@@ -117,7 +117,7 @@ class vLLMRollout(BaseRollout):
             idx = -1
             for i, num in enumerate(model_deployment):
                 cumulative_sum += num
-                if rank <= cumulative_sum:
+                if rank < cumulative_sum:
                     idx = i
                     break
             if idx == -1:
