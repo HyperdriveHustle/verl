@@ -118,4 +118,4 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     trainer.nnodes=${nnode} \
     trainer.save_freq=50 \
     trainer.test_freq=50 \
-    trainer.total_epochs=5 
+    trainer.total_epochs=3

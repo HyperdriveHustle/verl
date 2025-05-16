@@ -18,8 +18,8 @@ This trainer supports model-agonistic model initialization with huggingface
 
 # tp size for each worker
 #MODEL_DEPLOYMENT = [1, 1, 1, 1, 1, 1, 1, 1]
-MODEL_DEPLOYMENT = [2, 1, 1, 1, 1, 1, 1]
-#MODEL_DEPLOYMENT = [2,2,2,2]
+#MODEL_DEPLOYMENT = [2, 1, 1, 1, 1, 1, 1]
+MODEL_DEPLOYMENT = [2,2,2,2]
 
 import os
 import sys
@@ -1766,11 +1766,11 @@ class RayPPOTrainer(object):
                 print(timing_raw)
                 print('*' * 100)
                 timings.append(timing_raw)
-                # if bs_idx >= 5:
-                #     break
+                if bs_idx >= 10:
+                    break
                 #break
-            # if bs_idx >= 5:
-            #     break
+            if bs_idx >= 10:
+                break
             #break
 
         # print time
