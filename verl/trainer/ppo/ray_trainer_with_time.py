@@ -402,6 +402,41 @@ class ReqScheduler:
         output_file = f"{log_dir}/{prefix}_{file_num}.json"
         with open(output_file, 'w') as f:
             json.dump({'prompts': prompts, 'response': response}, f)
+    
+    def restore_order(self,
+                      gen_batch_output: DataProto,
+                      reqs_idx,
+                      n_samples,
+                    ):
+        # the output is permutated by req scheduler
+        # this step store the original orders
+        # 
+        bs = len(gen_batch_output)
+        assert bs % n_samples == 0, f'bs {bs} must be divisible by n_samples {n_samples}'
+        assert bs//n_samples == len(reqs_idx), f'bs//n_samples {bs//n_samples} != len(reqs_idx) {len(reqs_idx)}'
+
+        # e.g. [1, 0] -> [16, 17, ..., 31, 0, 1, ... , 15]
+        cnt = 0
+        global_idx = [None for _ in range(bs)]
+        group_idx = 0
+        max_id = max(reqs_idx)
+        while group_idx <= max_id:
+            for i, idx in enumerate(reqs_idx):
+                if idx == group_idx:
+                    start_position = i * n_samples
+                    end_position = start_position + n_samples
+                    global_idx[start_position: end_position] = [j for j in range(cnt, cnt+n_samples)]
+                    cnt += n_samples
+            group_idx += 1
+
+        assert len(global_idx) == bs, f'len(global_idx) {len(global_idx)} != bs {bs}'
+
+        #print(f'[RESTORE]')
+        #print(global_idx)
+        #print(reqs_idx)
+
+        global_idx = torch.tensor(global_idx)
+        gen_batch_output.reorder(global_idx)
 
     def sched(self, batch_dict: dict,
             world_size: int,
@@ -442,6 +477,7 @@ class ReqScheduler:
     
     def _sched(self, outlens, dp_size, tp_size):
         algo = self.config.algo
+        print(f"[ReqScheduler] algo: {algo}")
         method = getattr(self, algo)
         res = method(outlens, dp_size, tp_size, self.config)
 
@@ -1578,6 +1614,7 @@ class RayPPOTrainer(object):
 
                 # NOTE: we put raw_prompt_ids back to batch for repeated-interleave purpose and log seq len
                 batch.non_tensor_batch['raw_prompt_ids'] = raw_prompt_ids
+                reqs_idx = gen_batch.non_tensor_batch['reqs_idx']
                 print(
                     f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()} {type(raw_prompt_ids)}'
                 )
@@ -1609,6 +1646,10 @@ class RayPPOTrainer(object):
                             del gen_baseline_batch, gen_baseline_output
 
                     with _timer('post_processing', timing_raw):
+                        self.req_scheduler.restore_order(gen_batch_output, 
+                                                         reqs_idx,
+                                                         self.config.actor_rollout_ref.rollout.n,
+                                                        )
                         batch.non_tensor_batch["uid"] = np.array(
                             [str(uuid.uuid4()) for _ in range(len(batch.batch))],
                             dtype=object,
@@ -1766,11 +1807,11 @@ class RayPPOTrainer(object):
                 print(timing_raw)
                 print('*' * 100)
                 timings.append(timing_raw)
-                if bs_idx >= 10:
-                    break
+                # if bs_idx >= 10:
+                #     break
                 #break
-            if bs_idx >= 10:
-                break
+            # if bs_idx >= 10:
+            #     break
             #break
 
         # print time
