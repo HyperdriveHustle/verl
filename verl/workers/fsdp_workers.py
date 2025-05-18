@@ -580,12 +580,11 @@ class ActorRolloutRefWorker(Worker):
         if is_first_tp_rank:
             print(
                 f"[GEN]:\n"
-                f"  rank={rank}, len(my_idx)={len(my_idx)}, bs={bs}\n"
-                f"  idx.shape={idx.shape}, attention_mask.shape={attention_mask.shape}, position_ids.shape={position_ids.shape}\n"
-                f"  do_sample={do_sample}, is_validate={is_validate}\n"
-                f"  sampling_params={self.rollout.sampling_params}, local_rank={local_rank}, worker_gpus={worker_gpus}, device={device}\n"
-                f"[Stats]:\n"
-                f"  {rank=}, longest={longest}, shortest={shortest}, avg={avg:.2f}, std={std:.2f}"
+                # f"  rank={rank}, len(my_idx)={len(my_idx)}, bs={bs}\n"
+                # f"  idx.shape={idx.shape}, attention_mask.shape={attention_mask.shape}, position_ids.shape={position_ids.shape}\n"
+                # f"  do_sample={do_sample}, is_validate={is_validate}\n"
+                # f"  sampling_params={self.rollout.sampling_params}, local_rank={local_rank}, worker_gpus={worker_gpus}, device={device}\n"
+                f"  {rank=}, len(my_idx)={len(my_idx)}, longest={longest}, shortest={shortest}, avg={avg:.2f}, std={std:.2f}"
             )
 
         # Support all hardwares
