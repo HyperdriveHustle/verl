@@ -462,6 +462,7 @@ class ReqScheduler:
 
         # idx -> dp group idx:
         batch_dict['reqs_idx'] = res
+        batch_dict['outlens'] = np.array(outlens, dtype=np.int32)
     
     def print_stats(self, outlens, res):
         longest = max(outlens)
@@ -1603,7 +1604,7 @@ class RayPPOTrainer(object):
                         batch_keys=[
                             'input_ids', 'attention_mask', 'position_ids'
                         ],
-                        non_tensor_batch_keys=['raw_prompt_ids', 'reqs_idx'],
+                        non_tensor_batch_keys=['raw_prompt_ids', 'reqs_idx', 'outlens'],
                     )
 
                 # gh512: data examine

@@ -43,6 +43,12 @@ from verl.workers.sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManage
 from codetiming import Timer
 from time import perf_counter
 
+
+# gh512
+import numpy as np
+import gc
+
+
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv('VERL_PPO_LOGGING_LEVEL', 'WARN'))
 
@@ -348,7 +354,9 @@ class ActorRolloutRefWorker(Worker):
             max_num_batched_tokens = config.get('max_num_batched_tokens', 8192)
             max_model_len = config.max_model_len if config.max_model_len \
                             else config.prompt_length + config.response_length
-            print(f'[ROLLOUT-INIT] {rollout_device_mesh.shape}, {local_path}, {tensor_parallel_size=}, {config.response_length} {max_num_batched_tokens}, {max_model_len}, {config.enforce_eager}')
+
+            gen_dp_rank = rollout_device_mesh['dp'].get_local_rank()
+            print(f'[ROLLOUT-INIT] {rollout_device_mesh.shape}, {gen_dp_rank=} {local_path}, {tensor_parallel_size=}, {config.response_length} {max_num_batched_tokens}, {max_model_len}, {config.enforce_eager}')
             vllm_worker = rollout.inference_engine.llm_engine.model_executor.driver_worker.worker
             model = rollout.inference_engine.llm_engine.model_executor.driver_worker.worker.model_runner.model
             print(f'[ROLLOUT-INIT] {vLLMRollout}, {type(rollout.inference_engine.llm_engine.model_executor)}, {type(rollout.inference_engine.llm_engine.model_executor.driver_worker.worker)}, {vllm_worker.rank}, {vllm_worker.local_rank}, {type(model)}, {rollout.inference_engine.llm_engine.parallel_config=}')
@@ -507,6 +515,7 @@ class ActorRolloutRefWorker(Worker):
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
         if self._is_offload_optimizer:
             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
+        gc.collect()
         return output
 
     @register(dispatch_mode=Dispatch.REQ_DISTRIBUTION)
@@ -548,8 +557,16 @@ class ActorRolloutRefWorker(Worker):
 
         # fetch req
         reqs_idx = prompts.non_tensor_batch.pop('reqs_idx')
+        outlens = prompts.non_tensor_batch.pop('outlens')
         my_idx = [i for i, idx in enumerate(reqs_idx) if idx == my_req_idx]
         prompts = prompts.select_idxs(my_idx)
+        outlens = [outlens[i] for i in my_idx]
+
+        longest = max(outlens)
+        shortest = min(outlens)
+        avg = np.mean(outlens)
+        std = np.std(outlens)
+
         # if rank % 4 == 0:
         #     print(rank, len(prompts))
         #     print(my_idx)
@@ -560,9 +577,16 @@ class ActorRolloutRefWorker(Worker):
             # but not likely to get a empty req anyways
             raise RuntimeError(f'Empty reqs {rank} {tp_size=} {my_req_idx} {reqs_idx}')
 
-        print(
-            f'[GEN]: {len(my_idx)=}, {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {do_sample}, {is_validate}, {self.rollout.sampling_params=}, {rank=}, {local_rank}, {worker_gpus}, {device}'
-        )
+        if is_first_tp_rank:
+            print(
+                f"[GEN]:\n"
+                f"  rank={rank}, len(my_idx)={len(my_idx)}, bs={bs}\n"
+                f"  idx.shape={idx.shape}, attention_mask.shape={attention_mask.shape}, position_ids.shape={position_ids.shape}\n"
+                f"  do_sample={do_sample}, is_validate={is_validate}\n"
+                f"  sampling_params={self.rollout.sampling_params}, local_rank={local_rank}, worker_gpus={worker_gpus}, device={device}\n"
+                f"[Stats]:\n"
+                f"  {rank=}, longest={longest}, shortest={shortest}, avg={avg:.2f}, std={std:.2f}"
+            )
 
         # Support all hardwares
         prompts = prompts.to(torch.cuda.current_device())
@@ -605,6 +629,8 @@ class ActorRolloutRefWorker(Worker):
 
             output = self.rollout_sharding_manager.postprocess_data(output)
         output = output.to('cpu')
+
+        gc.collect()
 
         # clear kv cache
         log_gpu_memory_usage('After recompute log prob', logger=logger)
@@ -702,6 +728,7 @@ class ActorRolloutRefWorker(Worker):
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
 
         log_gpu_memory_usage('After compute_log_prob', logger=logger)
+        gc.collect()
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
@@ -729,6 +756,7 @@ class ActorRolloutRefWorker(Worker):
         if self.world_size > 1:
             self.ref_policy.actor_module._handle.reshard(True)
 
+        gc.collect()
         return output
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
