@@ -343,6 +343,8 @@ class ReqScheduler:
             ans = {k: int(np.mean([len(x) for x in v])) for k, v in ans.items()}
         elif agg =='median':
             ans = {k: int(np.median([len(x) for x in v])) for k, v in ans.items()}
+        elif agg == 'sum':
+            ans = {k: sum([len(x) for x in v]) for k, v in ans.items()}
         else:
             raise ValueError(f"Unknown agg {agg}")
         print(f'[ReqScheduler] Table-Size: {len(ans)=}')
@@ -375,6 +377,8 @@ class ReqScheduler:
             new_table = {k: int(np.mean([len(x) for x in v])) for k, v in new_table.items()}
         elif agg =='median':
             new_table = {k: int(np.median([len(x) for x in v])) for k, v in new_table.items()}
+        elif agg == 'sum':
+            new_table = {k: sum([len(x) for x in v]) for k, v in new_table.items()}
         else:
             raise ValueError(f"Unknown agg {agg}")
         
@@ -383,17 +387,18 @@ class ReqScheduler:
             self.table[k] = v
         print(f'[ReqScheduler] Table-Size: {len(self.table)=}')
 
-    def log_seqlen(self, raw_prompt_ids, responses, prefix):
-        # print(f'{type(raw_prompt_ids)}, {type(responses)}, {len(raw_prompt_ids)}, {len(responses)}')
+    def log_seqlen(self, raw_prompt_ids, responses, reqs_idx, prefix):
+        #print(f'{type(raw_prompt_ids)}, {type(responses)}, {type(reqs_idx)} {len(raw_prompt_ids)}, {len(responses)}, {len(reqs_idx)}')
         # lengths = []
         # for _, sublist in enumerate(data):
         #     length = len(sublist)
         #     lengths.append(length)
+        assert len(raw_prompt_ids) == len(responses), f'{len(raw_prompt_ids)}, {len(responses)}'
         prompts = []
         response = []
         for p, r in zip(raw_prompt_ids, responses):
-            prompts.append(p)
-            response.append(r)
+            prompts.append(tuple(p))
+            response.append(tuple(r))
         
         log_dir = self.config.log_dir
         os.makedirs(log_dir, exist_ok=True)
@@ -401,7 +406,10 @@ class ReqScheduler:
         file_num = len(data_files) + 1
         output_file = f"{log_dir}/{prefix}_{file_num}.json"
         with open(output_file, 'w') as f:
-            json.dump({'prompts': prompts, 'response': response}, f)
+            json.dump({'prompts': prompts, 
+                       'response': response,
+                       'reqs_idx': tuple(reqs_idx),
+            }, f)
     
     def restore_order(self,
                       gen_batch_output: DataProto,
@@ -1662,16 +1670,7 @@ class RayPPOTrainer(object):
                         )
                         batch = batch.union(gen_batch_output)
 
-                        batch.batch["response_mask"] = compute_response_mask(batch)
-                        # balance the number of valid tokens on each dp rank.
-                        # Note that this breaks the order of data inside the batch.
-                        # Please take care when you implement group based adv computation such as GRPO and rloo
-                        if self.config.trainer.balance_batch:
-                            self._balance_batch(batch, metrics=metrics)
-
-                        # compute global_valid tokens
-                        batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
-
+                        #####################################
                         # gh512: data examine2 (union-ed)
                         seq = batch.batch['input_ids']
                         response = batch.batch['responses']
@@ -1682,15 +1681,30 @@ class RayPPOTrainer(object):
                         model = self.config.actor_rollout_ref.model.path.split('/')[-1]
                         dataset = self.config.data.train_files.split('/')[-1]
                         prefix = f'{dataset}_{model}_E{epoch}B{bs_idx}_data'
-                        unpadded = unpad_responses(response, pad_ids), 
-                        self.req_scheduler.log_seqlen(raw_prompt_ids, 
+                        unpadded = unpad_responses(response, pad_ids)
+                        self.req_scheduler.log_seqlen(
+                            raw_prompt_ids, 
                             unpadded,
+                            reqs_idx,
                             prefix, 
                         )
                         self.req_scheduler.update_table(
                             raw_prompt_ids,
                             unpadded,
                         )
+                        # gh512: data examine2 (union-ed)
+                        #####################################
+
+                        batch.batch["response_mask"] = compute_response_mask(batch)
+                        # balance the number of valid tokens on each dp rank.
+                        # Note that this breaks the order of data inside the batch.
+                        # Please take care when you implement group based adv computation such as GRPO and rloo
+                        if self.config.trainer.balance_batch:
+                            self._balance_batch(batch, metrics=metrics)
+
+                        # compute global_valid tokens
+                        batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
+
 
                     # recompute old_log_probs
                     with _timer('old_log_prob', timing_raw):
@@ -1808,11 +1822,11 @@ class RayPPOTrainer(object):
                 print(timing_raw)
                 print('*' * 100)
                 timings.append(timing_raw)
-                # if bs_idx >= 10:
-                #     break
+                #if bs_idx >= 0:
+                #    break
                 #break
-            # if bs_idx >= 10:
-            #     break
+            #if bs_idx >= 0:
+            #    break
             #break
 
         # print time

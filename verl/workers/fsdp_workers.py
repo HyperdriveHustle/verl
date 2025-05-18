@@ -577,14 +577,29 @@ class ActorRolloutRefWorker(Worker):
             # but not likely to get a empty req anyways
             raise RuntimeError(f'Empty reqs {rank} {tp_size=} {my_req_idx} {reqs_idx}')
 
+        ps = prompts.non_tensor_batch['raw_prompt_ids']
+        inlens = [len(i) for i in ps]
+        totallens = [i + j for i, j in zip(inlens, outlens)]
         if is_first_tp_rank:
+            # ps = prompts.non_tensor_batch['raw_prompt_ids']
+            # inlens = [len(i) for i in ps]
+            # inlongest = max(inlens)
+            # inshortest = min(inlens)
+            # inavg = np.mean(inlens)
+            # instd = np.std(inlens)
+
             print(
                 f"[GEN]:\n"
                 # f"  rank={rank}, len(my_idx)={len(my_idx)}, bs={bs}\n"
                 # f"  idx.shape={idx.shape}, attention_mask.shape={attention_mask.shape}, position_ids.shape={position_ids.shape}\n"
                 # f"  do_sample={do_sample}, is_validate={is_validate}\n"
                 # f"  sampling_params={self.rollout.sampling_params}, local_rank={local_rank}, worker_gpus={worker_gpus}, device={device}\n"
-                f"  {rank=}, len(my_idx)={len(my_idx)}, longest={longest}, shortest={shortest}, avg={avg:.2f}, std={std:.2f}"
+
+                #
+                #f"  {rank=}, len(my_idx)={len(my_idx)}, longest={longest}, shortest={shortest}, avg={avg:.2f}, std={std:.2f} | {inlongest}, {inshortest}, {inavg:.2f}, {instd:.2f}\n"
+
+                #
+                f"  {rank=}, len(my_idx)={len(my_idx)}, longest={longest}, shortest={shortest}, avg={avg:.2f}, std={std:.2f}\n"
             )
 
         # Support all hardwares
@@ -622,7 +637,20 @@ class ActorRolloutRefWorker(Worker):
             output = self.rollout.generate_sequences(prompts=prompts)
             t2 = perf_counter()
             if is_first_tp_rank:
-                print(f'[GENTIME] {rank=}, {t2-t1:.2f}s')
+                inlongest = max(inlens)
+                inshortest = min(inlens)
+                inavg = np.mean(inlens)
+                instd = np.std(inlens)
+
+                tlongest = max(totallens)
+                tshortest = min(totallens)
+                tavg = np.mean(totallens)
+                tstd = np.std(totallens)
+
+                osum  = sum(outlens)
+                tsum = sum(totallens)
+                insum = sum(inlens)
+                print(f'[GENTIME] {rank=}, {t2-t1:.2f}s; Sum: {tsum}, {osum}, {insum} ; Total: {tlongest}, {tshortest}, {tavg}, {tstd}; In: {inlongest}, {inshortest}, {inavg:.2f}, {instd:.2f}')
 
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
