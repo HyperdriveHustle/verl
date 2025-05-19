@@ -557,7 +557,7 @@ class ReqScheduler:
         # n_short_worker = dp_size - n_long_worker
         global MODEL_DEPLOYMENT
         if MODEL_DEPLOYMENT is None:
-            n_short_worker = dp_size
+            n_short_worker = dp_size-1
         else:
             #n_short_worker = sum(MODEL_DEPLOYMENT) - MODEL_DEPLOYMENT[0] + 1
             n_short_worker = len(MODEL_DEPLOYMENT)-1
@@ -1136,7 +1136,7 @@ class RayPPOTrainer(object):
             dataset=self.train_dataset,
             batch_size=self.config.data.train_batch_size,
             num_workers=8,
-            drop_last=False,
+            drop_last=True,
             collate_fn=collate_fn,
             sampler=sampler)
 
@@ -1169,7 +1169,7 @@ class RayPPOTrainer(object):
             batch_size=len(self.val_dataset),
             num_workers=8,
             shuffle=False,
-            drop_last=False,
+            drop_last=True,
             collate_fn=collate_fn)
 
         assert len(self.train_dataloader) >= 1
