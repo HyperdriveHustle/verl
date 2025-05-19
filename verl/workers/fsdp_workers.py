@@ -542,7 +542,7 @@ class ActorRolloutRefWorker(Worker):
         if self.model_deployment is None:
             # 0, 1, 2, 3 -> 0; 4, 5, 6, 7 -> 1
             my_req_idx = rank // tp_size
-            if rank % my_req_idx == 0:
+            if rank == 0 or rank % my_req_idx == 0:
                 is_first_tp_rank = True
         else:
             cumulative_sum = 0
