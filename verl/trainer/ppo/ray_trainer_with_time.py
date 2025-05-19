@@ -306,6 +306,9 @@ class ReqScheduler:
         self.table: dict[tuple[int], int] = self.load_table()
     
     def load_table(self):
+        if self.config.seq_dir is None:
+            return {}
+
         # Find all JSON files in the directory
         json_files = glob.glob(os.path.join(self.config.seq_dir, "*.json"))
 
@@ -486,10 +489,25 @@ class ReqScheduler:
     
     def _sched(self, outlens, dp_size, tp_size):
         algo = self.config.algo
-        print(f"[ReqScheduler] algo: {algo}")
+
+        # if has None, the prompt is not in table
+        # so we use even_prompt
+        has_none = False
+        for outlen in outlens:
+            if outlen is None:
+                has_none = True
+                break
+        
+        if has_none:
+            print(f"[ReqScheduler] has None, reset {algo} to even_prompt")
+            algo = 'even_prompt'
+            outlens = [-1] * len(outlens)  # so that print stats will not fail
+        else:
+            print(f"[ReqScheduler] algo: {algo}")
+        
+        # get method
         method = getattr(self, algo)
         res = method(outlens, dp_size, tp_size, self.config)
-
         self.print_stats(outlens, res)
         return res
     
