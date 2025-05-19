@@ -542,6 +542,8 @@ class ActorRolloutRefWorker(Worker):
         if self.model_deployment is None:
             # 0, 1, 2, 3 -> 0; 4, 5, 6, 7 -> 1
             my_req_idx = rank // tp_size
+            if rank % my_req_idx == 0:
+                is_first_tp_rank = True
         else:
             cumulative_sum = 0
             my_req_idx = -1
@@ -581,13 +583,6 @@ class ActorRolloutRefWorker(Worker):
         inlens = [len(i) for i in ps]
         totallens = [i + j for i, j in zip(inlens, outlens)]
         if is_first_tp_rank:
-            # ps = prompts.non_tensor_batch['raw_prompt_ids']
-            # inlens = [len(i) for i in ps]
-            # inlongest = max(inlens)
-            # inshortest = min(inlens)
-            # inavg = np.mean(inlens)
-            # instd = np.std(inlens)
-
             print(
                 f"[GEN]:\n"
                 # f"  rank={rank}, len(my_idx)={len(my_idx)}, bs={bs}\n"
@@ -637,6 +632,7 @@ class ActorRolloutRefWorker(Worker):
             output = self.rollout.generate_sequences(prompts=prompts)
             t2 = perf_counter()
             if is_first_tp_rank:
+                # just printing
                 inlongest = max(inlens)
                 inshortest = min(inlens)
                 inavg = np.mean(inlens)
@@ -650,7 +646,32 @@ class ActorRolloutRefWorker(Worker):
                 osum  = sum(outlens)
                 tsum = sum(totallens)
                 insum = sum(inlens)
-                print(f'[GENTIME] {rank=}, {t2-t1:.2f}s; Sum: {tsum}, {osum}, {insum} ; Total: {tlongest}, {tshortest}, {tavg}, {tstd}; In: {inlongest}, {inshortest}, {inavg:.2f}, {instd:.2f}')
+
+                # actual out
+                responses = output.batch['responses']
+                pad_id = self.tokenizer.pad_token_id
+                padded_tensor = responses.cpu()
+                # Convert tensor to list if it's a tensor
+                if isinstance(padded_tensor, torch.Tensor):
+                    padded_list = padded_tensor.tolist()
+                else:
+                    padded_list = padded_tensor
+                unpadded_responses = []
+                for padded_response in padded_list:
+                    try:
+                        pad_start_idx = padded_response.index(pad_id)
+                        original_response = padded_response[:pad_start_idx]
+                    except ValueError:
+                        original_response = padded_response
+                    unpadded_responses.append(original_response)
+                
+                actual_outlen = [len(resp) for resp in unpadded_responses]
+                actual_sum = np.sum(actual_outlen)
+                actual_mean = np.mean(actual_outlen)
+                actual_max = np.max(actual_outlen)
+                actual_min = np.min(actual_outlen)
+
+                print(f'[GENTIME] {rank=}, {t2-t1:.2f}s; Sum: {tsum}, {osum}, {insum} ; Total: {tlongest}, {tshortest}, {tavg}, {tstd}; In: {inlongest}, {inshortest}, {inavg:.0f}, {instd:.0f}; ACTUAL: {actual_sum}, {actual_mean}, {actual_max}, {actual_min}')
 
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
