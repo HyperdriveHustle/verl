@@ -19,7 +19,8 @@ This trainer supports model-agonistic model initialization with huggingface
 # tp size for each worker
 #MODEL_DEPLOYMENT = [1, 1, 1, 1, 1, 1, 1, 1]
 #MODEL_DEPLOYMENT = [2, 1, 1, 1, 1, 1, 1]
-MODEL_DEPLOYMENT = [2,2,2,2]
+#MODEL_DEPLOYMENT = [2,2,2,2]
+MODEL_DEPLOYMENT = None
 
 import os
 import sys
@@ -502,7 +503,10 @@ class ReqScheduler:
         if has_none:
             print(f"[ReqScheduler] has None, reset {algo} to even_prompt")
             algo = 'even_prompt'
-            outlens = [-1] * len(outlens)  # so that print stats will not fail
+
+            # so that print stats will not fail
+            for i in range(len(outlens)):
+                outlens[i] = -1
         else:
             print(f"[ReqScheduler] algo: {algo}")
         
@@ -517,7 +521,7 @@ class ReqScheduler:
         res = np.array(res, dtype=np.int32)
         return res
 
-    def even_prompt(self, outlens, dp_size, tp_size, config):
+    def even_prompt(self, outlens: list[int], dp_size, tp_size, config):
         per_dp = len(outlens) // dp_size
         res = []
         cnt = 0
