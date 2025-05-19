@@ -390,7 +390,7 @@ class ReqScheduler:
             self.table[k] = v
         print(f'[ReqScheduler] Table-Size: {len(self.table)=}')
 
-    def log_seqlen(self, raw_prompt_ids, responses, reqs_idx, prefix):
+    def log_seqlen(self, raw_prompt_ids, responses, reqs_idx, outlens, prefix):
         #print(f'{type(raw_prompt_ids)}, {type(responses)}, {type(reqs_idx)} {len(raw_prompt_ids)}, {len(responses)}, {len(reqs_idx)}')
         # lengths = []
         # for _, sublist in enumerate(data):
@@ -412,6 +412,7 @@ class ReqScheduler:
             json.dump({'prompts': prompts, 
                        'response': response,
                        'reqs_idx': tuple(reqs_idx),
+                       'outlens': tuple(outlens),
             }, f)
     
     def restore_order(self,
@@ -1642,6 +1643,7 @@ class RayPPOTrainer(object):
                 # NOTE: we put raw_prompt_ids back to batch for repeated-interleave purpose and log seq len
                 batch.non_tensor_batch['raw_prompt_ids'] = raw_prompt_ids
                 reqs_idx = gen_batch.non_tensor_batch['reqs_idx']
+                outlens = gen_batch.non_tensor_batch['outlens']
                 print(
                     f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()} {type(raw_prompt_ids)}'
                 )
@@ -1704,6 +1706,7 @@ class RayPPOTrainer(object):
                             raw_prompt_ids, 
                             unpadded,
                             reqs_idx,
+                            outlens,
                             prefix, 
                         )
                         self.req_scheduler.update_table(
