@@ -500,15 +500,16 @@ class ReqScheduler:
                 has_none = True
                 break
         
+        agg = self.config.get('agg', 'mean')
         if has_none:
-            print(f"[ReqScheduler] has None, reset {algo} to even_prompt")
+            print(f"[ReqScheduler] has None, reset {algo} to even_prompt; {agg=}")
             algo = 'even_prompt'
 
             # so that print stats will not fail
             for i in range(len(outlens)):
                 outlens[i] = -1
         else:
-            print(f"[ReqScheduler] algo: {algo}")
+            print(f"[ReqScheduler] algo: {algo}, {agg=}")
         
         # get method
         method = getattr(self, algo)
