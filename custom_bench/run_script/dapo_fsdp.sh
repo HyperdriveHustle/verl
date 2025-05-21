@@ -43,15 +43,19 @@ offload=True
 #model=/workspace/models/Qwen25-32B-Base
 model=/workspace/models/Qwen2.5-7B-Instruct-1M
 
-seq_dir=/workspace/dapo_8k_seq
+seq_dir=/workspace/dapo_seq
 log_dir=/workspace/tmp_log_seq
-cap_dataset_size=$((1024 * 8))
+cap_dataset_size=$((1024 * 80000))
 filter_overlong_prompts=False
 
-req_algo="long_short"
+#req_algo="long_short"
+#req_algo="even_prompt"
+req_algo="even_token"
 percentile=90
 
-echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length, req_algo = $req_algo, percentile = $percentile"
+agg="max"
+
+echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length, req_algo = $req_algo, percentile = $percentile, agg = $agg"
 
 sleep 1
 
@@ -80,7 +84,7 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     data.max_response_length=${max_response_length} \
     req_scheduler.seq_dir="$seq_dir" \
     req_scheduler.log_dir="$log_dir" \
-    req_scheduler.agg="mean" \
+    req_scheduler.agg="$agg" \
     req_scheduler.algo="$req_algo" \
     req_scheduler.percentile=$percentile \
     actor_rollout_ref.model.path=${model} \
@@ -119,4 +123,4 @@ python3 -u -m verl.trainer.main_ppo_with_time \
     trainer.nnodes=${nnode} \
     trainer.save_freq=50 \
     trainer.test_freq=50 \
-    trainer.total_epochs=3
+    trainer.total_epochs=30
