@@ -14,14 +14,19 @@
 """
 Contains a resharding manager that binds weights from FSDP zero3 to XPerfGPT
 """
+from .base import BaseShardingManager
 
 from torch.distributed.device_mesh import DeviceMesh
 
-from verl import DataProto
+from verl.utils.torch_functional import allgather_dict_tensors
 from verl.protocol import all_gather_data_proto
-from verl.utils.ulysses import get_ulysses_sequence_parallel_group, set_ulysses_sequence_parallel_group
+from verl.utils.ulysses import set_ulysses_sequence_parallel_group, get_ulysses_sequence_parallel_group
+import numpy as np
 
-from .base import BaseShardingManager
+import torch
+import torch.distributed
+
+from verl import DataProto
 
 
 class FSDPUlyssesShardingManager(BaseShardingManager):
@@ -39,7 +44,7 @@ class FSDPUlyssesShardingManager(BaseShardingManager):
             # We have a global SP group
             # so we have to change to use model-specific sp group
             self.prev_sp_group = get_ulysses_sequence_parallel_group()
-            set_ulysses_sequence_parallel_group(self.device_mesh["sp"].get_group())
+            set_ulysses_sequence_parallel_group(self.device_mesh['sp'].get_group())
             # TODO: check how to set seed for each model
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -56,7 +61,8 @@ class FSDPUlyssesShardingManager(BaseShardingManager):
         In Ulysses, we need to make sure the same data is used across a SP group
         """
         if self.device_mesh is not None:
-            group = self.device_mesh["sp"].get_group()
+            sp_size = self.device_mesh['sp'].size()
+            group = self.device_mesh['sp'].get_group()
 
             all_gather_data_proto(data=data, process_group=group)
         return data
@@ -66,7 +72,7 @@ class FSDPUlyssesShardingManager(BaseShardingManager):
         Split the data to follow FSDP partition
         """
         if self.device_mesh is not None:
-            sp_size = self.device_mesh["sp"].size()
-            sp_rank = self.device_mesh["sp"].get_local_rank()
+            sp_size = self.device_mesh['sp'].size()
+            sp_rank = self.device_mesh['sp'].get_local_rank()
             data = data.chunk(chunks=sp_size)[sp_rank]
         return data

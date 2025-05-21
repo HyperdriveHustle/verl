@@ -15,13 +15,11 @@
 
 
 def _default_compute_score(data_source, solution_str, ground_truth, extra_info=None):
-    if data_source == "openai/gsm8k":
+    if data_source == 'openai/gsm8k':
         from . import gsm8k
-
         res = gsm8k.compute_score(solution_str, ground_truth)
-    elif data_source in ["lighteval/MATH", "DigitalLearningGmbH/MATH-lighteval"]:
+    elif data_source in ['lighteval/MATH', 'DigitalLearningGmbH/MATH-lighteval']:
         from . import math
-
         res = math.compute_score(solution_str, ground_truth)
         # [Optional] Math-Verify Integration
         # For enhanced accuracy, consider utilizing Math-Verify (https://github.com/huggingface/Math-Verify).
@@ -30,29 +28,33 @@ def _default_compute_score(data_source, solution_str, ground_truth, extra_info=N
 
         # from . import math_verify
         # res = math_verify.compute_score(solution_str, ground_truth)
-    elif data_source == "math_dapo" or data_source.startswith("aime"):
+    elif data_source == 'deepmath_103k' or data_source.startswith("math_verify"):
+        from . import math_verify
+        res = math_verify.compute_score(solution_str, ground_truth)
+    elif data_source == 'math_dapo' or data_source.startswith("aime") or data_source.startswith("dapo_"):
         from . import math_dapo
-
         res = math_dapo.compute_score(solution_str, ground_truth)
     elif data_source in [
-        "numina_aops_forum",
-        "numina_synthetic_math",
-        "numina_amc_aime",
-        "numina_synthetic_amc",
-        "numina_cn_k12",
-        "numina_olympiads",
+            'numina_aops_forum', 'numina_synthetic_math', 'numina_amc_aime', 'numina_synthetic_amc', 'numina_cn_k12',
+            'numina_olympiads'
     ]:
         from . import prime_math
-
         res = prime_math.compute_score(solution_str, ground_truth)
-    elif data_source in ["codecontests", "apps", "codeforces", "taco"]:
+    elif data_source in ['codecontests', 'apps', 'codeforces', 'taco']:
         from . import prime_code
-
         res = prime_code.compute_score(solution_str, ground_truth, continuous=True)
-    elif data_source in ["hiyouga/geometry3k"]:
+    elif data_source in ['hiyouga/geometry3k']:
         from . import geo3k
-
         res = geo3k.compute_score(solution_str, ground_truth)
+    elif data_source in ['/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/math_train/reinforce_step150_wrong_answer/train_sample20_less_than_0d8.jsonl']:
+        from . import self_developed
+        res = self_developed.compute_score(solution_str, ground_truth)
+    elif data_source in ['kk_logic']:
+        from . import knight_and_knave
+        res = knight_and_knave.compute_score(solution_str, ground_truth)
+    elif data_source in ['count_down']:
+        from . import count_down
+        res = count_down.compute_score(solution_str, ground_truth)
     else:
         raise NotImplementedError(f"Reward function is not implemented for {data_source=}")
 

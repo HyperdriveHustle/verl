@@ -52,7 +52,8 @@ While **Megatron** current checkpoint structure is:
     │   │   │   │   └── model_states.pt
     │   │   │   └── mp_rank_xx_xxx
     │   │   ├── optim
-    │   │   │   └── distrib_optim_pp{a}_tp{b}_cp{c}_dp{d}.pt
+    │   │   │   ├── distrib_optim_pp{x}_tp{y}.pt
+    │   │   │   └── distrib_optim_pp{x}_tp{y}.pt
     │   │   └── rng_states
     │   └── critic
     │   │   ├── huggingface
@@ -83,11 +84,10 @@ So example use of Megatron model merger is:
 
 .. code:: bash
 
-    python scripts/model_merger.py \
-        --backend megatron \
-        --tie-word-embedding \
-        --hf_model_path Qwen/Qwen2.5-0.5B \
-        --local_dir checkpoints/verl_megatron_gsm8k_examples/qwen2_5_0b5_megatron_saveload/global_step_1/actor
+    python3 scripts/model_merger.py --backend megatron \
+        --is-value-model \
+        --hf_model_path Qwen/Qwen2-7B \
+        --local_dir checkpoints/verl_megatron_gsm8k_examples/deepseek_megatron_checkpoint_saveload/global_step_1/actor/model
 
 Megatron Merger details
 -----------------------
@@ -102,28 +102,6 @@ There are 3 ways to correct this behavior:
 3. The Checkpoint merger do this work, calculate the actual ``offset`` from ``state_dict`` only, a little complex.
 
 Current implementation use solution 2.
-
-
-HuggingFace to Megatron DistCheckpoint details
-----------------------------------------------
-
-If your model is quite huge, we recommend you to use Megatron dist-checkpoint to load the model.
-Megatron dist-checkpoint supports loading with different kinds of model parallelism,
-and it is much faster than the original checkpoint loading.
-
-To convert original HuggingFace model to Megatron dist-checkpoint,
-you can use the ``scripts/converter_hf_to_mcore.py`` script. Large MoE models are temporarily supported with CPU initialization,
-which is a little slower. While we are working on a better solution to support large models.
-
-Example command to convert the model is as follows:
-
-.. code:: bash
-
-    python scripts/converter_hf_to_mcore.py \
-        --hf_model_path Qwen/Qwen1.5-MoE-A2.7B-Chat \
-        --output_path /mnt/disk/Qwen/Qwen1.5-MoE-A2.7B-Chat \
-        --use_cpu_initialization    # Only work for MoE models
-
 
 Original Checkpoint Utils
 -------------------------

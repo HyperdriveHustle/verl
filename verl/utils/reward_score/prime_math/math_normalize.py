@@ -36,7 +36,6 @@ This logic is largely copied from the Hendrycks' MATH release (math_equivalence)
 
 From: https://github.com/openai/prm800k/blob/main/prm800k/grading/math_normalize.py
 """
-
 import re
 from typing import Optional
 
@@ -51,7 +50,7 @@ def normalize_answer(answer: Optional[str]) -> Optional[str]:
         if m is not None:
             answer = m.group("text").strip()
         return _strip_string(answer)
-    except:  # noqa: E722
+    except:
         return answer
 
 
@@ -67,7 +66,7 @@ def _fix_fracs(string):
             else:
                 try:
                     assert len(substr) >= 2
-                except:  # noqa: E722
+                except:
                     return string
                 a = substr[0]
                 b = substr[1]
@@ -98,7 +97,7 @@ def _fix_a_slash_b(string):
         assert string == "{}/{}".format(a, b)
         new_string = "\\frac{" + str(a) + "}{" + str(b) + "}"
         return new_string
-    except:  # noqa: E722
+    except:
         return string
 
 
@@ -169,8 +168,9 @@ def _strip_string(string):
         string = "0" + string
 
     # to consider: get rid of e.g. "k = " or "q = " at beginning
-    if len(string.split("=")) == 2 and len(string.split("=")[0]) <= 2:
-        string = string.split("=")[1]
+    if len(string.split("=")) == 2:
+        if len(string.split("=")[0]) <= 2:
+            string = string.split("=")[1]
 
     # fix sqrt3 --> sqrt{3}
     string = _fix_sqrt(string)
