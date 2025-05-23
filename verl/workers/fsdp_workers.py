@@ -41,6 +41,13 @@ from verl.utils.checkpoint.fsdp_checkpoint_manager import FSDPCheckpointManager
 from verl.workers.sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManager
 
 from codetiming import Timer
+from time import perf_counter
+
+
+# gh512
+import numpy as np
+import gc
+
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv('VERL_PPO_LOGGING_LEVEL', 'WARN'))
@@ -73,12 +80,13 @@ class ActorRolloutRefWorker(Worker):
     or a hybrid engine based on the config.rollout
     """
 
-    def __init__(self, config: DictConfig, role: str):
+    def __init__(self, config: DictConfig, role: str, model_deployment=None):
         super().__init__()
         self.config = config
+        self.model_deployment = model_deployment
         import torch.distributed
         if not torch.distributed.is_initialized():
-            torch.distributed.init_process_group()
+            torch.distributed.init_process_group(backend='nccl')
 
         # build device mesh for FSDP
         world_size = torch.distributed.get_world_size()
@@ -137,6 +145,15 @@ class ActorRolloutRefWorker(Worker):
             self.config.ref.log_prob_micro_batch_size //= (self.device_mesh.size() //
                                                            self.ulysses_sequence_parallel_size)
             self.config.ref.log_prob_micro_batch_size_per_gpu = self.config.ref.log_prob_micro_batch_size
+
+        device = torch.cuda.current_device()
+        rank = torch.distributed.get_rank()
+        worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
+        local_rank = os.environ.get("LOCAL_RANK", "None")
+        #torch.cuda.set_device(local_rank)
+        print(
+            f'[ActorRollout-INIT]: {role=} {rank=} {local_rank=} {world_size=}, CUDA_VISIBLE_DEVICES: {worker_gpus} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}'
+        )
 
     def _build_model_optimizer(self,
                                model_path,
@@ -201,22 +218,7 @@ class ActorRolloutRefWorker(Worker):
                                                               config=actor_model_config,
                                                               attn_implementation='flash_attention_2',
                                                               trust_remote_code=trust_remote_code)
-            # @xiaohuihu: Freeze telechat specific parameters after loading the model
-            ignored_modules = []
-            print(f'>> local_path = {local_path}')
-            if "tele" in local_path.lower():
-                for name, module in actor_module.named_modules():
-                    print(f"> telechat-rank-{self.rank}: module name = {name}")
-                    # if any(nd in name for nd in ["self_attn.q_proj.bias", "self_attn.k_proj.bias", 
-                    #     "self_attn.v_proj.bias", "mlp.gate_proj.bias", 
-                    #     "mlp.up_proj.bias"]):
-                    if any(nd in name for nd in ["self_attn.q_proj", "self_attn.k_proj", 
-                        "self_attn.v_proj", "mlp.gate_proj", 
-                        "mlp.up_proj"]):
-                        ignored_modules.append(module)
-                        print(f"> Adding module to ignored_modules: {name}")
-            print(f">>> ignored_modules = {len(ignored_modules)}")
-            
+
             if use_remove_padding or self.ulysses_sequence_parallel_size > 1:
                 from verl.models.transformers.monkey_patch import apply_monkey_patch
                 apply_monkey_patch(model=actor_module, ulysses_sp_size=self.ulysses_sequence_parallel_size)
@@ -278,19 +280,6 @@ class ActorRolloutRefWorker(Worker):
             sync_module_states=True,
             device_mesh=self.device_mesh,
             forward_prefetch=False)
-        
-        # @xiaohuihu: Freeze telechat specific parameters after loading the model
-        # 将ignored_modules的参数冻结
-        print(f">>> start to freeze ignored_modules = {len(ignored_modules)}")
-        for module in ignored_modules:
-            print(f">>>>> check if need to freeze: module =  {module}")
-            for name, param in module.named_parameters():
-                print(f">>>>> check if need to freeze: module name {name}")
-                if any(nd in name for nd in ["self_attn.q_proj.bias", "self_attn.k_proj.bias", 
-                        "self_attn.v_proj.bias", "mlp.gate_proj.bias", 
-                        "mlp.up_proj.bias"]):
-                    param.requires_grad = False
-                    print(f">>>>> telechat: Freezing parameter {name}")
 
         log_gpu_memory_usage('After Actor FSDP init', logger=logger)
 
@@ -338,9 +327,11 @@ class ActorRolloutRefWorker(Worker):
         elif rollout_name == 'vllm':
             from verl.workers.rollout.vllm_rollout import vLLMRollout, vllm_mode
             from verl.workers.sharding_manager import FSDPVLLMShardingManager
-            log_gpu_memory_usage(f'Before building {rollout_name} rollout', logger=None)
+
+            #log_gpu_memory_usage(f'Before building {rollout_name} rollout', logger=None)
+            log_gpu_memory_usage(f'[ROLLOUT-INIT] before rollout')
+
             local_path = copy_to_local(self.config.model.path)
-            print(vllm_mode)
             if vllm_mode == 'customized':
                 rollout = vLLMRollout(actor_module=self.actor_module_fsdp,
                                       config=self.config.rollout,
@@ -352,10 +343,26 @@ class ActorRolloutRefWorker(Worker):
                                       tokenizer=self.tokenizer,
                                       model_hf_config=self.actor_model_config,
                                       device_mesh=rollout_device_mesh,
-                                      trust_remote_code=trust_remote_code)
+                                      trust_remote_code=trust_remote_code,
+                                      model_deployment=self.model_deployment,
+                                      )
             else:
                 raise NotImplementedError("vllm_mode must be 'customized' or 'spmd'")
-            log_gpu_memory_usage(f'After building {rollout_name} rollout', logger=None)
+
+            config = self.config.rollout
+            tensor_parallel_size = config.get('tensor_model_parallel_size', 1)
+            max_num_batched_tokens = config.get('max_num_batched_tokens', 8192)
+            max_model_len = config.max_model_len if config.max_model_len \
+                            else config.prompt_length + config.response_length
+
+            gen_dp_rank = rollout_device_mesh['dp'].get_local_rank()
+            print(f'[ROLLOUT-INIT] {rollout_device_mesh.shape}, {gen_dp_rank=} {local_path}, {tensor_parallel_size=}, {config.response_length} {max_num_batched_tokens}, {max_model_len}, {config.enforce_eager}')
+            vllm_worker = rollout.inference_engine.llm_engine.model_executor.driver_worker.worker
+            model = rollout.inference_engine.llm_engine.model_executor.driver_worker.worker.model_runner.model
+            print(f'[ROLLOUT-INIT] {vLLMRollout}, {type(rollout.inference_engine.llm_engine.model_executor)}, {type(rollout.inference_engine.llm_engine.model_executor.driver_worker.worker)}, {vllm_worker.rank}, {vllm_worker.local_rank}, {type(model)}, {rollout.inference_engine.llm_engine.parallel_config=}')
+            #log_gpu_memory_usage(f'After building {rollout_name} rollout', logger=None)
+            log_gpu_memory_usage(f'[ROLLOUT-INIT] after rollout')
+
             if torch.distributed.get_world_size() == 1:
                 self.config.rollout.load_format = 'dummy_hf'
             rollout_sharding_manager = FSDPVLLMShardingManager(module=self.actor_module_fsdp,
@@ -363,7 +370,8 @@ class ActorRolloutRefWorker(Worker):
                                                                model_config=self.actor_model_config,
                                                                full_params='hf' in self.config.rollout.load_format,
                                                                device_mesh=rollout_device_mesh)
-            log_gpu_memory_usage('After building sharding manager', logger=None)
+            #log_gpu_memory_usage('After building sharding manager', logger=None)
+            log_gpu_memory_usage(f'[ROLLOUT-INIT] sharding manager {rollout_sharding_manager.full_params} ')
 
         elif rollout_name == 'sglang':
             from verl.workers.rollout.sglang_rollout import SGLangRollout
@@ -423,7 +431,7 @@ class ActorRolloutRefWorker(Worker):
 
             # get the original unwrapped module
             self.actor_module = self.actor_module_fsdp._fsdp_wrapped_module
-            
+
             if self._is_offload_optimizer:
                 offload_fsdp_optimizer(optimizer=self.actor_optimizer)
                 log_gpu_memory_usage('After offload actor optimizer during init', logger=logger)
@@ -435,7 +443,7 @@ class ActorRolloutRefWorker(Worker):
             self.actor = DataParallelPPOActor(config=self.config.actor,
                                               actor_module=self.actor_module_fsdp,
                                               actor_optimizer=self.actor_optimizer)
-            
+
         if self._is_rollout:
             self.rollout, self.rollout_sharding_manager = self._build_rollout(
                 trust_remote_code=self.config.model.get('trust_remote_code', False))
@@ -507,11 +515,88 @@ class ActorRolloutRefWorker(Worker):
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
         if self._is_offload_optimizer:
             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
-
+        gc.collect()
         return output
 
-    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    @register(dispatch_mode=Dispatch.REQ_DISTRIBUTION)
     def generate_sequences(self, prompts: DataProto):
+        # gh512; ONE-TO-ALL get all seqs
+        device = torch.cuda.current_device()
+        rank = torch.distributed.get_rank()
+        worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
+        local_rank = os.environ.get("LOCAL_RANK", "None")
+        bs = prompts.batch.batch_size
+        idx = prompts.batch['input_ids']  # (bs, prompt_length)
+        attention_mask = prompts.batch['attention_mask']
+        position_ids = prompts.batch['position_ids']
+        do_sample = prompts.meta_info.get('do_sample', True)
+        is_validate = prompts.meta_info.get('validate', False)
+
+        # gh512
+        # get reqs idx for my rank
+        config = self.config.rollout
+        tp_size = config.get('tensor_model_parallel_size', 1)
+        # 
+        #
+        is_first_tp_rank = False
+        if self.model_deployment is None:
+            # 0, 1, 2, 3 -> 0; 4, 5, 6, 7 -> 1
+            my_req_idx = rank // tp_size
+            if rank % tp_size == 0:
+                is_first_tp_rank = True
+        else:
+            cumulative_sum = 0
+            my_req_idx = -1
+            for i, num in enumerate(self.model_deployment):
+                if rank == cumulative_sum:
+                    is_first_tp_rank = True
+                cumulative_sum += num
+                if rank < cumulative_sum:
+                    my_req_idx = i
+                    break
+            if my_req_idx == -1:
+                raise ValueError(f'{self.model_deployment} is not valid')
+
+        # fetch req
+        reqs_idx = prompts.non_tensor_batch.pop('reqs_idx')
+        outlens = prompts.non_tensor_batch.pop('outlens')
+        my_idx = [i for i, idx in enumerate(reqs_idx) if idx == my_req_idx]
+        prompts = prompts.select_idxs(my_idx)
+        outlens = [outlens[i] for i in my_idx]
+
+        longest = max(outlens)
+        shortest = min(outlens)
+        avg = np.mean(outlens)
+        std = np.std(outlens)
+
+        # if rank % 4 == 0:
+        #     print(rank, len(prompts))
+        #     print(my_idx)
+        #     print(reqs_idx)
+        if len(my_idx) == 0:
+            # return DataProto.from_single_dict({})
+            # XXX there's a problem for empty dict,
+            # but not likely to get a empty req anyways
+            raise RuntimeError(f'Empty reqs {rank} {tp_size=} {my_req_idx} {reqs_idx}')
+
+        ps = prompts.non_tensor_batch['raw_prompt_ids']
+        inlens = [len(i) for i in ps]
+        totallens = [i + j for i, j in zip(inlens, outlens)]
+        if is_first_tp_rank:
+            print(
+                f"[GEN]:\n"
+                # f"  rank={rank}, len(my_idx)={len(my_idx)}, bs={bs}\n"
+                # f"  idx.shape={idx.shape}, attention_mask.shape={attention_mask.shape}, position_ids.shape={position_ids.shape}\n"
+                # f"  do_sample={do_sample}, is_validate={is_validate}\n"
+                # f"  sampling_params={self.rollout.sampling_params}, local_rank={local_rank}, worker_gpus={worker_gpus}, device={device}\n"
+
+                #
+                #f"  {rank=}, len(my_idx)={len(my_idx)}, longest={longest}, shortest={shortest}, avg={avg:.2f}, std={std:.2f} | {inlongest}, {inshortest}, {inavg:.2f}, {instd:.2f}\n"
+
+                #
+                f"  {rank=}, len(my_idx)={len(my_idx)}, longest={longest}, shortest={shortest}, avg={avg:.2f}, std={std:.2f}\n"
+            )
+
         # Support all hardwares
         prompts = prompts.to(torch.cuda.current_device())
 
@@ -537,16 +622,127 @@ class ActorRolloutRefWorker(Worker):
                 offload_fsdp_optimizer(optimizer=self.actor_optimizer)
 
             log_gpu_memory_usage('After entering rollout sharding manager', logger=logger)
-            prompts = self.rollout_sharding_manager.preprocess_data(prompts)
+            #prompts = self.rollout_sharding_manager.preprocess_data(prompts)
+            #
+            # len(prompts.non_tensor_batch['raw_prompt_ids']) is all gathered! 
+            # evenly distributed across model replica!
+            #
+
+            t1 = perf_counter()
             output = self.rollout.generate_sequences(prompts=prompts)
+            t2 = perf_counter()
+            if is_first_tp_rank:
+                # just printing
+                inlongest = max(inlens)
+                inshortest = min(inlens)
+                inavg = np.mean(inlens)
+                instd = np.std(inlens)
+
+                tlongest = max(totallens)
+                tshortest = min(totallens)
+                tavg = np.mean(totallens)
+                tstd = np.std(totallens)
+
+                osum  = sum(outlens)
+                tsum = sum(totallens)
+                insum = sum(inlens)
+
+                # actual out
+                responses = output.batch['responses']
+                pad_id = self.tokenizer.pad_token_id
+                padded_tensor = responses.cpu()
+                # Convert tensor to list if it's a tensor
+                if isinstance(padded_tensor, torch.Tensor):
+                    padded_list = padded_tensor.tolist()
+                else:
+                    padded_list = padded_tensor
+                unpadded_responses = []
+                for padded_response in padded_list:
+                    try:
+                        pad_start_idx = padded_response.index(pad_id)
+                        original_response = padded_response[:pad_start_idx]
+                    except ValueError:
+                        original_response = padded_response
+                    unpadded_responses.append(original_response)
+                
+                actual_outlen = [len(resp) for resp in unpadded_responses]
+                actual_sum = np.sum(actual_outlen)
+                actual_mean = np.mean(actual_outlen)
+                actual_max = np.max(actual_outlen)
+                actual_min = np.min(actual_outlen)
+
+                print(f'[GENTIME] {rank=}, {t2-t1:.2f}s; Sum: {tsum}, {osum}, {insum} ; Total: {tlongest}, {tshortest}, {tavg}, {tstd}; In: {inlongest}, {inshortest}, {inavg:.0f}, {instd:.0f}; ACTUAL: {actual_sum}, {actual_mean}, {actual_max}, {actual_min}')
+
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
             output = self.rollout_sharding_manager.postprocess_data(output)
         output = output.to('cpu')
 
+        gc.collect()
+
         # clear kv cache
         log_gpu_memory_usage('After recompute log prob', logger=logger)
         return output
+
+    # @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    # def generate_sequences(self, prompts: DataProto):
+
+    #     # gh512; print
+    #     device = torch.cuda.current_device()
+    #     rank = torch.distributed.get_rank()
+    #     worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
+    #     local_rank = os.environ.get("LOCAL_RANK", "None")
+    #     bs = prompts.batch.batch_size
+    #     idx = prompts.batch['input_ids']  # (bs, prompt_length)
+    #     attention_mask = prompts.batch['attention_mask']
+    #     position_ids = prompts.batch['position_ids']
+    #     do_sample = prompts.meta_info.get('do_sample', True)
+    #     is_validate = prompts.meta_info.get('validate', False)
+
+    #     # len(prompts.non_tensor_batch['raw_prompt_ids']) == bs, evenly distributed across GPUs
+    #     print(
+    #         f'[GEN]: {bs=} {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {do_sample}, {is_validate}, {self.rollout.sampling_params=}, {rank=}, {local_rank}, {worker_gpus}, {device}'
+    #     )
+
+    #     # Support all hardwares
+    #     prompts = prompts.to(torch.cuda.current_device())
+
+    #     assert self._is_rollout
+    #     if self._is_offload_param:
+    #         load_fsdp_model_to_gpu(self.actor_module_fsdp)
+
+    #     meta_info = {
+    #         'eos_token_id':
+    #             self.generation_config.eos_token_id
+    #             if self.generation_config is not None else self.tokenizer.eos_token_id,
+    #         'pad_token_id':
+    #             self.generation_config.pad_token_id
+    #             if self.generation_config is not None else self.tokenizer.pad_token_id,
+    #     }
+    #     prompts.meta_info.update(meta_info)
+    #     with self.rollout_sharding_manager:
+
+    #         # after parameters sync with rollout, offload actor model to CPU
+    #         if self._is_offload_param:
+    #             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+    #         if self._is_offload_optimizer:
+    #             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
+
+    #         log_gpu_memory_usage('After entering rollout sharding manager', logger=logger)
+    #         prompts = self.rollout_sharding_manager.preprocess_data(prompts)
+    #         #
+    #         # len(prompts.non_tensor_batch['raw_prompt_ids']) is all gathered! 
+    #         # evenly distributed across model replica!
+    #         #
+    #         output = self.rollout.generate_sequences(prompts=prompts)
+    #         log_gpu_memory_usage('After rollout generation', logger=logger)
+
+    #         output = self.rollout_sharding_manager.postprocess_data(output)
+    #     output = output.to('cpu')
+
+    #     # clear kv cache
+    #     log_gpu_memory_usage('After recompute log prob', logger=logger)
+    #     return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_log_prob(self, data: DataProto):
@@ -580,6 +776,7 @@ class ActorRolloutRefWorker(Worker):
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
 
         log_gpu_memory_usage('After compute_log_prob', logger=logger)
+        gc.collect()
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
@@ -607,6 +804,7 @@ class ActorRolloutRefWorker(Worker):
         if self.world_size > 1:
             self.ref_policy.actor_module._handle.reshard(True)
 
+        gc.collect()
         return output
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
@@ -640,6 +838,10 @@ class ActorRolloutRefWorker(Worker):
 
         if self._is_offload_optimizer:
             offload_fsdp_optimizer(self.actor_optimizer)
+
+    @register(Dispatch.ONE_TO_ALL)
+    def get_tokenizer_pad_id(self):
+        return self.tokenizer.pad_token_id
 
 
 class CriticWorker(Worker):
@@ -686,6 +888,14 @@ class CriticWorker(Worker):
                 f'normalized ppo_mini_batch_size {self.config.ppo_mini_batch_size} should be divisible by ppo_micro_batch_size_per_gpu {self.config.ppo_micro_batch_size_per_gpu}'
             assert self.config.ppo_mini_batch_size // self.config.ppo_micro_batch_size_per_gpu > 0, \
                 f'normalized ppo_mini_batch_size {self.config.ppo_mini_batch_size} should be larger than ppo_micro_batch_size_per_gpu {self.config.ppo_micro_batch_size_per_gpu}'
+
+        device = torch.cuda.current_device()
+        rank = torch.distributed.get_rank()
+        worker_gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "None")
+        local_rank = os.environ.get("LOCAL_RANK", "None")
+        print(
+            f'[Critic-INIT]: {rank=} {local_rank=} {world_size=}, CUDA_VISIBLE_DEVICES: {worker_gpus} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}'
+        )
 
     def _build_critic_model_optimizer(self, config):
         # the following line is necessary
@@ -811,7 +1021,7 @@ class CriticWorker(Worker):
         from verl.workers.critic import DataParallelPPOCritic
         self.critic_module, self.critic_optimizer, self.critic_lr_scheduler = self._build_critic_model_optimizer(
             self.config)
-        
+
         if self._is_offload_param:
             offload_fsdp_model_to_cpu(self.critic_module)
         if self._is_offload_optimizer:

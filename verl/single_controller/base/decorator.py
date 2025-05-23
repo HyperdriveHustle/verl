@@ -35,6 +35,9 @@ class Dispatch(Enum):
     DP_COMPUTE_PROTO = 9
     DP_COMPUTE_PROTO_WITH_FUNC = 10
     DP_COMPUTE_METRIC = 11
+    # gh512
+    REQ_DISTRIBUTION=12
+
 
 
 class Execute(Enum):
@@ -342,6 +345,11 @@ def get_predefined_dispatch_fn(dispatch_mode):
         Dispatch.DP_COMPUTE_METRIC: {
             'dispatch_fn': dispatch_dp_compute_data_proto,
             'collect_fn': collect_dp_compute
+        },
+        # gh512
+        Dispatch.REQ_DISTRIBUTION: {
+            'dispatch_fn': dispatch_one_to_all,
+            'collect_fn': collect_dp_compute_data_proto,
         }
     }
     return predefined_dispatch_mode_fn[dispatch_mode]
