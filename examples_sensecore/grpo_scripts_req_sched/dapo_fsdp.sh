@@ -1,10 +1,7 @@
 set -x
 export VLLM_ATTENTION_BACKEND=XFORMERS
 
-#dapo_train_path=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k.parquet
-#dapo_test_path=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data/aime-2024.parquet
 
-#dapo_train_path=/workspace/datasets/dapo/dapo-math-17k.parquet
 dapo_train_path=/workspace/datasets/dapo/dapo-math-17k_dedup.parquet
 dapo_test_path=/workspace/datasets/dapo/aime-2024.parquet
 
