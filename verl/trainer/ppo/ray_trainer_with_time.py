@@ -42,10 +42,17 @@ import numpy as np
 import pandas as pd
 from codetiming import Timer
 from omegaconf import OmegaConf, open_dict
+from torch.utils.data import RandomSampler, SequentialSampler
+from torchdata.stateful_dataloader import StatefulDataLoader
+from tqdm import tqdm
 from verl import DataProto
 from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.single_controller.base import Worker
-from verl.single_controller.ray import RayResourcePool, RayWorkerGroup, RayClassWithInitArgs
+from verl.single_controller.ray import (
+    RayClassWithInitArgs,
+    RayResourcePool,
+    RayWorkerGroup,
+)
 from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.ppo import core_algos
 from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance
@@ -53,8 +60,7 @@ from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path
 from verl.utils.dataset.rl_dataset import RLHFDataset, collate_fn, process_image
 from verl.utils.model import compute_position_id_with_mask
 import verl.utils.torch_functional as verl_F
-from torch.utils.data import RandomSampler, SequentialSampler
-from torchdata.stateful_dataloader import StatefulDataLoader
+
 
 WorkerType = Type[Worker]
 
@@ -154,6 +160,8 @@ class RLHFDatasetFilter(RLHFDataset):
     def _generate_cache_id(self):
         import hashlib
         """Generate a unique identifier for the current dataset configuration"""
+        # [RLHFDatasetFilter]: _generate_cache_id, self.parquet_files=['/afs/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k_dedup.parquet'].
+        print(f'[RLHFDatasetFilter]: _generate_cache_id, {self.parquet_files=}.')          
         # Create a string containing all parameters that would affect filtering
         config_str = str(sorted(self.parquet_files)) + str(self.max_prompt_length) + str(self.min_prompt_length)
         # Hash the configuration string to create a shorter identifier
@@ -166,6 +174,8 @@ class RLHFDatasetFilter(RLHFDataset):
         cache_dir = os.path.dirname(self.parquet_files[0])
         cache_file = os.path.join(cache_dir, f"filtered_data_{cache_id}.parquet")
         cache_metadata = os.path.join(cache_dir, f"metadata_{cache_id}.pkl")
+        # [RLHFDatasetFilter]: cache_file='/afs/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/filtered_data_8aff3605b0.parquet'.
+        print(f'[RLHFDatasetFilter]: {cache_file=}.')          
         
         # Check if cached filtered data exists
         if os.path.exists(cache_file) and os.path.exists(cache_metadata):
@@ -177,17 +187,17 @@ class RLHFDatasetFilter(RLHFDataset):
                 # Verify the cache is still valid for our current parameters
                 if (metadata['max_prompt_length'] == self.max_prompt_length and
                     metadata['min_prompt_length'] == self.min_prompt_length):
-                    print(f"[DATASET] Loading pre-filtered dataset from cache: {cache_file}")
+                    print(f"[RLHFDatasetFilter] Loading pre-filtered dataset from cache: {cache_file}")
                     self.dataframe = pd.read_parquet(cache_file)
-                    print(f'[DATASET]: {len(self.dataframe)=} {list(self.dataframe.columns)}')
+                    print(f'[RLHFDatasetFilter]: {len(self.dataframe)=} {list(self.dataframe.columns)}')
                     return
 
             except Exception as e:
-                print(f"[DATASET] Cache loading failed: {e}. Rebuilding cache.")
+                print(f"[RLHFDatasetFilter] Cache loading failed: {e}. Rebuilding cache.")
 
         # If cache doesn't exist or is invalid, process the data
         # Read and concatenate all input files
-        print("[DATASET] Processing data and building cache...")
+        print("[RLHFDatasetFilter] Processing data and building cache...")
         dataframes = []
         for parquet_file in self.parquet_files:
             dataframe = pd.read_parquet(parquet_file)
@@ -199,7 +209,7 @@ class RLHFDatasetFilter(RLHFDataset):
         full_len = len(self.dataframe)
         if self.cap_dataset_size is not None:
             self.dataframe = self.dataframe.iloc[:self.cap_dataset_size]
-        print(f'[DATASET]: {full_len=} {len(self.dataframe)=} {list(self.dataframe.columns)}')
+        print(f'[RLHFDatasetFilter]: {full_len=} {len(self.dataframe)=} {list(self.dataframe.columns)}')
         
         # apply filter
         if self.filter_overlong_prompts:
@@ -225,7 +235,7 @@ class RLHFDatasetFilter(RLHFDataset):
             if self.max_prompt_length is not None:
                 self.dataframe = self.dataframe[self.dataframe.apply(filter_long, axis=1)]
             t2 = time()
-            print(f'[DATASET] filter prompt: {len(self.dataframe)=}, {self.min_prompt_length}:{self.max_prompt_length},  time cost: {t2-t1:.2f}s')
+            print(f'[RLHFDatasetFilter] filter prompt: {len(self.dataframe)=}, {self.min_prompt_length}:{self.max_prompt_length},  time cost: {t2-t1:.2f}s')
 
             # filter response
             t1 = time()
@@ -245,7 +255,7 @@ class RLHFDatasetFilter(RLHFDataset):
             if self.max_prompt_length is not None:
                 self.dataframe = self.dataframe[self.dataframe.apply(filter_long, axis=1)]
             t2 = time()
-            print(f'[DATASET] filter response: {len(self.dataframe)=}, {self.min_response_length}:{self.max_response_length},  time cost: {t2-t1:.2f}s')
+            print(f'[RLHFDatasetFilter] filter response: {len(self.dataframe)=}, {self.min_response_length}:{self.max_response_length},  time cost: {t2-t1:.2f}s')
 
 
             # Save the filtered dataset and metadata. XXX disable cache for now
@@ -264,10 +274,15 @@ class RLHFDatasetFilter(RLHFDataset):
             # print(f"[DATASET] Cached filtered dataset to {cache_file}")
     
     def __getitem__(self, item):
-        # print(f'[DATASET] items: {item} {type(item)}, end=', ')
+        # print(f'[RLHFDatasetFilter] items: {item} {type(item)}, end=')
         row_dict: dict = self.dataframe.iloc[item].to_dict()
+        # 原数据格式
+        # 输出结果：row_dict keys: dict_keys(['data_source', 'prompt', 'ability', 'reward_model', 'extra_info'])
+        # print(f'[RLHFDatasetFilter] row_dict keys: {row_dict.keys()}')
 
         chat = row_dict.pop(self.prompt_key)
+        # self.prompt_key='prompt' or message
+        # print(f'[RLHFDatasetFilter] {self.prompt_key=}')
 
         prompt_with_chat_template = self.tokenizer.apply_chat_template(chat, add_generation_prompt=True, tokenize=False)
 
@@ -307,12 +322,31 @@ class ReqScheduler:
         self.table: dict[tuple[int], int] = self.load_table()
     
     def load_table(self):
+        ''' 加载预存的 prompts 信息
+        预存的 table 数据格式
+        {
+            "prompts": [
+                [prompt_token_ids_1], 
+                [prompt_token_ids_2], 
+                ...
+            ],
+            "lengths": [
+                [120, 88, 85, 92, 95, 100, 90, 110],  // prompt 1 对应 sample n 个 response 长度
+                [105, 90, 95, 92, 100, 94, 90, 88],   // prompt 2
+                ...
+            ],
+            "stats": [ // 初始预计算存储，仍可保留便于快速调用
+                {"max": 120, "min": 85, "mean": 97.5, "std": 10.2, "sum": 780}, 
+                {"max": 105, "min": 88, "mean": 94.3, "std": 5.6, "sum": 754}, 
+                ...
+            ]
+        }
+        '''
         if self.config.seq_dir is None:
             return {}
 
         # Find all JSON files in the directory
         json_files = glob.glob(os.path.join(self.config.seq_dir, "*.json"))
-
         print(f"[ReqScheduler] Found {len(json_files)} JSON files to process")
 
         # prompts -> list[responses]
@@ -325,40 +359,53 @@ class ReqScheduler:
                 with open(json_file, 'r') as f:
                     data = json.load(f)
                 
-                ps: list[int] = data['prompts']
-                rs: list[int] = data['response']
-                for p, s in zip(ps, rs):
+                # [ReqScheduler] data keys = dict_keys(['prompts', 'response', 'reqs_idx', 'outlens'])
+                print(f"[ReqScheduler] data keys = {data.keys()} in {filename}")
+                # ps: list[int] = data['prompts']
+                # rs: list[int] = data['response']
+                # for p, s in zip(ps, rs):
+                #     p = tuple(p)
+                #     r = tuple(s)
+                #     if p not in ans:
+                #         ans[p] = []
+                #     ans[p].append(r)
+                # 按格式保存
+                ps = data['prompts']
+                ls = data['lengths']
+                for p, l in zip(ps, ls):
                     p = tuple(p)
-                    r = tuple(s)
                     if p not in ans:
-                        ans[p] = []
-                    ans[p].append(r)
+                        ans[p] = l
+                print(f"[ReqScheduler] Processed {filename}, found {len(ans)} unique prompts")
             except Exception as e:
                 print(f"[ReqScheduler] Error processing {filename}: {str(e)}")
                 raise e
-        
+                
         # Aggregate prompts -> responses
         agg = self.config.get('agg', 'mean')
         if agg == 'max':
-            ans = {k: max([len(x) for x in v]) for k, v in ans.items()}
+            ans = {k: max(v) for k, v in ans.items()}
         elif agg == 'min':
-            ans = {k: min([len(x) for x in v]) for k, v in ans.items()}
+            ans = {k: min(v) for k, v in ans.items()}
         elif agg == 'mean':
-            ans = {k: int(np.mean([len(x) for x in v])) for k, v in ans.items()}
+            ans = {k: int(np.mean(v)) for k, v in ans.items()}
         elif agg =='median':
-            ans = {k: int(np.median([len(x) for x in v])) for k, v in ans.items()}
+            ans = {k: int(np.median(v)) for k, v in ans.items()}
         elif agg == 'sum':
-            ans = {k: sum([len(x) for x in v]) for k, v in ans.items()}
+            ans = {k: sum(v) for k, v in ans.items()}
         else:
             raise ValueError(f"Unknown agg {agg}")
         print(f'[ReqScheduler] Table-Size: {len(ans)=}')
         return ans
 
     def lookup_table(self, prompt):
+        ''' 根据 table 预存的信息 查找 prompt 的相关信息
+        '''
         if isinstance(prompt, list):
             prompt = tuple(prompt)
         assert isinstance(prompt, tuple), f"prompt type {type(prompt)} is not supported"
         if prompt in self.table:
+            # print(f"[ReqScheduler] Found prompt {len(prompt)} in table with response length {self.table[prompt]}")
             return self.table[prompt]
         return None
 
@@ -369,51 +416,57 @@ class ReqScheduler:
             r = tuple(r)
             if p not in new_table:
                 new_table[p] = []
-            new_table[p].append(r)
+            new_table[p].append(len(r))
 
         # Aggregate prompts -> responses
         agg = self.config.get('agg', 'mean')
         if agg == 'max':
-            new_table = {k: max([len(x) for x in v]) for k, v in new_table.items()}
+            new_table = {k: max(v) for k, v in new_table.items()}
         elif agg == 'min':
-            new_table = {k: min([len(x) for x in v]) for k, v in new_table.items()}
+            new_table = {k: min(v) for k, v in new_table.items()}
         elif agg == 'mean':
-            new_table = {k: int(np.mean([len(x) for x in v])) for k, v in new_table.items()}
+            new_table = {k: int(np.mean(v)) for k, v in new_table.items()}
         elif agg =='median':
-            new_table = {k: int(np.median([len(x) for x in v])) for k, v in new_table.items()}
+            new_table = {k: int(np.median(v)) for k, v in new_table.items()}
         elif agg == 'sum':
-            new_table = {k: sum([len(x) for x in v]) for k, v in new_table.items()}
+            new_table = {k: sum(v) for k, v in new_table.items()}
         else:
             raise ValueError(f"Unknown agg {agg}")
         
         # add or overwrite
         for k, v in new_table.items():
             self.table[k] = v
-        print(f'[ReqScheduler] Table-Size: {len(self.table)=}')
+        print(f'[ReqScheduler] in update_table, Table-Size: {len(self.table)=}')
 
-    def log_seqlen(self, raw_prompt_ids, responses, reqs_idx, outlens, prefix):
-        #print(f'{type(raw_prompt_ids)}, {type(responses)}, {type(reqs_idx)} {len(raw_prompt_ids)}, {len(responses)}, {len(reqs_idx)}')
+    def log_seqlen(self, raw_prompt_ids, responses, prefix):
+        print(f'[ReqScheduler] in log_seqlen, {type(raw_prompt_ids)}, {type(responses)}, {len(raw_prompt_ids)}, {len(responses)}')
         # lengths = []
         # for _, sublist in enumerate(data):
         #     length = len(sublist)
         #     lengths.append(length)
         assert len(raw_prompt_ids) == len(responses), f'{len(raw_prompt_ids)}, {len(responses)}'
-        prompts = []
-        response = []
+        prompts_dict = {}
+        prompts, response = [], []
         for p, r in zip(raw_prompt_ids, responses):
-            prompts.append(tuple(p))
-            response.append(tuple(r))
+            # prompts.append(tuple(p))
+            # response.append(tuple(r))
+            if tuple(p) not in prompts_dict:
+                prompts_dict[tuple(p)] = []
+            prompts_dict[tuple(p)].append(len(r))
         
+        for pid in prompts_dict:
+            prompts.append(list(pid))
+            response.append(prompts_dict[pid])
+
         log_dir = self.config.log_dir
         os.makedirs(log_dir, exist_ok=True)
         data_files = glob.glob(f"{log_dir}/{prefix}_*.json")
         file_num = len(data_files) + 1
         output_file = f"{log_dir}/{prefix}_{file_num}.json"
         with open(output_file, 'w') as f:
-            json.dump({'prompts': prompts, 
-                       'response': response,
-                       'reqs_idx': tuple(reqs_idx),
-                       'outlens': tuple(outlens),
+            json.dump({
+                'prompts': prompts, 
+                'lengths': response
             }, f)
     
     def restore_order(self,
@@ -455,6 +508,7 @@ class ReqScheduler:
             world_size: int,
             config,
         ):
+        print(f"[ReqScheduler] sched, {world_size=}, {config=}")
         # get OUT len
         outlens = []
         for raw_prompt_ids in batch_dict['raw_prompt_ids']:
@@ -476,6 +530,9 @@ class ReqScheduler:
         # idx -> dp group idx:
         batch_dict['reqs_idx'] = res
         batch_dict['outlens'] = np.array(outlens, dtype=np.int32)
+        # len(batch_dict['outlens']) = train_prompt_bs
+        # print(f"[ReqScheduler] calculate reqs_idx, outlens = {len(batch_dict['outlens'])}")
+        
     
     def print_stats(self, outlens, res):
         longest = max(outlens)
@@ -601,11 +658,6 @@ class ReqScheduler:
         print(f"[ReqScheduler] p: {p}, {res=}")
         return np.array(res, dtype=np.int32)
     
-
-
-
-
-
 
 
 ############################ ############################
@@ -1178,7 +1230,7 @@ class RayPPOTrainer(object):
             self.val_dataloader
         ) == 1, "Validation dataloader must have a single batch, which inference engines will schedule the memory themselves."
 
-        print(f'[DATASET] Size of train dataloader: {len(self.train_dataloader)}')
+        print(f'[RayPPOTrainer] in _create_dataloader, Size of train dataloader: {len(self.train_dataloader)}')
 
         # inject total_training_steps to actor/critic optim_config. This is hacky.
         total_training_steps = len(
@@ -1188,7 +1240,7 @@ class RayPPOTrainer(object):
             total_training_steps = self.config.trainer.total_training_steps
 
         self.total_training_steps = total_training_steps
-        print(f'[DATASET] Total training steps: {self.total_training_steps}')
+        print(f'[RayPPOTrainer] in _create_dataloader, Total training steps: {self.total_training_steps}')
 
         OmegaConf.set_struct(self.config, True)
         with open_dict(self.config):
@@ -1636,6 +1688,7 @@ class RayPPOTrainer(object):
                         batch_keys=[
                             'input_ids', 'attention_mask', 'position_ids'
                         ],
+                        # 添加 resp 长度相关的信息
                         non_tensor_batch_keys=['raw_prompt_ids', 'reqs_idx', 'outlens'],
                     )
 
@@ -1643,18 +1696,21 @@ class RayPPOTrainer(object):
                 idx = gen_batch.batch['input_ids']  # (bs, prompt_length)
                 attention_mask = gen_batch.batch['attention_mask']
                 position_ids = gen_batch.batch['position_ids']
-                raw_prompt_ids = gen_batch.non_tensor_batch['raw_prompt_ids'] #(bs, varlen)
+                raw_prompt_ids = gen_batch.non_tensor_batch['raw_prompt_ids'] # (bs, varlen)
 
                 # NOTE: we put raw_prompt_ids back to batch for repeated-interleave purpose and log seq len
+                # raw_prompt_ids 存储的是 prompts 的原始 token ids
                 batch.non_tensor_batch['raw_prompt_ids'] = raw_prompt_ids
                 reqs_idx = gen_batch.non_tensor_batch['reqs_idx']
                 outlens = gen_batch.non_tensor_batch['outlens']
+                # print(f'[BATCH INPUT]: reqs_idx = {reqs_idx[0]}, outlens = {len(outlens)}')
                 print(
                     f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()} {type(raw_prompt_ids)}'
                 )
 
                 with _timer('step', timing_raw):
                     # generate a batch
+                    # 这里传入的 batch 是所有的数据，到具体 rank 上再做分配
                     with _timer('gen', timing_raw):
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(
                             gen_batch)
@@ -1710,8 +1766,6 @@ class RayPPOTrainer(object):
                         self.req_scheduler.log_seqlen(
                             raw_prompt_ids, 
                             unpadded,
-                            reqs_idx,
-                            outlens,
                             prefix, 
                         )
                         self.req_scheduler.update_table(

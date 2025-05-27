@@ -127,8 +127,7 @@ def main_task(config, compute_score=None):
                                        num_examine=1,
                                        compute_score=compute_score)
 
-    resource_pool_manager = ResourcePoolManager(
-        resource_pool_spec=resource_pool_spec, mapping=mapping)
+    resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
     trainer = RayPPOTrainer(config=config,
                             tokenizer=tokenizer,
                             processor=processor,

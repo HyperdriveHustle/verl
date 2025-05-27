@@ -1,14 +1,12 @@
 set -x
-export VLLM_ATTENTION_BACKEND=XFORMERS
 
-
-dapo_train_path=/workspace/datasets/dapo/dapo-math-17k_dedup.parquet
-dapo_test_path=/workspace/datasets/dapo/aime-2024.parquet
+export dapo_train_path=${dapo_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k_dedup.parquet}
+export aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8.parquet}
 
 train_files=("$dapo_train_path")
-test_files=("$dapo_test_path")
+test_files=("$aime2024_test_path")
 
-export project_name=verl_dapo_math_grpo_vllm082
+export project_name=verl_dapo_math_grpo_req_sched
 
 use_dynamic_bsz=True
 infer_micro_batch_size=null
@@ -27,21 +25,19 @@ lr=1e-6
 shuffle=False
 
 # tp=1 -> OOM??
-vllm_tp=2
+export vllm_tp=${vllm_tp:-2}
+export nnode=${WORLD_SIZE:-1}
+
+
 vllm_mem=0.7
 
 train_prompt_batch_size=$((real_train_batch_size / grpo_rollout_n))
 
-nnode=1
-offload=True
-#model=/nvfile-heatstorage/chatrl/public/models/Qwen2.5-7B-Instruct-1M
-#model=/workspace/models/llama7b
-#model=/workspace/models/DeepSeek-R1-Distill-Llama-8B
-#model=/workspace/models/Qwen25-32B-Base
-model=/workspace/models/Qwen2.5-7B-Instruct-1M
+offload=False
+model=/afs/chatrl/public/models/Qwen2.5-7B-Instruct-1M
 
-seq_dir=/workspace/dapo_seq
-log_dir=/workspace/tmp_log_seq
+seq_dir=/afs/chatrl/users/hxh/data/req_sched_seq_dir/Qwen2.5-7B-Instruct-1M_dapo_seq/seq_init_new
+log_dir=/afs/chatrl/users/hxh/data/req_sched_seq_dir/Qwen2.5-7B-Instruct-1M_dapo_seq/seq_log
 cap_dataset_size=$((1024 * 80000))
 filter_overlong_prompts=False
 
@@ -50,7 +46,7 @@ filter_overlong_prompts=False
 req_algo="even_token"
 percentile=90
 
-agg="max"
+agg="sum" # sum / max
 
 echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, min_prompt_length = $min_prompt_length max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, min_response_length = $min_response_length, req_algo = $req_algo, percentile = $percentile, agg = $agg"
 
@@ -58,7 +54,7 @@ sleep 1
 
 export experiment_name=Qwen2.5-7B-1M-Instruct_dapo_math_grpo_vllm_0_8_2_${nnode}node_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_lr${lr}_tp${vllm_tp}_maxlen${max_response_length}
 #export TENSORBOARD_DIR=/nvfile-heatstorage/chatrl/users/hxh/models/verl_rl_models/${project_name}/${experiment_name}/tensorboard_log
-export TENSORBOARD_DIR=/workspace/tmp
+# export TENSORBOARD_DIR=/workspace/tmp
 
 rm -rf /workspace/tmp_tensorboard/*
 
