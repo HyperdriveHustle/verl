@@ -558,6 +558,7 @@ class ActorRolloutRefWorker(Worker):
                 raise ValueError(f'{self.model_deployment} is not valid')
 
         # fetch req
+        # 找到 reqs_idx, 并根据 id 定位到当前 model instance 需要的 prompt
         reqs_idx = prompts.non_tensor_batch.pop('reqs_idx')
         outlens = prompts.non_tensor_batch.pop('outlens')
         my_idx = [i for i, idx in enumerate(reqs_idx) if idx == my_req_idx]
@@ -589,10 +590,8 @@ class ActorRolloutRefWorker(Worker):
                 # f"  idx.shape={idx.shape}, attention_mask.shape={attention_mask.shape}, position_ids.shape={position_ids.shape}\n"
                 # f"  do_sample={do_sample}, is_validate={is_validate}\n"
                 # f"  sampling_params={self.rollout.sampling_params}, local_rank={local_rank}, worker_gpus={worker_gpus}, device={device}\n"
-
                 #
                 #f"  {rank=}, len(my_idx)={len(my_idx)}, longest={longest}, shortest={shortest}, avg={avg:.2f}, std={std:.2f} | {inlongest}, {inshortest}, {inavg:.2f}, {instd:.2f}\n"
-
                 #
                 f"  {rank=}, len(my_idx)={len(my_idx)}, longest={longest}, shortest={shortest}, avg={avg:.2f}, std={std:.2f}\n"
             )
@@ -671,7 +670,7 @@ class ActorRolloutRefWorker(Worker):
                 actual_max = np.max(actual_outlen)
                 actual_min = np.min(actual_outlen)
 
-                print(f'[GENTIME] {rank=}, {t2-t1:.2f}s; Sum: {tsum}, {osum}, {insum} ; Total: {tlongest}, {tshortest}, {tavg}, {tstd}; In: {inlongest}, {inshortest}, {inavg:.0f}, {instd:.0f}; ACTUAL: {actual_sum}, {actual_mean}, {actual_max}, {actual_min}')
+                print(f'[GENTIME] {rank=}, {t2-t1:.2f}s; Sum: totallens={tsum}, outlens={osum}, insum={insum} ; Total: {tlongest}, {tshortest}, {tavg}, {tstd}; In: {inlongest}, {inshortest}, {inavg:.0f}, {instd:.0f}; ACTUAL: {actual_sum=}, {actual_mean=}, {actual_max=}, {actual_min=}')
 
             log_gpu_memory_usage('After rollout generation', logger=logger)
 

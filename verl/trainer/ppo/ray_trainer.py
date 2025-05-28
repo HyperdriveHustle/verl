@@ -17,6 +17,9 @@ This trainer supports model-agonistic model initialization with huggingface
 """
 
 import os
+import sys
+import contextlib
+import io
 import uuid
 from collections import defaultdict
 from contextlib import contextmanager
@@ -63,6 +66,15 @@ from verl.utils.seqlen_balancing import (
 from verl.utils.tracking import ValidationGenerationsLogger
 
 WorkerType = Type[Worker]
+
+@contextlib.contextmanager
+def suppress_stdout():
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
 
 
 class Role(Enum):
@@ -1007,8 +1019,9 @@ class RayPPOTrainer(object):
                             reward_tensor = reward_result["reward_tensor"]
                             reward_extra_infos_dict = reward_result["reward_extra_info"]
                         except Exception as e:
-                            print(f"Error in reward_fn: {e}")
-                            reward_tensor = self.reward_fn(batch)
+                            with suppress_stdout():
+                                print(f"Error in reward_fn: {e}")
+                                reward_tensor = self.reward_fn(batch)
                             reward_extra_infos_dict = {}
 
                         batch.batch["token_level_scores"] = reward_tensor
