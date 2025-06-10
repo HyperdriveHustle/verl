@@ -20,9 +20,10 @@ import os
 import sys
 import contextlib
 import io
+import heapq
 import uuid
-from contextlib import contextmanager
 from collections import defaultdict
+from contextlib import contextmanager
 from copy import deepcopy
 from pprint import pprint
 from typing import Type, Dict
@@ -548,18 +549,29 @@ class ReqScheduler:
             cnt += 1
         return np.array(res, dtype=np.int32)
     
+    # def even_token(self, outlens, dp_size, tp_size, config):
+    #     total_num_token = sum(outlens)
+    #     per_dp = total_num_token // dp_size
+    #     res = []
+    #     group_idx = 0
+    #     cnt = 0
+    #     for i in range(0, len(outlens)):
+    #         cnt += outlens[i]
+    #         if cnt > per_dp:
+    #             group_idx += 1
+    #             cnt = 0
+    #         res.append(group_idx)
+    #     return np.array(res, dtype=np.int32)
     def even_token(self, outlens, dp_size, tp_size, config):
-        total_num_token = sum(outlens)
-        per_dp = total_num_token // dp_size
-        res = []
-        group_idx = 0
-        cnt = 0
-        for i in range(0, len(outlens)):
-            cnt += outlens[i]
-            if cnt > per_dp:
-                group_idx += 1
-                cnt = 0
-            res.append(group_idx)
+        prompt_indices = list(range(len(outlens)))
+        sorted_pairs = sorted(zip(outlens, prompt_indices), reverse=True)
+        heap = [(0, i) for i in range(dp_size)]
+        heapq.heapify(heap)
+        res = [None] * len(outlens)
+        for token_len, orig_idx in sorted_pairs:
+            total, group = heapq.heappop(heap)
+            res[orig_idx] = group
+            heapq.heappush(heap, (total + token_len, group))
         return np.array(res, dtype=np.int32)
     
     def long_short(self, outlens, dp_size, tp_size, config):
@@ -723,7 +735,7 @@ class RayDAPOTrainer(RayPPOTrainer):
 
         self.train_dataloader = StatefulDataLoader(
             dataset=self.train_dataset,
-            batch_size=self.config.data.train_batch_size,
+            batch_size=self.config.data.get("gen_batch_size", self.config.data.train_batch_size),
             num_workers=8,
             drop_last=True,
             collate_fn=collate_fn,
@@ -738,7 +750,7 @@ class RayDAPOTrainer(RayPPOTrainer):
             max_prompt_length=self.config.data.max_prompt_length,
             filter_prompts=True,
             return_raw_chat=self.config.data.get('return_raw_chat', False),
-            truncation='left',
+            truncation=self.config.data.get("truncation", "left"),
         )
         self.val_dataloader = StatefulDataLoader(
             dataset=self.val_dataset,
@@ -747,7 +759,7 @@ class RayDAPOTrainer(RayPPOTrainer):
             batch_size=len(self.val_dataset),
             num_workers=8,
             shuffle=False,
-            drop_last=True,
+            drop_last=False,
             collate_fn=collate_fn)
 
         assert len(self.train_dataloader) >= 1
@@ -906,7 +918,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                     # gh512: log and save
                     pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
                     model = self.config.actor_rollout_ref.model.path.split('/')[-1]
-                    dataset = self.config.data.train_files.split('/')[-1]
+                    dataset = self.config.data.train_files[0].split('/')[-1]
                     prefix = f'{dataset}_{model}_E{epoch}B{bs_idx}_data'
                     unpadded = unpad_responses(response, pad_ids)
                     self.req_scheduler.log_seqlen(
@@ -1080,7 +1092,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                         metrics.update(actor_output_metrics)
 
                     # validate
-                    # XXX gh512 disable
+                    # XXX gh512 disable for debug
                     # if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and \
                     #         (is_last_step or self.global_steps % self.config.trainer.test_freq == 0):
                     #     with _timer('testing', timing_raw):
