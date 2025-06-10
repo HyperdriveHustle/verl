@@ -48,7 +48,9 @@ from verl.trainer.ppo.metric_utils import (
     compute_throughout_metrics,
     compute_timing_metrics,
     reduce_metrics,
+    process_validation_metrics,
 )
+from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.trainer.ppo.ray_trainer import (
     AdvantageEstimator,
     RayPPOTrainer,
@@ -343,7 +345,6 @@ class ReqScheduler:
                 with open(json_file, 'r') as f:
                     data = json.load(f)
                 
-                # [ReqScheduler] data keys = dict_keys(['prompts', 'response', 'reqs_idx', 'outlens'])
                 print(f"[ReqScheduler] data keys = {data.keys()} in {filename}")
                 # 按格式保存
                 ps = data['prompts']
@@ -450,7 +451,7 @@ class ReqScheduler:
         bs = len(gen_batch_output)
         assert bs % n_samples == 0, f'bs {bs} must be divisible by n_samples {n_samples}'
         assert bs//n_samples == len(reqs_idx), f'bs//n_samples {bs//n_samples} != len(reqs_idx) {len(reqs_idx)}'
-
+        print(f"[ReqScheduler] restore_order, {bs=}, {n_samples=}, {len(reqs_idx)=}")
         # e.g. [1, 0] -> [16, 17, ..., 31, 0, 1, ... , 15]
         cnt = 0
         global_idx = [None for _ in range(bs)]
@@ -493,7 +494,6 @@ class ReqScheduler:
         # len(batch_dict['outlens']) = train_prompt_bs
         # print(f"[ReqScheduler] calculate reqs_idx, outlens = {len(batch_dict['outlens'])}")
         
-    
     def print_stats(self, outlens, res):
         longest = max(outlens)
         shortest = min(outlens)
@@ -562,6 +562,7 @@ class ReqScheduler:
     #             cnt = 0
     #         res.append(group_idx)
     #     return np.array(res, dtype=np.int32)
+    
     def even_token(self, outlens, dp_size, tp_size, config):
         prompt_indices = list(range(len(outlens)))
         sorted_pairs = sorted(zip(outlens, prompt_indices), reverse=True)
@@ -751,6 +752,13 @@ class RayDAPOTrainer(RayPPOTrainer):
             filter_prompts=True,
             return_raw_chat=self.config.data.get('return_raw_chat', False),
             truncation=self.config.data.get("truncation", "left"),
+            # xiaohui
+            filter_overlong_prompts=self.config.data.get('filter_overlong_prompts', False),
+            min_prompt_length=0,
+            min_response_length=0,
+            max_response_length=self.config.data.max_response_length * 10,
+            cap_dataset_size=None,
+            req_scheduler=self.req_scheduler,
         )
         self.val_dataloader = StatefulDataLoader(
             dataset=self.val_dataset,
@@ -785,6 +793,123 @@ class RayDAPOTrainer(RayPPOTrainer):
             self.config.critic.optim.total_training_steps = total_training_steps
 
 
+    
+    def _validate(self):
+        data_source_lst = []
+        reward_extra_infos_dict: dict[str, list] = defaultdict(list)
+
+        # Lists to collect samples for the table
+        sample_inputs = []
+        sample_outputs = []
+        sample_scores = []
+
+        for test_data in self.val_dataloader:
+            # xiaohui: we need to schedule the val requests
+            self.req_scheduler.sched(
+                test_data, self.actor_rollout_wg.world_size, self.config.actor_rollout_ref,
+            )
+            test_batch = DataProto.from_single_dict(test_data)
+
+            # repeat test batch
+            test_batch = test_batch.repeat(
+                repeat_times=self.config.actor_rollout_ref.rollout.val_kwargs.n,
+                interleave=True,
+            )
+
+            # we only do validation on rule-based rm
+            if (self.config.reward_model.enable and test_batch[0].non_tensor_batch["reward_model"]["style"] == "model"):
+                return {}
+
+            # Store original inputs
+            input_ids = test_batch.batch["input_ids"]
+            # TODO: Can we keep special tokens except for padding tokens?
+            input_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in input_ids]
+            sample_inputs.extend(input_texts)
+
+            if "multi_modal_inputs" in test_batch.non_tensor_batch.keys():
+                test_gen_batch = test_batch.pop(
+                    batch_keys=["input_ids", "attention_mask", "position_ids"],
+                    non_tensor_batch_keys=[
+                        "raw_prompt_ids",
+                        "multi_modal_data",
+                        "multi_modal_inputs",
+                    ],
+                )
+            else:
+                print(f"> test_batch non_tensor_batch keys: {test_batch.non_tensor_batch.keys()}")
+                test_gen_batch = test_batch.pop(
+                    batch_keys=["input_ids", "attention_mask", "position_ids"],
+                    # 添加 resp 长度相关的信息
+                    non_tensor_batch_keys=['raw_prompt_ids', 'reqs_idx', 'outlens'],
+                )
+            test_reqs_idx = test_gen_batch.non_tensor_batch['reqs_idx']
+            
+            test_gen_batch.meta_info = {
+                "eos_token_id": self.tokenizer.eos_token_id,
+                "pad_token_id": self.tokenizer.pad_token_id,
+                "recompute_log_prob": False,
+                "do_sample": self.config.actor_rollout_ref.rollout.val_kwargs.do_sample,
+                "validate": True,
+            }
+            print(f"test_gen_batch meta info: {test_gen_batch.meta_info}")
+
+            # pad to be divisible by dp_size
+            test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
+            test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
+            self.req_scheduler.restore_order(
+                test_output_gen_batch_padded, 
+                test_reqs_idx, 
+                n_samples=self.config.actor_rollout_ref.rollout.val_kwargs.n
+            )
+            # unpad
+            test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
+            print("validation generation end")
+
+            # Store generated outputs
+            output_ids = test_output_gen_batch.batch["responses"]
+            output_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids]
+            sample_outputs.extend(output_texts)
+
+            test_batch = test_batch.union(test_output_gen_batch)
+
+            # evaluate using reward_function
+            result = self.val_reward_fn(test_batch, return_dict=True)
+            reward_tensor = result["reward_tensor"]
+            scores = reward_tensor.sum(-1).cpu().tolist()
+            sample_scores.extend(scores)
+
+            reward_extra_infos_dict["reward"].extend(scores)
+            if "reward_extra_info" in result:
+                for key, lst in result["reward_extra_info"].items():
+                    reward_extra_infos_dict[key].extend(lst)
+
+            data_source_lst.append(test_batch.non_tensor_batch.get("data_source", ["unknown"] * reward_tensor.shape[0]))
+
+        self._maybe_log_val_generations(inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores)
+
+        for key_info, lst in reward_extra_infos_dict.items():
+            assert len(lst) == 0 or len(lst) == len(sample_scores), (f"{key_info}: {len(lst)=}, {len(sample_scores)=}")
+
+        data_sources = np.concatenate(data_source_lst, axis=0)
+
+        data_src2var2metric2val = process_validation_metrics(data_sources, sample_inputs, reward_extra_infos_dict)
+        metric_dict = {}
+        for data_source, var2metric2val in data_src2var2metric2val.items():
+            core_var = "acc" if "acc" in var2metric2val else "reward"
+            for var_name, metric2val in var2metric2val.items():
+                n_max = max([int(name.split("@")[-1].split("/")[0]) for name in metric2val.keys()])
+                for metric_name, metric_val in metric2val.items():
+                    if ((var_name == core_var) and
+                            any(metric_name.startswith(pfx) for pfx in ["mean", "maj", "best"]) and
+                        (f"@{n_max}" in metric_name)):
+                        metric_sec = "val-core"
+                    else:
+                        metric_sec = "val-aux"
+                    pfx = f"{metric_sec}/{data_source}/{var_name}/{metric_name}"
+                    metric_dict[pfx] = metric_val
+
+        return metric_dict
+
     def fit(self):
         """
         The training loop of PPO.
@@ -809,8 +934,8 @@ class RayDAPOTrainer(RayPPOTrainer):
         # currently, we only support validation using the reward_function.
         if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
             # gh512 disable for debug
-            # val_metrics = self._validate()
-            # pprint(f'Initial validation metrics: {val_metrics}')
+            val_metrics = self._validate()
+            pprint(f'Initial validation metrics: {val_metrics}')
             # logger.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get('val_only', False):
                 return
@@ -873,7 +998,6 @@ class RayDAPOTrainer(RayPPOTrainer):
                 print(
                     f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()} {type(raw_prompt_ids)}'
                 )
-
 
                 with _timer('step', timing_raw):
                     # generate a batch
@@ -1093,13 +1217,13 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                     # validate
                     # XXX gh512 disable for debug
-                    # if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and \
-                    #         (is_last_step or self.global_steps % self.config.trainer.test_freq == 0):
-                    #     with _timer('testing', timing_raw):
-                    #         val_metrics: dict = self._validate()
-                    #         if is_last_step:
-                    #             last_val_metrics = val_metrics
-                    #     metrics.update(val_metrics)
+                    if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and \
+                            (is_last_step or self.global_steps % self.config.trainer.test_freq == 0):
+                        with _timer('testing', timing_raw):
+                            val_metrics: dict = self._validate()
+                            if is_last_step:
+                                last_val_metrics = val_metrics
+                        metrics.update(val_metrics)
 
                     if self.config.trainer.save_freq > 0 and (is_last_step or
                                                               self.global_steps % self.config.trainer.save_freq == 0):

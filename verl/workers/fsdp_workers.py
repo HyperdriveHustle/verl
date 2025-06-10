@@ -578,7 +578,7 @@ class ActorRolloutRefWorker(Worker):
             # return DataProto.from_single_dict({})
             # XXX there's a problem for empty dict,
             # but not likely to get a empty req anyways
-            raise RuntimeError(f'Empty reqs {rank} {tp_size=} {my_req_idx} {reqs_idx}')
+            raise RuntimeError(f'Empty reqs {rank} {tp_size=} {my_req_idx=} {reqs_idx=}')
 
         ps = prompts.non_tensor_batch['raw_prompt_ids']
         inlens = [len(i) for i in ps]
@@ -670,7 +670,7 @@ class ActorRolloutRefWorker(Worker):
                 actual_max = np.max(actual_outlen)
                 actual_min = np.min(actual_outlen)
 
-                print(f'[GENTIME] {rank=}, {t2-t1:.2f}s; Sum: totallens={tsum}, outlens={osum}, insum={insum} ; Total: {tlongest}, {tshortest}, {tavg}, {tstd}; In: {inlongest}, {inshortest}, {inavg:.0f}, {instd:.0f}; ACTUAL: {actual_sum=}, {actual_mean=}, {actual_max=}, {actual_min=}')
+                print(f'[GENTIME] {rank=}, {t2-t1:.2f}s; Sum: totallens={tsum}, outlens={osum}, insum={insum} ; Total: {tlongest=}, {tshortest=}, {tavg=}, {tstd=}; In: {inlongest=}, {inshortest=}, inavg={inavg:.0f}, instd={instd:.0f}; ACTUAL: {actual_sum=}, {actual_mean=}, {actual_max=}, {actual_min=}')
 
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
