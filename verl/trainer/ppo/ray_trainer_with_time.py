@@ -27,14 +27,17 @@ import sys
 import contextlib
 import io
 import uuid
+from collections import defaultdict
+
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from pprint import pprint
 from typing import Type, Dict
 from copy import deepcopy
-from time import sleep, time
+from time import time
 import json
+import heapq
 import glob
 
 
@@ -46,6 +49,13 @@ from torch.utils.data import RandomSampler, SequentialSampler
 from torchdata.stateful_dataloader import StatefulDataLoader
 from tqdm import tqdm
 from verl import DataProto
+from verl.trainer.ppo.metric_utils import (
+    compute_data_metrics,
+    compute_throughout_metrics,
+    compute_timing_metrics,
+    reduce_metrics,
+    process_validation_metrics,
+)
 from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.single_controller.base import Worker
 from verl.single_controller.ray import (
@@ -104,12 +114,6 @@ def unpad_responses(padded_tensor, pad_token_id):
             original_response = padded_response
         
         unpadded_responses.append(original_response)
-    
-    # Print the length of each response
-    # print(f"Response lengths: {len(padded_list)}")
-    # for i, response in enumerate(unpadded_responses):
-    #     print(f"{len(response)}",end=', ')
-    # print()
     return unpadded_responses
 
 class RLHFDatasetFilter(RLHFDataset):
@@ -219,10 +223,6 @@ class RLHFDatasetFilter(RLHFDataset):
             # add a new col for efficient filtering!
             new_key = 'applied_chat_template_prompts'
             self.dataframe[new_key] = self.dataframe[prompt_key].apply(lambda prompt: tokenizer.apply_chat_template(prompt, add_generation_prompt=True,))
-            # for i, row in self.dataframe.iterrows():
-            #     out_len = self.req_scheduler.lookup_table(row[new_key])
-            #     #print(out_len, row[new_key], end=', ')
-            #     print(out_len, end='; ')
 
             # filter prompt
             t1 = time()
@@ -257,22 +257,6 @@ class RLHFDatasetFilter(RLHFDataset):
             t2 = time()
             print(f'[RLHFDatasetFilter] filter response: {len(self.dataframe)=}, {self.min_response_length}:{self.max_response_length},  time cost: {t2-t1:.2f}s')
 
-
-            # Save the filtered dataset and metadata. XXX disable cache for now
-            # self.dataframe.to_parquet(cache_file, index=False)
-            
-            # # Save metadata to help validate cache in future runs
-            # metadata = {
-            #     'creation_time': time(),
-            #     'max_prompt_length': self.max_prompt_length,
-            #     'min_prompt_length': self.min_prompt_length,
-            #     'source_files': self.parquet_files,
-            #     'row_count': len(self.dataframe)
-            # }
-            # with open(cache_metadata, 'wb') as f:
-            #     pickle.dump(metadata, f)
-            # print(f"[DATASET] Cached filtered dataset to {cache_file}")
-    
     def __getitem__(self, item):
         # print(f'[RLHFDatasetFilter] items: {item} {type(item)}, end=')
         row_dict: dict = self.dataframe.iloc[item].to_dict()
@@ -361,14 +345,6 @@ class ReqScheduler:
                 
                 # [ReqScheduler] data keys = dict_keys(['prompts', 'response', 'reqs_idx', 'outlens'])
                 print(f"[ReqScheduler] data keys = {data.keys()} in {filename}")
-                # ps: list[int] = data['prompts']
-                # rs: list[int] = data['response']
-                # for p, s in zip(ps, rs):
-                #     p = tuple(p)
-                #     r = tuple(s)
-                #     if p not in ans:
-                #         ans[p] = []
-                #     ans[p].append(r)
                 # 按格式保存
                 ps = data['prompts']
                 ls = data['lengths']
@@ -440,16 +416,10 @@ class ReqScheduler:
 
     def log_seqlen(self, raw_prompt_ids, responses, prefix):
         print(f'[ReqScheduler] in log_seqlen, {type(raw_prompt_ids)}, {type(responses)}, {len(raw_prompt_ids)}, {len(responses)}')
-        # lengths = []
-        # for _, sublist in enumerate(data):
-        #     length = len(sublist)
-        #     lengths.append(length)
         assert len(raw_prompt_ids) == len(responses), f'{len(raw_prompt_ids)}, {len(responses)}'
         prompts_dict = {}
         prompts, response = [], []
         for p, r in zip(raw_prompt_ids, responses):
-            # prompts.append(tuple(p))
-            # response.append(tuple(r))
             if tuple(p) not in prompts_dict:
                 prompts_dict[tuple(p)] = []
             prompts_dict[tuple(p)].append(len(r))
@@ -480,6 +450,7 @@ class ReqScheduler:
         bs = len(gen_batch_output)
         assert bs % n_samples == 0, f'bs {bs} must be divisible by n_samples {n_samples}'
         assert bs//n_samples == len(reqs_idx), f'bs//n_samples {bs//n_samples} != len(reqs_idx) {len(reqs_idx)}'
+        print(f"[ReqScheduler] restore_order, {bs=}, {n_samples=}, {len(reqs_idx)=}")
 
         # e.g. [1, 0] -> [16, 17, ..., 31, 0, 1, ... , 15]
         cnt = 0
@@ -497,10 +468,6 @@ class ReqScheduler:
 
         assert len(global_idx) == bs, f'len(global_idx) {len(global_idx)} != bs {bs}'
 
-        #print(f'[RESTORE]')
-        #print(global_idx)
-        #print(reqs_idx)
-
         global_idx = torch.tensor(global_idx)
         gen_batch_output.reorder(global_idx)
 
@@ -513,12 +480,6 @@ class ReqScheduler:
         outlens = []
         for raw_prompt_ids in batch_dict['raw_prompt_ids']:
             outlen = self.lookup_table(raw_prompt_ids)
-            # if outlen is None:
-            #     print(f"prompt {raw_prompt_ids} not found in table")
-            #     for k, v in self.table.items():
-            #         print(f'k: {k}, v: {v}')
-            #         break
-            #     raise
             outlens.append(outlen)
 
         # sched
@@ -589,18 +550,30 @@ class ReqScheduler:
             cnt += 1
         return np.array(res, dtype=np.int32)
     
+    # def even_token(self, outlens, dp_size, tp_size, config):
+    #     total_num_token = sum(outlens)
+    #     per_dp = total_num_token // dp_size
+    #     res = []
+    #     group_idx = 0
+    #     cnt = 0
+    #     for i in range(0, len(outlens)):
+    #         cnt += outlens[i]
+    #         if cnt > per_dp:
+    #             group_idx += 1
+    #             cnt = 0
+    #         res.append(group_idx)
+    #     return np.array(res, dtype=np.int32)
+    
     def even_token(self, outlens, dp_size, tp_size, config):
-        total_num_token = sum(outlens)
-        per_dp = total_num_token // dp_size
-        res = []
-        group_idx = 0
-        cnt = 0
-        for i in range(0, len(outlens)):
-            cnt += outlens[i]
-            if cnt > per_dp:
-                group_idx += 1
-                cnt = 0
-            res.append(group_idx)
+        prompt_indices = list(range(len(outlens)))
+        sorted_pairs = sorted(zip(outlens, prompt_indices), reverse=True)
+        heap = [(0, i) for i in range(dp_size)]
+        heapq.heapify(heap)
+        res = [None] * len(outlens)
+        for token_len, orig_idx in sorted_pairs:
+            total, group = heapq.heappop(heap)
+            res[orig_idx] = group
+            heapq.heappush(heap, (total + token_len, group))
         return np.array(res, dtype=np.int32)
     
     def long_short(self, outlens, dp_size, tp_size, config):
@@ -720,6 +693,37 @@ class ResourcePoolManager:
         """Get the resource pool of the worker_cls"""
         return self.resource_pool_dict[self.mapping[role]]
 
+    def get_n_gpus(self) -> int:
+        """Get the number of gpus in this cluster."""
+        return sum([n_gpus for process_on_nodes in self.resource_pool_spec.values() for n_gpus in process_on_nodes])
+
+    def _check_resource_available(self):
+        """Check if the resource pool can be satisfied in this ray cluster."""
+        node_available_resources = ray.state.available_resources_per_node()
+        node_available_gpus = {node: node_info.get("GPU", 0) for node, node_info in node_available_resources.items()}
+
+        # check total required gpus can be satisfied
+        total_available_gpus = sum(node_available_gpus.values())
+        total_required_gpus = sum(
+            [n_gpus for process_on_nodes in self.resource_pool_spec.values() for n_gpus in process_on_nodes])
+        if total_available_gpus < total_required_gpus:
+            raise ValueError(
+                f"Total available GPUs {total_available_gpus} is less than total desired GPUs {total_required_gpus}")
+
+        # check each resource pool can be satisfied, O(#resource_pools * #nodes)
+        for resource_pool_name, process_on_nodes in self.resource_pool_spec.items():
+            num_gpus, num_nodes = process_on_nodes[0], len(process_on_nodes)
+            for node, available_gpus in node_available_gpus.items():
+                if available_gpus >= num_gpus:
+                    node_available_gpus[node] -= num_gpus
+                    num_nodes -= 1
+                    if num_nodes == 0:
+                        break
+            if num_nodes > 0:
+                raise ValueError(
+                    f"Resource pool {resource_pool_name}: {num_gpus}*{num_nodes} cannot be satisfied in this ray cluster"
+                )
+
 
 import torch
 from verl.utils.torch_functional import masked_mean
@@ -819,12 +823,6 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
     return data
 
 
-def reduce_metrics(metrics: dict):
-    for key, val in metrics.items():
-        metrics[key] = np.mean(val)
-    return metrics
-
-
 def _compute_response_info(batch):
     response_length = batch.batch['responses'].shape[-1]
 
@@ -839,133 +837,6 @@ def _compute_response_info(batch):
         prompt_length=prompt_length,
         response_length=response_length,
     )
-
-
-def compute_data_metrics(batch, use_critic=True):
-    # TODO: add response length
-    sequence_score = batch.batch['token_level_scores'].sum(-1)
-    sequence_reward = batch.batch['token_level_rewards'].sum(-1)
-
-    advantages = batch.batch['advantages']
-    returns = batch.batch['returns']
-
-    max_response_length = batch.batch['responses'].shape[-1]
-
-    prompt_mask = batch.batch['attention_mask'][:, :-max_response_length].bool(
-    )
-    response_mask = batch.batch['attention_mask'][:,
-                                                  -max_response_length:].bool(
-                                                  )
-
-    max_prompt_length = prompt_mask.size(-1)
-
-    response_info = _compute_response_info(batch)
-    prompt_length = response_info['prompt_length']
-    response_length = response_info['response_length']
-
-    valid_adv = torch.masked_select(advantages, response_mask)
-    valid_returns = torch.masked_select(returns, response_mask)
-
-    if use_critic:
-        values = batch.batch['values']
-        valid_values = torch.masked_select(values, response_mask)
-        return_diff_var = torch.var(valid_returns - valid_values)
-        return_var = torch.var(valid_returns)
-
-    metrics = {
-        # score
-        'critic/score/mean':
-        torch.mean(sequence_score).detach().item(),
-        'critic/score/max':
-        torch.max(sequence_score).detach().item(),
-        'critic/score/min':
-        torch.min(sequence_score).detach().item(),
-        # reward
-        'critic/rewards/mean':
-        torch.mean(sequence_reward).detach().item(),
-        'critic/rewards/max':
-        torch.max(sequence_reward).detach().item(),
-        'critic/rewards/min':
-        torch.min(sequence_reward).detach().item(),
-        # adv
-        'critic/advantages/mean':
-        torch.mean(valid_adv).detach().item(),
-        'critic/advantages/max':
-        torch.max(valid_adv).detach().item(),
-        'critic/advantages/min':
-        torch.min(valid_adv).detach().item(),
-        # returns
-        'critic/returns/mean':
-        torch.mean(valid_returns).detach().item(),
-        'critic/returns/max':
-        torch.max(valid_returns).detach().item(),
-        'critic/returns/min':
-        torch.min(valid_returns).detach().item(),
-        **({
-            # values
-            'critic/values/mean':
-            torch.mean(valid_values).detach().item(),
-            'critic/values/max':
-            torch.max(valid_values).detach().item(),
-            'critic/values/min':
-            torch.min(valid_values).detach().item(),
-            # vf explained var
-            'critic/vf_explained_var': (1.0 - return_diff_var / (return_var + 1e-5)).detach(
-            ).item(),
-        } if use_critic else {}),
-
-        # response length
-        'response_length/mean':
-        torch.mean(response_length).detach().item(),
-        'response_length/max':
-        torch.max(response_length).detach().item(),
-        'response_length/min':
-        torch.min(response_length).detach().item(),
-        'response_length/clip_ratio':
-        torch.mean(torch.eq(response_length,
-                            max_response_length).float()).detach().item(),
-        # prompt length
-        'prompt_length/mean':
-        torch.mean(prompt_length).detach().item(),
-        'prompt_length/max':
-        torch.max(prompt_length).detach().item(),
-        'prompt_length/min':
-        torch.min(prompt_length).detach().item(),
-        'prompt_length/clip_ratio':
-        torch.mean(torch.eq(prompt_length,
-                            max_prompt_length).float()).detach().item(),
-    }
-    return metrics
-
-
-def compute_timing_metrics(batch, timing_raw):
-    response_info = _compute_response_info(batch)
-    num_prompt_tokens = torch.sum(response_info['prompt_length']).item()
-    num_response_tokens = torch.sum(response_info['response_length']).item()
-    num_overall_tokens = num_prompt_tokens + num_response_tokens
-
-    num_tokens_of_section = {
-        'gen': num_response_tokens,
-        **{
-            name: num_overall_tokens
-            for name in [
-                'ref', 'values', 'adv', 'update_critic', 'update_actor'
-            ]
-        },
-    }
-
-    return {
-        **{
-            f'timing_s/{name}': value
-            for name, value in timing_raw.items()
-        },
-        **{
-            f'timing_per_token_ms/{name}':
-            timing_raw[name] * 1000 / num_tokens_of_section[name]
-            for name in set(num_tokens_of_section.keys()) & set(timing_raw.keys(
-            ))
-        },
-    }
 
 
 @contextmanager
@@ -1213,7 +1084,14 @@ class RayPPOTrainer(object):
             max_prompt_length=self.config.data.max_prompt_length,
             filter_prompts=True,
             return_raw_chat=self.config.data.get('return_raw_chat', False),
-            truncation='left',
+            truncation=self.config.data.get("truncation", "left"),
+            # xiaohui
+            filter_overlong_prompts=self.config.data.get('filter_overlong_prompts', False),
+            min_prompt_length=0,
+            min_response_length=0,
+            max_response_length=self.config.data.max_response_length * 10,
+            cap_dataset_size=None,
+            req_scheduler=self.req_scheduler,
         )
         self.val_dataloader = StatefulDataLoader(
             dataset=self.val_dataset,
@@ -1222,7 +1100,7 @@ class RayPPOTrainer(object):
             batch_size=len(self.val_dataset),
             num_workers=8,
             shuffle=False,
-            drop_last=True,
+            drop_last=False,
             collate_fn=collate_fn)
 
         assert len(self.train_dataloader) >= 1
@@ -1247,21 +1125,14 @@ class RayPPOTrainer(object):
             self.config.actor_rollout_ref.actor.optim.total_training_steps = total_training_steps
             self.config.critic.optim.total_training_steps = total_training_steps
 
-    def _maybe_log_val_generations_to_wandb(self, inputs, outputs, scores):
-        """Log a table of validation samples to wandb"""
+    def _maybe_log_val_generations(self, inputs, outputs, scores):
+        """Log a table of validation samples to the configured logger (wandb or swanlab)"""
 
-        generations_to_log = self.config.trainer.val_generations_to_log_to_wandb
+        generations_to_log = self.config.trainer.log_val_generations
 
         if generations_to_log == 0:
             return
 
-        if generations_to_log > 0 and 'wandb' not in self.config.trainer.logger:
-            print(
-                'WARNING: `val_generations_to_log_to_wandb` is set to a positive value, but no wandb logger is found. '
-            )
-            return
-
-        import wandb
         import numpy as np
 
         # Create tuples of (input, output, score) and sort by input text
@@ -1275,35 +1146,13 @@ class RayPPOTrainer(object):
         # Take first N samples after shuffling
         samples = samples[:generations_to_log]
 
-        # Create column names for all samples
-        columns = ["step"] + sum(
-            [[f"input_{i+1}", f"output_{i+1}", f"score_{i+1}"]
-             for i in range(len(samples))], [])
-
-        if not hasattr(self, 'validation_table'):
-            # Initialize the table on first call
-            self.validation_table = wandb.Table(columns=columns)
-
-        # Create a new table with same columns and existing data
-        # Workaround for https://github.com/wandb/wandb/issues/2981#issuecomment-1997445737
-        new_table = wandb.Table(columns=columns,
-                                data=self.validation_table.data)
-
-        # Add new row with all data
-        row_data = []
-        row_data.append(self.global_steps)
-        for sample in samples:
-            row_data.extend(sample)
-
-        new_table.add_data(*row_data)
-
-        # Update reference and log
-        wandb.log({"val/generations": new_table}, step=self.global_steps)
-        self.validation_table = new_table
-
+        # Log to each configured logger
+        self.validation_generations_logger.log(self.config.trainer.logger, samples, self.global_steps)
+    
     def _validate(self):
         reward_tensor_lst = []
         data_source_lst = []
+        reward_extra_infos_dict: dict[str, list] = defaultdict(list)
 
         # Lists to collect samples for the table
         sample_inputs = []
@@ -1311,7 +1160,17 @@ class RayPPOTrainer(object):
         sample_scores = []
 
         for test_data in self.val_dataloader:
+            # xiaohui: we need to schedule the val requests
+            self.req_scheduler.sched(
+                test_data, self.actor_rollout_wg.world_size, self.config.actor_rollout_ref,
+            )
             test_batch = DataProto.from_single_dict(test_data)
+
+            # repeat test batch
+            test_batch = test_batch.repeat(
+                repeat_times=self.config.actor_rollout_ref.rollout.val_kwargs.n,
+                interleave=True,
+            )
 
             # we only do validation on rule-based rm
             if self.config.reward_model.enable and test_batch[
@@ -1337,21 +1196,30 @@ class RayPPOTrainer(object):
             else:
                 test_gen_batch = test_batch.pop(
                     batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                    non_tensor_batch_keys=['raw_prompt_ids'],
+                    # 添加 resp 长度相关的信息
+                    non_tensor_batch_keys=['raw_prompt_ids', 'reqs_idx', 'outlens'],
                 )
-
+            test_reqs_idx = test_gen_batch.non_tensor_batch['reqs_idx']
             test_gen_batch.meta_info = {
                 'eos_token_id': self.tokenizer.eos_token_id,
                 'pad_token_id': self.tokenizer.pad_token_id,
                 'recompute_log_prob': False,
-                'do_sample': False,
+                'do_sample': self.config.actor_rollout_ref.rollout.val_kwargs.do_sample,
                 'validate': True,
             }
+            
+            print(f"test_gen_batch meta info: {test_gen_batch.meta_info}")
             # pad to be divisible by dp_size
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(
                 test_gen_batch, self.actor_rollout_wg.world_size)
             test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(
                 test_gen_batch_padded)
+            self.req_scheduler.restore_order(
+                test_output_gen_batch_padded, 
+                test_reqs_idx, 
+                n_samples=self.config.actor_rollout_ref.rollout.val_kwargs.n
+            )
+
             # unpad
             test_output_gen_batch = unpad_dataproto(
                 test_output_gen_batch_padded, pad_size=pad_size)
@@ -1365,36 +1233,40 @@ class RayPPOTrainer(object):
             sample_outputs.extend(output_texts)
             test_batch = test_batch.union(test_output_gen_batch)
             # evaluate using reward_function
-            reward_tensor = self.val_reward_fn(test_batch)
-
-            # Store scores
+            result = self.val_reward_fn(test_batch, return_dict=True)
+            reward_tensor = result["reward_tensor"]
             scores = reward_tensor.sum(-1).cpu().tolist()
             sample_scores.extend(scores)
 
-            reward_tensor_lst.append(reward_tensor)
-            data_source_lst.append(
-                test_batch.non_tensor_batch.get('data_source', ['unknown'] *
-                                                reward_tensor.shape[0]))
+            reward_extra_infos_dict["reward"].extend(scores)
+            if "reward_extra_info" in result:
+                for key, lst in result["reward_extra_info"].items():
+                    reward_extra_infos_dict[key].extend(lst)
 
-        self._maybe_log_val_generations_to_wandb(inputs=sample_inputs,
-                                                 outputs=sample_outputs,
-                                                 scores=sample_scores)
+            data_source_lst.append(test_batch.non_tensor_batch.get("data_source", ["unknown"] * reward_tensor.shape[0]))
 
-        reward_tensor = torch.cat(reward_tensor_lst,
-                                  dim=0).sum(-1).cpu()  # (batch_size,)
+        self._maybe_log_val_generations(inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores)
+
+        for key_info, lst in reward_extra_infos_dict.items():
+            assert len(lst) == 0 or len(lst) == len(sample_scores), (f"{key_info}: {len(lst)=}, {len(sample_scores)=}")
+
         data_sources = np.concatenate(data_source_lst, axis=0)
 
-        # evaluate test_score based on data source
-        data_source_reward = {}
-        for i in range(reward_tensor.shape[0]):
-            data_source = data_sources[i]
-            if data_source not in data_source_reward:
-                data_source_reward[data_source] = []
-            data_source_reward[data_source].append(reward_tensor[i].item())
-
+        data_src2var2metric2val = process_validation_metrics(data_sources, sample_inputs, reward_extra_infos_dict)
         metric_dict = {}
-        for data_source, rewards in data_source_reward.items():
-            metric_dict[f'val/test_score/{data_source}'] = np.mean(rewards)
+        for data_source, var2metric2val in data_src2var2metric2val.items():
+            core_var = "acc" if "acc" in var2metric2val else "reward"
+            for var_name, metric2val in var2metric2val.items():
+                n_max = max([int(name.split("@")[-1].split("/")[0]) for name in metric2val.keys()])
+                for metric_name, metric_val in metric2val.items():
+                    if ((var_name == core_var) and
+                            any(metric_name.startswith(pfx) for pfx in ["mean", "maj", "best"]) and
+                        (f"@{n_max}" in metric_name)):
+                        metric_sec = "val-core"
+                    else:
+                        metric_sec = "val-aux"
+                    pfx = f"{metric_sec}/{data_source}/{var_name}/{metric_name}"
+                    metric_dict[pfx] = metric_val
 
         return metric_dict
 
@@ -1643,12 +1515,14 @@ class RayPPOTrainer(object):
         if self.val_reward_fn is not None and self.config.trainer.get(
                 'val_before_train', True):
             # XXX gh512 disable for now
-            # val_metrics = self._validate()
-            # pprint(f'Initial validation metrics: {val_metrics}')
-            # logger.log(data=val_metrics, step=self.global_steps)
+            val_metrics = self._validate()
+            pprint(f'Initial validation metrics: {val_metrics}')
+            logger.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get('val_only', False):
                 return
 
+        # add tqdm
+        progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
         # we start from step 1
         self.global_steps += 1
         last_val_metrics = None
@@ -1685,12 +1559,12 @@ class RayPPOTrainer(object):
                     )
                 else:
                     gen_batch = batch.pop(
-                        batch_keys=[
-                            'input_ids', 'attention_mask', 'position_ids'
-                        ],
+                        batch_keys=['input_ids', 'attention_mask', 'position_ids'],
                         # 添加 resp 长度相关的信息
                         non_tensor_batch_keys=['raw_prompt_ids', 'reqs_idx', 'outlens'],
                     )
+
+                is_last_step = self.global_steps >= self.total_training_steps
 
                 # gh512: data examine
                 idx = gen_batch.batch['input_ids']  # (bs, prompt_length)
@@ -1719,19 +1593,15 @@ class RayPPOTrainer(object):
                         with _timer('gen_max', timing_raw):
                             gen_baseline_batch = deepcopy(gen_batch)
                             gen_baseline_batch.meta_info['do_sample'] = False
-                            gen_baseline_output = self.actor_rollout_wg.generate_sequences(
-                                gen_baseline_batch)
+                            gen_baseline_output = self.actor_rollout_wg.generate_sequences(gen_baseline_batch)
 
                             batch = batch.union(gen_baseline_output)
                             reward_baseline_tensor = self.reward_fn(batch)
-                            reward_baseline_tensor = reward_baseline_tensor.sum(
-                                dim=-1)
+                            reward_baseline_tensor = reward_baseline_tensor.sum(dim=-1)
 
-                            batch.pop(batch_keys=list(
-                                gen_baseline_output.batch.keys()))
+                            batch.pop(batch_keys=list(gen_baseline_output.batch.keys()))
 
-                            batch.batch[
-                                'reward_baselines'] = reward_baseline_tensor
+                            batch.batch['reward_baselines'] = reward_baseline_tensor
 
                             del gen_baseline_batch, gen_baseline_output
 
@@ -1745,10 +1615,7 @@ class RayPPOTrainer(object):
                             dtype=object,
                         )
                         # repeat to align with repeated responses in rollout
-                        batch = batch.repeat(
-                            repeat_times=self.config.actor_rollout_ref.rollout.n,
-                            interleave=True,
-                        )
+                        batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                         batch = batch.union(gen_batch_output)
 
                         #####################################
@@ -1760,7 +1627,7 @@ class RayPPOTrainer(object):
                         # gh512: log
                         pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
                         model = self.config.actor_rollout_ref.model.path.split('/')[-1]
-                        dataset = self.config.data.train_files.split('/')[-1]
+                        dataset = self.config.data.train_files[0].split('/')[-1]
                         prefix = f'{dataset}_{model}_E{epoch}B{bs_idx}_data'
                         unpadded = unpad_responses(response, pad_ids)
                         self.req_scheduler.log_seqlen(
@@ -1788,15 +1655,13 @@ class RayPPOTrainer(object):
 
                     # recompute old_log_probs
                     with _timer('old_log_prob', timing_raw):
-                        old_log_prob = self.actor_rollout_wg.compute_log_prob(
-                            batch)
+                        old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
                         batch = batch.union(old_log_prob)
 
                     if self.use_reference_policy:
                         # compute reference log_prob
                         with _timer('ref', timing_raw):
-                            ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(
-                                batch)
+                            ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
                             batch = batch.union(ref_log_prob)
 
                     # compute values
@@ -1820,11 +1685,10 @@ class RayPPOTrainer(object):
                         batch.batch['token_level_scores'] = reward_tensor
 
                         # compute rewards. apply_kl_penalty if available
-                        if not self.config.actor_rollout_ref.actor.get(
-                                'use_kl_loss', False):
+                        if self.config.algorithm.use_kl_in_reward:
                             batch, kl_metrics = apply_kl_penalty(
                                 batch,
-                                kl_ctrl=self.kl_ctrl,
+                                kl_ctrl=self.kl_ctrl_in_reward,
                                 kl_penalty=self.config.algorithm.kl_penalty)
                             metrics.update(kl_metrics)
                         else:
@@ -1858,14 +1722,16 @@ class RayPPOTrainer(object):
 
                     # validate
                     # XXX gh512 disable
-                    # if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and \
-                    #     self.global_steps % self.config.trainer.test_freq == 0:
-                    #     with _timer('testing', timing_raw):
-                    #         val_metrics: dict = self._validate()
-                    #     metrics.update(val_metrics)
+                    if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and \
+                        (is_last_step or self.global_steps % self.config.trainer.test_freq == 0):
+                        with _timer('testing', timing_raw):
+                            val_metrics: dict = self._validate()
+                            if is_last_step:
+                                last_val_metrics = val_metrics
+                        metrics.update(val_metrics)
 
-                    if self.config.trainer.save_freq > 0 and \
-                            self.global_steps % self.config.trainer.save_freq == 0:
+                    if self.config.trainer.save_freq > 0 and (is_last_step or
+                                                              self.global_steps % self.config.trainer.save_freq == 0):
                         with _timer('save_checkpoint', timing_raw):
                             self._save_checkpoint()
 
@@ -1877,37 +1743,28 @@ class RayPPOTrainer(object):
                     metrics.update(
                         compute_timing_metrics(batch=batch,
                                                timing_raw=timing_raw))
+                    # TODO: implement actual tflpo and theoretical tflpo
+                n_gpus = self.resource_pool_manager.get_n_gpus()
+                metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+                timing_raw = defaultdict(float)  # clear timing
 
-                    # TODO: make a canonical logger that supports various backend
-                    logger.log(data=metrics, step=self.global_steps)
 
-                    self.global_steps += 1
+                # TODO: make a canonical logger that supports various backend
+                logger.log(data=metrics, step=self.global_steps)
 
-                    if self.global_steps >= self.total_training_steps:
+                if is_last_step:
+                    pprint(f'Final validation metrics: {last_val_metrics}')
+                    progress_bar.close()
+                    return
+                progress_bar.update(1)
+                self.global_steps += 1
+            # gh512
+            # print _timer
+            print(f'{epoch=}: {bs_idx=}')
+            print(timing_raw)
+            print('*' * 100)
+            timings.append(timing_raw)
 
-                        # perform validation after training
-                        if self.val_reward_fn is not None:
-                            # XXX gh512 disable for now
-                            # val_metrics = self._validate()
-                            # pprint(f'Final validation metrics: {val_metrics}')
-                            # logger.log(data=val_metrics, step=self.global_steps)
-                            pass
-                        if self.config.trainer.save_freq > 0 and \
-                                (self.global_steps - 1) % self.config.trainer.save_freq != 0:
-                            with _timer('save_checkpoint', timing_raw):
-                                self._save_checkpoint()
-                # gh512
-                # print _timer
-                print(f'{epoch=}: {bs_idx=}')
-                print(timing_raw)
-                print('*' * 100)
-                timings.append(timing_raw)
-                #if bs_idx >= 0:
-                #    break
-                #break
-            #if bs_idx >= 0:
-            #    break
-            #break
 
         # print time
         keys = timings[0].keys()
