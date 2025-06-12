@@ -1208,8 +1208,11 @@ class RayDAPOTrainer(RayPPOTrainer):
                         metrics.update(critic_output_metrics)
 
                     # implement critic warmup
+                    print(self.global_steps)
+                    print("[UPDATE ACTOR]")
                     if self.config.trainer.critic_warmup <= self.global_steps:
                         # update actor
+                        print("become update_actor")
                         with _timer('update_actor', timing_raw):
                             actor_output = self.actor_rollout_wg.update_actor(batch)
                         actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])
