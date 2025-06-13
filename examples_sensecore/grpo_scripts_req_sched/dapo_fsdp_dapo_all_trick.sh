@@ -15,7 +15,7 @@ export model_path=${model_path:-/nvfile-heatstorage/chatrl/public/models/Qwen25-
 # project config
 export project_name=${project_name:-verl_dapo_math_grpo_dapo_req_sched}
 # train params
-export total_epochs=${total_epochs:-50}
+export total_epochs=${total_epochs:-15}
 export vllm_tp=${vllm_tp:-1}
 
 export train_prompt_batch_size=${train_prompt_batch_size:-512}
@@ -75,8 +75,8 @@ gen_max_tokens=$((max_tokens * 2))
 log_prob_max_tokens=$((max_tokens * 2))
 
 
-export seq_dir=${seq_dir:-/nvfile-heatstorage/req_sched_seq_dir/Qwen2.5-32B/seq_init}
-export log_dir=${log_dir:-/nvfile-heatstorage/chatrl/users/hxh/data/req_sched_seq_dir/Qwen2.5-32B/seq_log}
+export seq_dir=${seq_dir:-/nvfile-heatstorage/teleai-infra/wlw/workspace/Qwen2.5-32B-seq/seq_init}
+export log_dir=${log_dir:-/nvfile-heatstorage/teleai-infra/wlw/workspace/Qwen2.5-32B-seq/seq_log}
 
 cap_dataset_size=$((1024 * 80000))
 filter_overlong_prompts=False
@@ -84,6 +84,7 @@ filter_overlong_prompts=False
 #req_algo="long_short"
 # req_algo="even_prompt"
 # req_algo="even_token"
+# req_algo="even_token_kk"
 # agg="max" # sum / max
 
 export req_algo=${req_algo:-even_token}
@@ -98,7 +99,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 sleep 1
 
 export experiment_name=Qwen25-32B-Base_grpo_math_${suffix_name}-${req_algo}-${agg}_${nnode}node_reward_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_all_dapo_trick_${resume_type}_filter_data
-
+mkdir /nvfile-heatstorage/teleai-infra/wlw/workspace/logs_sensecore
 rm -rf /workspace/tmp_tensorboard/*
 
 #data.max_batch_size=${train_prompt_batch_size} \
@@ -178,11 +179,11 @@ python3 -u -m  recipe.dapo.src.main_dapo \
     trainer.resume_mode=${resume_mode} \
     trainer.resume_from_path=${resume_from_path} \
     trainer.logger=['tensorboard'] \
-    trainer.default_local_dir=/nvfile-heatstorage/teleai-infra/wxe/models/verl_rl_models/${project_name}/${experiment_name} \
+    trainer.default_local_dir=/nvfile-heatstorage/teleai-infra/wlw/workspace/${project_name}/${experiment_name} \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=${nnode} \
     trainer.save_freq=10 \
     trainer.test_freq=20 \
-    trainer.total_epochs=${total_epochs} 2>&1 | tee /nvfile-heatstorage/teleai-infra/wxe/code/verl/logs_sensecore/$experiment_name.log
+    trainer.total_epochs=${total_epochs} 2>&1 | tee /nvfile-heatstorage/teleai-infra/wlw/workspace/logs_sensecore/$experiment_name.log

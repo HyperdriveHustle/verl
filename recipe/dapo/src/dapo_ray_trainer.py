@@ -26,7 +26,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from copy import deepcopy
 from pprint import pprint
-from typing import Type, Dict
+from typing import Type, Dict, List, Tuple
 from copy import deepcopy
 from time import time
 import json
@@ -60,6 +60,12 @@ from verl.trainer.ppo.ray_trainer import (
     ResourcePoolManager,
     apply_kl_penalty,
     compute_advantage,
+)
+
+from verl.utils.seqlen_balancing import (
+    get_seqlen_balanced_partitions,
+    log_seqlen_unbalance,
+    karmarkar_karp
 )
 
 from verl.single_controller.ray import (
@@ -298,6 +304,11 @@ class RLHFDatasetFilter(RLHFDataset):
         row_dict["index"] = index
 
         return row_dict
+
+
+
+
+
 
 
 class ReqScheduler:
@@ -574,7 +585,33 @@ class ReqScheduler:
             res[orig_idx] = group
             heapq.heappush(heap, (total + token_len, group))
         return np.array(res, dtype=np.int32)
-    
+
+    def even_token_kk(self, outlens: list[int], dp_size: int, tp_size: int, config):
+        """
+        Schedules requests to balance the total number of tokens per DP group
+        using the Karmarkar-Karp (KK) number partitioning algorithm.
+        """
+        if not outlens:
+            return np.array([], dtype=np.int32)
+        
+        print(f"[ReqScheduler] Running Karmarkar-Karp for {len(outlens)} prompts into {dp_size} groups.")
+        
+        partitions = karmarkar_karp(
+            seqlen_list=outlens, 
+            k_partitions=dp_size, 
+            equal_size=False  # We want to balance sum of tokens, not count of prompts
+        )
+
+        res = [None] * len(outlens)
+        for group_idx, partition_indices in enumerate(partitions):
+            for original_prompt_idx in partition_indices:
+                res[original_prompt_idx] = group_idx
+
+        assert None not in res, "Karmarkar-Karp scheduling failed: not all prompts were assigned a group."
+
+        return np.array(res, dtype=np.int32)
+
+
     def long_short(self, outlens, dp_size, tp_size, config):
         p = np.percentile(outlens, config.percentile)
         long = set()
@@ -1208,11 +1245,8 @@ class RayDAPOTrainer(RayPPOTrainer):
                         metrics.update(critic_output_metrics)
 
                     # implement critic warmup
-                    print(self.global_steps)
-                    print("[UPDATE ACTOR]")
                     if self.config.trainer.critic_warmup <= self.global_steps:
                         # update actor
-                        print("become update_actor")
                         with _timer('update_actor', timing_raw):
                             actor_output = self.actor_rollout_wg.update_actor(batch)
                         actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])
@@ -1239,6 +1273,12 @@ class RayDAPOTrainer(RayPPOTrainer):
                 # TODO: implement actual tflpo and theoretical tflpo
                 n_gpus = self.resource_pool_manager.get_n_gpus()
                 metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+
+
+                print(f'{epoch=}: {bs_idx=}')
+                print(timing_raw)
+                print('*' * 100)
+                timings.append(timing_raw)
                 timing_raw = defaultdict(float)  # clear timing
 
                 metrics["train/num_gen_batches"] = num_gen_batches
@@ -1256,12 +1296,8 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                 progress_bar.update(1)
                 self.global_steps += 1
-            # gh512
-            # print _timer
-            print(f'{epoch=}: {bs_idx=}')
-            print(timing_raw)
-            print('*' * 100)
-            timings.append(timing_raw)
+                # gh512
+                # print _timer
     
         # print time
         keys = timings[0].keys()
