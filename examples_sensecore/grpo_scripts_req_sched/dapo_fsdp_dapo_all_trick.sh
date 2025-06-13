@@ -84,6 +84,7 @@ filter_overlong_prompts=False
 #req_algo="long_short"
 # req_algo="even_prompt"
 # req_algo="even_token"
+# req_algo="even_token_kk"
 # agg="max" # sum / max
 
 export req_algo=${req_algo:-even_token}
