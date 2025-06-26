@@ -1,0 +1,9 @@
+deb http://ubuntu.chinatelecom.ai/ bionic main restricted universe multiverse
+# deb-src http://ubuntu.chinatelecom.ai/ bionic main restricted universe multiverse
+deb http://ubuntu.chinatelecom.ai/ bionic-updates main restricted universe multiverse
+# deb-src http://ubuntu.chinatelecom.ai/ bionic-updates main restricted universe multiverse
+deb http://ubuntu.chinatelecom.ai/ bionic-backports main restricted universe multiverse
+# deb-src http://ubuntu.chinatelecom.ai/ bionic-backports main restricted universe multiverse
+deb http://ubuntu.chinatelecom.ai/ bionic-security main restricted universe multiverse
+# deb-src http://ubuntu.chinatelecom.ai/ bionic-security main restricted universe multiverse
+

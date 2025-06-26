@@ -544,6 +544,18 @@ class ActorRolloutRefWorker(Worker):
         # Support all hardwares
         data = data.to(torch.cuda.current_device())
 
+        # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
+        # os.makedirs(snapshot_dir, exist_ok=True)
+        # global_step = data.meta_info.get("global_step", "unknown_step")
+        # snapshot_filename = os.path.join(snapshot_dir, f"actor_update_rank_{self.rank}_step_{global_step}.pickle")
+        # torch.cuda.memory._record_memory_history()
+        # print(f"[Rank {self.rank}] Starting memory history recording for step {global_step}.")
+
+        # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
+        # os.makedirs(snapshot_dir, exist_ok=True)
+        # snapshot_filename = os.path.join(snapshot_dir, f"snapeshot_from_init_to_update.pickle")
+
+
         assert self._is_actor
         if self._is_offload_param:
             load_fsdp_model_to_gpu(self.actor_module_fsdp)
@@ -577,6 +589,10 @@ class ActorRolloutRefWorker(Worker):
 
             output = self.ulysses_sharding_manager.postprocess_data(data=output)
             output = output.to('cpu')
+
+        # print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
+        # torch.cuda.memory._dump_snapshot(snapshot_filename)
+        # torch.cuda.memory._record_memory_history(enabled=None)
 
         if self._is_offload_param:
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)

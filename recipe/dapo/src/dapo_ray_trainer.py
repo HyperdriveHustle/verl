@@ -1040,7 +1040,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                     # generate a batch
                     # 这里传入的 batch 是所有的数据，到具体 rank 上再做分配
 
-                    torch.cuda.memory._record_memory_history(max_entries=100000)
+                    #torch.cuda.memory._record_memory_history(max_entries=100000)
 
                     with _timer('gen', timing_raw):
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
@@ -1221,7 +1221,7 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                     # compute global_valid tokens
                     batch.meta_info['global_token_num'] = torch.sum(batch.batch['attention_mask'], dim=-1).tolist()
-
+                    batch.meta_info['global_step'] = self.global_steps
                     # recompute old_log_probs
                     with _timer('old_log_prob', timing_raw):
                         old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
@@ -1289,9 +1289,9 @@ class RayDAPOTrainer(RayPPOTrainer):
                 print(timing_raw)
                 print('*' * 100)
                 timings.append(timing_raw)
-                timestamp = os.environ.get("TIMESTAMP")
-                torch.cuda.memory._dump_snapshot(f"/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot/snapshot_{timestamp}_{self.global_steps}")
-                torch.cuda.memory._record_memory_history(enabled=None)
+                # timestamp = os.environ.get("TIMESTAMP")
+                # torch.cuda.memory._dump_snapshot(f"/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot/snapshot_{timestamp}_{self.global_steps}")
+                # torch.cuda.memory._record_memory_history(enabled=None)
                 timing_raw = defaultdict(float)  # clear timing
 
                 metrics["train/num_gen_batches"] = num_gen_batches

@@ -19,7 +19,7 @@ export project_name=${project_name:-verl_dapo_math_grpo_dapo_req_sched}
 export total_epochs=${total_epochs:-10}
 export vllm_tp=${vllm_tp:-1}
 
-export train_prompt_batch_size=${train_prompt_batch_size:-32}
+export train_prompt_batch_size=${train_prompt_batch_size:-16}
 export grpo_rollout_n=${grpo_rollout_n:-8}
 # model params
 export max_response_length=${max_response_length:-4096}
@@ -101,11 +101,11 @@ sleep 1
 export experiment_name=${model_name}_grpo_math_${suffix_name}-${req_algo}-${agg}_${nnode}node_reward_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_all_dapo_trick_${resume_type}_filter_data_${TIMESTAMP}
 mkdir /nvfile-heatstorage/teleai-infra/wlw/workspace/logs_sensecore
 rm -rf /workspace/tmp_tensorboard/*
-
+export CUDA_VISIBLE_DEVICES=4,5,6,7 
 #data.max_batch_size=${train_prompt_batch_size} \
 #python3 -u -m verl.trainer.main_ppo \
 # python3 -u -m verl.trainer.main_ppo_with_time \
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python3 -u -m  recipe.dapo.src.main_dapo \
+python3 -u -m  recipe.dapo.src.main_dapo \
     --config-path=config \
     --config-name='dapo_trainer.yaml' \
     algorithm.adv_estimator=grpo \
@@ -182,7 +182,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python3 -u -m  recipe.dapo.src.main_dapo \
     trainer.default_local_dir=/nvfile-heatstorage/teleai-infra/wlw/workspace/${project_name}/${experiment_name} \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
-    trainer.n_gpus_per_node=8 \
+    trainer.n_gpus_per_node=4 \
     trainer.nnodes=${nnode} \
     trainer.save_freq=10 \
     trainer.test_freq=20 \
