@@ -103,7 +103,9 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         self.config = config
         import torch.distributed
-
+        import torch
+        torch.cuda.memory._record_memory_history()
+        
         if not torch.distributed.is_initialized():
             rank = int(os.environ.get("RANK", 0))
             world_size = int(os.environ.get("WORLD_SIZE", 1))
