@@ -103,8 +103,8 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         self.config = config
         import torch.distributed
-        import torch
-        torch.cuda.memory._record_memory_history()
+        #import torch
+        #torch.cuda.memory._record_memory_history()
         
         if not torch.distributed.is_initialized():
             rank = int(os.environ.get("RANK", 0))
@@ -605,6 +605,20 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
     @DistProfiler.annotate(color="red")
     def update_actor(self, data: DataProto):
         # Support all hardwares
+        
+
+        snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/verl_0626/verl/snapshot"
+        os.makedirs(snapshot_dir, exist_ok=True)
+        global_step = data.meta_info.get("global_steps", "unknown_step")
+        snapshot_filename = os.path.join(snapshot_dir, f"actor_update_rank_{self.rank}_step_{global_step}.pickle")
+        torch.cuda.memory._record_memory_history()
+        print(f"[Rank {self.rank}] Starting memory history recording for step {global_step}.")
+
+        # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
+        # os.makedirs(snapshot_dir, exist_ok=True)
+        # snapshot_filename = os.path.join(snapshot_dir, f"snapeshot_from_init_to_update.pickle")
+
+
         data = data.to("cpu")  # data will to device with each micro batch on actor.update_policy
 
         assert self._is_actor
@@ -642,6 +656,10 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         if self._is_offload_optimizer:
             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
             log_gpu_memory_usage("After offload actor optimizer during update_actor", logger=logger)
+
+        print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
+        torch.cuda.memory._dump_snapshot(snapshot_filename)
+        torch.cuda.memory._record_memory_history(enabled=None)
 
         return output
 
