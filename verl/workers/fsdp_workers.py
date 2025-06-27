@@ -42,7 +42,8 @@ from verl.workers.sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManage
 
 from codetiming import Timer
 from time import perf_counter
-
+import pandas as pd
+from datetime import datetime
 
 # gh512
 import numpy as np
@@ -154,6 +155,72 @@ class ActorRolloutRefWorker(Worker):
         print(
             f'[ActorRollout-INIT]: {role=} {rank=} {local_rank=} {world_size=}, CUDA_VISIBLE_DEVICES: {worker_gpus} {torch.cuda.current_device()=}; {torch.cuda.get_device_name(device)=}; {torch.cuda.get_device_capability(device)=}'
         )
+        self._setup_gentime_csv_logging()
+
+    def _setup_gentime_csv_logging(self):
+        """设置GENTIME CSV日志文件"""
+        rank = torch.distributed.get_rank()
+        
+        # 创建保存目录
+        save_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/gentime_logs_per_gpu"
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # 生成文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.gentime_csv_path = f"{save_dir}/gentime_rank_{rank}_{timestamp}.csv"
+        self.gentime_csv_initialized = False
+        self.gentime_step_counter = 0
+        
+        print(f'[RANK {rank}] GENTIME data will be saved to: {self.gentime_csv_path}')
+
+
+    def _write_gentime_to_csv(self, rank, gen_time, tsum, osum, insum, 
+                             tlongest, tshortest, tavg, tstd,
+                             inlongest, inshortest, inavg, instd,
+                             actual_sum, actual_mean, actual_max, actual_min):
+        """将GENTIME数据写入CSV"""
+        self.gentime_step_counter += 1
+        
+        # 准备数据行
+        gentime_data = {
+            'step': self.gentime_step_counter,
+            'rank': rank,
+            'gen_time': gen_time,
+            'total_sum': tsum,
+            'output_sum': osum,
+            'input_sum': insum,
+            'total_longest': tlongest,
+            'total_shortest': tshortest,
+            'total_avg': tavg,
+            'total_std': tstd,
+            'input_longest': inlongest,
+            'input_shortest': inshortest,
+            'input_avg': inavg,
+            'input_std': instd,
+            'actual_sum': actual_sum,
+            'actual_mean': actual_mean,
+            'actual_max': actual_max,
+            'actual_min': actual_min
+        }
+        
+        # 创建DataFrame
+        df_row = pd.DataFrame([gentime_data])
+        
+        if not self.gentime_csv_initialized:
+            # 第一次写入，创建文件和表头
+            df_row.to_csv(self.gentime_csv_path, index=False, mode='w')
+            self.gentime_csv_initialized = True
+        else:
+            # 追加写入
+            df_row.to_csv(self.gentime_csv_path, index=False, mode='a', header=False)
+        
+        # 立即刷新文件缓冲区
+        try:
+            with open(self.gentime_csv_path, 'a') as f:
+                f.flush()
+                os.fsync(f.fileno())
+        except:
+            pass
 
     def _build_model_optimizer(self,
                                model_path,
@@ -477,6 +544,18 @@ class ActorRolloutRefWorker(Worker):
         # Support all hardwares
         data = data.to(torch.cuda.current_device())
 
+        # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
+        # os.makedirs(snapshot_dir, exist_ok=True)
+        # global_step = data.meta_info.get("global_step", "unknown_step")
+        # snapshot_filename = os.path.join(snapshot_dir, f"actor_update_rank_{self.rank}_step_{global_step}.pickle")
+        # torch.cuda.memory._record_memory_history()
+        # print(f"[Rank {self.rank}] Starting memory history recording for step {global_step}.")
+
+        # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
+        # os.makedirs(snapshot_dir, exist_ok=True)
+        # snapshot_filename = os.path.join(snapshot_dir, f"snapeshot_from_init_to_update.pickle")
+
+
         assert self._is_actor
         if self._is_offload_param:
             load_fsdp_model_to_gpu(self.actor_module_fsdp)
@@ -510,6 +589,10 @@ class ActorRolloutRefWorker(Worker):
 
             output = self.ulysses_sharding_manager.postprocess_data(data=output)
             output = output.to('cpu')
+
+        # print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
+        # torch.cuda.memory._dump_snapshot(snapshot_filename)
+        # torch.cuda.memory._record_memory_history(enabled=None)
 
         if self._is_offload_param:
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
@@ -671,6 +754,16 @@ class ActorRolloutRefWorker(Worker):
                 actual_min = np.min(actual_outlen)
 
                 print(f'[GENTIME] {rank=}, {t2-t1:.2f}s; Sum: totallens={tsum}, outlens={osum}, insum={insum} ; Total: {tlongest=}, {tshortest=}, {tavg=}, {tstd=}; In: {inlongest=}, {inshortest=}, inavg={inavg:.0f}, instd={instd:.0f}; ACTUAL: {actual_sum=}, {actual_mean=}, {actual_max=}, {actual_min=}')
+                self._write_gentime_to_csv(
+                    rank=rank,
+                    gen_time=t2-t1,
+                    tsum=tsum, osum=osum, insum=insum,
+                    tlongest=tlongest, tshortest=tshortest, tavg=tavg, tstd= tstd,
+                    inlongest=inlongest, inshortest=inshortest, inavg=inavg, instd=instd,
+                    actual_sum=actual_sum, actual_mean=actual_mean, 
+                    actual_max=actual_max, actual_min=actual_min
+                )
+
 
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
@@ -679,6 +772,7 @@ class ActorRolloutRefWorker(Worker):
 
         gc.collect()
 
+        #   
         # clear kv cache
         log_gpu_memory_usage('After recompute log prob', logger=logger)
         return output

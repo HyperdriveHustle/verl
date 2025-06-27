@@ -969,13 +969,13 @@ class RayDAPOTrainer(RayPPOTrainer):
 
         # perform validation before training
         # currently, we only support validation using the reward_function.
-        if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
-            # gh512 disable for debug
-            val_metrics = self._validate()
-            pprint(f'Initial validation metrics: {val_metrics}')
-            # logger.log(data=val_metrics, step=self.global_steps)
-            if self.config.trainer.get('val_only', False):
-                return
+        # if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
+        #     # gh512 disable for debug
+        val_metrics = self._validate()
+        pprint(f'Initial validation metrics: {val_metrics}')
+        # logger.log(data=val_metrics, step=self.global_steps)
+        if self.config.trainer.get('val_only', False):
+            return
 
         # add tqdm
         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
@@ -1039,8 +1039,13 @@ class RayDAPOTrainer(RayPPOTrainer):
                 with _timer('step', timing_raw):
                     # generate a batch
                     # 这里传入的 batch 是所有的数据，到具体 rank 上再做分配
+
+                    #torch.cuda.memory._record_memory_history(max_entries=100000)
+
                     with _timer('gen', timing_raw):
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
+
+                    timing_raw['gen_dispatch_time'] += gen_batch_output.meta_info.get('dispatch_time', 0.0)
 
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         with _timer('gen_max', timing_raw):
@@ -1211,7 +1216,7 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                     # compute global_valid tokens
                     batch.meta_info['global_token_num'] = torch.sum(batch.batch['attention_mask'], dim=-1).tolist()
-
+                    batch.meta_info['global_step'] = self.global_steps
                     # recompute old_log_probs
                     with _timer('old_log_prob', timing_raw):
                         old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
@@ -1273,6 +1278,12 @@ class RayDAPOTrainer(RayPPOTrainer):
                 # TODO: implement actual tflpo and theoretical tflpo
                 n_gpus = self.resource_pool_manager.get_n_gpus()
                 metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+
+
+                print(f'{epoch=}: {bs_idx=}')
+                print(timing_raw)
+                print('*' * 100)
+                timings.append(timing_raw)
                 timing_raw = defaultdict(float)  # clear timing
 
                 metrics["train/num_gen_batches"] = num_gen_batches
@@ -1290,12 +1301,8 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                 progress_bar.update(1)
                 self.global_steps += 1
-            # gh512
-            # print _timer
-            print(f'{epoch=}: {bs_idx=}')
-            print(timing_raw)
-            print('*' * 100)
-            timings.append(timing_raw)
+                # gh512
+                # print _timer
     
         # print time
         keys = timings[0].keys()

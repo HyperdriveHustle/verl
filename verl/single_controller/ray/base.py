@@ -36,11 +36,29 @@ def get_random_string(length: int) -> str:
 def func_generator(self, method_name, dispatch_fn, collect_fn, execute_fn, blocking):
 
     def func(*args, **kwargs):
-        args, kwargs = dispatch_fn(self, *args, **kwargs)
+        should_record_time = False
+        print('*' * 100)
+        print(method_name, self.ray_cls_with_init.cls)
+        if method_name == 'actor_rollout_generate_sequences':
+                should_record_time = True
+                print('*' * 100)
+        if should_record_time:
+            dispatch_starttime = time.time()
+            args, kwargs = dispatch_fn(self, *args, **kwargs)
+            dispatch_endtime = time.time()
+            print(f"[{method_name}] Dispatch time: {dispatch_endtime - dispatch_starttime} seconds")
+        else:
+            args, kwargs = dispatch_fn(self, *args, **kwargs)
+
         output = execute_fn(method_name, *args, **kwargs)
+
         if blocking:
             output = ray.get(output)
         output = collect_fn(self, output)
+        if should_record_time:
+            output.meta_info.update({
+                'dispatch_time': dispatch_endtime - dispatch_starttime
+            })
         return output
 
     return func
