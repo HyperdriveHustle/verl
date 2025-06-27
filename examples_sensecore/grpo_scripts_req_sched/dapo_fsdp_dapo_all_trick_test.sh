@@ -11,7 +11,7 @@ test_files="['$aime2024_test_path']"
 # resume config
 export resume_mode=${resume_mode:-auto}
 export resume_from_path=${resume_from_path:-null}
-export model_path=${model_path:-/nvfile-heatstorage/chatrl/public/models/DeepSeek-R1-Distill-Qwen-1.5B}
+export model_path=${model_path:-/nvfile-heatstorage/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B}
 export model_name=$(basename "$model_path")
 # project config
 export project_name=${project_name:-verl_dapo_math_grpo_dapo_req_sched}
@@ -22,7 +22,7 @@ export vllm_tp=${vllm_tp:-1}
 export train_prompt_batch_size=${train_prompt_batch_size:-16}
 export grpo_rollout_n=${grpo_rollout_n:-8}
 # model params
-export max_response_length=${max_response_length:-4096}
+export max_response_length=${max_response_length:-24576}
 export prompt_key=${prompt_key:-prompt}
 export resume_type=${resume_type:-resume_step230}
 # env config
@@ -122,6 +122,7 @@ python3 -u -m  recipe.dapo.main_dapo \
     data.truncation='left' \
     algorithm.use_kl_in_reward=${use_kl_in_reward} \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
+    actor_rollout_ref.actor.profiler.all_ranks=True\
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
@@ -152,7 +153,7 @@ python3 -u -m  recipe.dapo.main_dapo \
     actor_rollout_ref.actor.loss_agg_mode=${loss_agg_mode} \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${vllm_tp} \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.4 \
     actor_rollout_ref.rollout.enable_chunked_prefill=True \
     actor_rollout_ref.rollout.max_num_batched_tokens=${gen_max_tokens} \
     actor_rollout_ref.rollout.temperature=${temperature} \

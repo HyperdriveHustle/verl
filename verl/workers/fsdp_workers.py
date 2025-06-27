@@ -103,13 +103,15 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         self.config = config
         import torch.distributed
-        #import torch
-        #torch.cuda.memory._record_memory_history()
         
         if not torch.distributed.is_initialized():
             rank = int(os.environ.get("RANK", 0))
             world_size = int(os.environ.get("WORLD_SIZE", 1))
             torch.distributed.init_process_group(backend=f"cpu:gloo,{get_device_name()}:{get_nccl_backend()}", rank=rank, world_size=world_size, init_method=os.environ.get("DIST_INIT_METHOD", None))
+
+        import torch
+        print(f"[Rank {self.rank}] Starting memory history recording for init atcor model {self.rank}.")
+        torch.cuda.memory._record_memory_history()
 
         # build device mesh for FSDP
         world_size = torch.distributed.get_world_size()
@@ -600,14 +602,99 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 processing_class=self.processor if self.processor is not None else self.tokenizer,
                 checkpoint_config=checkpoint_contents,
             )
+        
+        snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
+        snapshot_filename = os.path.join(snapshot_dir, f"{self.rank}snapeshot_from_init_atcor_to_update.pickle")
+        print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
+        torch.cuda.memory._dump_snapshot(snapshot_filename)
+        torch.cuda.memory._record_memory_history(enabled=None)
+        # print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
+        # torch.cuda.memory._dump_snapshot(snapshot_filename)
+        # torch.cuda.memory._record_memory_history(enabled=None)
+
+    # @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    # @DistProfiler.annotate(color="red")
+    # def update_actor(self, data: DataProto):
+        # Support all hardwares
+        
+
+        # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/verl_0626/verl/snapshot"
+        # os.makedirs(snapshot_dir, exist_ok=True)
+        # global_step = data.meta_info.get("global_steps", "unknown_step")
+        # snapshot_filename = os.path.join(snapshot_dir, f"actor_update_rank_{self.rank}_step_{global_step}.pickle")
+        # torch.cuda.memory._record_memory_history()
+        # print(f"[Rank {self.rank}] Starting memory history recording for step {global_step}.")
+
+        # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
+        # os.makedirs(snapshot_dir, exist_ok=True)
+        # snapshot_filename = os.path.join(snapshot_dir, f"snapeshot_from_init_to_update.pickle")
+
+        # with torch.profiler.profile(
+        #     activities=[
+        #         torch.profiler.ProfilerActivity.CPU,
+        #         torch.profiler.ProfilerActivity.CUDA,
+        #     ],
+        #     schedule=torch.profiler.schedule(
+        #         wait=0,
+        #         warmup=0,
+        #         active=1,
+        #         repeat=0,
+        #     ),
+        #     record_shapes=True,
+        #     profile_memory=True,
+        #     with_stack=True,
+        # ) as prof:
+        #     data = data.to("cpu")  # data will to device with each micro batch on actor.update_policy
+
+        #     assert self._is_actor
+        #     if self._is_offload_param:
+        #         load_fsdp_model_to_gpu(self.actor_module_fsdp)
+        #     if self._is_offload_optimizer:
+        #         load_fsdp_optimizer(optimizer=self.actor_optimizer, device_id=get_device_id())
+
+        #     with self.ulysses_sharding_manager:
+        #         data = self.ulysses_sharding_manager.preprocess_data(data=data)
+        #         # perform training
+        #         with Timer(name="update_policy", logger=None) as timer:
+        #             metrics = self.actor.update_policy(data=data)
+        #         delta_time = timer.last
+        #         global_num_tokens = data.meta_info["global_token_num"]
+        #         estimated_flops, promised_flops = self.flops_counter.estimate_flops(global_num_tokens, delta_time)
+        #         metrics["perf/mfu/actor"] = estimated_flops * self.config.actor.ppo_epochs / promised_flops / self.world_size
+        #         metrics["perf/max_memory_allocated_gb"] = get_torch_device().max_memory_allocated() / (1024**3)
+        #         metrics["perf/max_memory_reserved_gb"] = get_torch_device().max_memory_reserved() / (1024**3)
+        #         metrics["perf/cpu_memory_used_gb"] = psutil.virtual_memory().used / (1024**3)
+
+        #         lr = self.actor_lr_scheduler.get_last_lr()[0]
+        #         metrics["actor/lr"] = lr
+        #         self.actor_lr_scheduler.step()
+
+        #         # TODO: here, we should return all metrics
+        #         output = DataProto(meta_info={"metrics": metrics})
+
+        #         output = self.ulysses_sharding_manager.postprocess_data(data=output)
+        #         output = output.to("cpu")
+
+        #     if self._is_offload_param:
+        #         offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+        #         log_gpu_memory_usage("After offload actor model during update_actor", logger=logger)
+        #     if self._is_offload_optimizer:
+        #         offload_fsdp_optimizer(optimizer=self.actor_optimizer)
+        #         log_gpu_memory_usage("After offload actor optimizer during update_actor", logger=logger)
+        #     prof.step()
+        #     prof.export_chrome_trace("/nvfile-heatstorage/teleai-infra/wlw/workspace")
+            # print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
+            # torch.cuda.memory._dump_snapshot(snapshot_filename)
+            # torch.cuda.memory._record_memory_history(enabled=None)
+
+        # return output
+
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     @DistProfiler.annotate(color="red")
     def update_actor(self, data: DataProto):
-        # Support all hardwares
         
-
-        snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/verl_0626/verl/snapshot"
+        snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapshot"
         os.makedirs(snapshot_dir, exist_ok=True)
         global_step = data.meta_info.get("global_steps", "unknown_step")
         snapshot_filename = os.path.join(snapshot_dir, f"actor_update_rank_{self.rank}_step_{global_step}.pickle")
@@ -617,7 +704,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
         # os.makedirs(snapshot_dir, exist_ok=True)
         # snapshot_filename = os.path.join(snapshot_dir, f"snapeshot_from_init_to_update.pickle")
-
 
         data = data.to("cpu")  # data will to device with each micro batch on actor.update_policy
 

@@ -61,6 +61,7 @@ class Profiler:
                     repeat=1,
                 ),
                 record_shapes=True,
+                profile_memory=True,
                 with_stack=True,
             )
 
