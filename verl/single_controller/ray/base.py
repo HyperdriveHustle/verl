@@ -52,7 +52,6 @@ def func_generator(self, method_name, dispatch_fn, collect_fn, execute_fn, block
 
         output = execute_fn(method_name, *args, **kwargs)
 
-        #10.127.16.71:8265
         if blocking:
             output = ray.get(output)
         output = collect_fn(self, output)

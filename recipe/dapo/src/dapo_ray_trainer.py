@@ -971,11 +971,11 @@ class RayDAPOTrainer(RayPPOTrainer):
         # currently, we only support validation using the reward_function.
         # if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
         #     # gh512 disable for debug
-        #     val_metrics = self._validate()
-        #     pprint(f'Initial validation metrics: {val_metrics}')
-        #     # logger.log(data=val_metrics, step=self.global_steps)
-        #     if self.config.trainer.get('val_only', False):
-        #         return
+        val_metrics = self._validate()
+        pprint(f'Initial validation metrics: {val_metrics}')
+        # logger.log(data=val_metrics, step=self.global_steps)
+        if self.config.trainer.get('val_only', False):
+            return
 
         # add tqdm
         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
@@ -1046,11 +1046,6 @@ class RayDAPOTrainer(RayPPOTrainer):
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
 
                     timing_raw['gen_dispatch_time'] += gen_batch_output.meta_info.get('dispatch_time', 0.0)
-                    # gentime = []
-                    # for worker_output in gen_batch_output:
-                    #     gentime.append(worker_output.gpu_per_gen_time)
-                    # print(gentime)
-                    # timing_raw['gen_time_diff'] += max(gentime) - min(gentime)
 
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         with _timer('gen_max', timing_raw):
@@ -1289,9 +1284,6 @@ class RayDAPOTrainer(RayPPOTrainer):
                 print(timing_raw)
                 print('*' * 100)
                 timings.append(timing_raw)
-                # timestamp = os.environ.get("TIMESTAMP")
-                # torch.cuda.memory._dump_snapshot(f"/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot/snapshot_{timestamp}_{self.global_steps}")
-                # torch.cuda.memory._record_memory_history(enabled=None)
                 timing_raw = defaultdict(float)  # clear timing
 
                 metrics["train/num_gen_batches"] = num_gen_batches

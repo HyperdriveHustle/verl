@@ -11,18 +11,17 @@ test_files="['$aime2024_test_path']"
 # resume config
 export resume_mode=${resume_mode:-auto}
 export resume_from_path=${resume_from_path:-null}
-export model_path=${model_path:-/nvfile-heatstorage/chatrl/public/models/DeepSeek-R1-Distill-Qwen-1.5B}
-export model_name=$(basename "$model_path")
+export model_path=${model_path:-/nvfile-heatstorage/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B}
 # project config
 export project_name=${project_name:-verl_dapo_math_grpo_dapo_req_sched}
 # train params
 export total_epochs=${total_epochs:-10}
 export vllm_tp=${vllm_tp:-1}
 
-export train_prompt_batch_size=${train_prompt_batch_size:-16}
-export grpo_rollout_n=${grpo_rollout_n:-8}
+export train_prompt_batch_size=${train_prompt_batch_size:-512}
+export grpo_rollout_n=${grpo_rollout_n:-16}
 # model params
-export max_response_length=${max_response_length:-4096}
+export max_response_length=${max_response_length:-20000}
 export prompt_key=${prompt_key:-prompt}
 export resume_type=${resume_type:-resume_step230}
 # env config
@@ -98,10 +97,10 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 
 sleep 1
 
-export experiment_name=${model_name}_grpo_math_${suffix_name}-${req_algo}-${agg}_${nnode}node_reward_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_all_dapo_trick_${resume_type}_filter_data_${TIMESTAMP}
+export experiment_name=Qwen25-7B-Base_grpo_math_${suffix_name}-${req_algo}-${agg}_${nnode}node_reward_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_all_dapo_trick_${resume_type}_filter_data_${TIMESTAMP}
 mkdir /nvfile-heatstorage/teleai-infra/wlw/workspace/logs_sensecore
 rm -rf /workspace/tmp_tensorboard/*
-export CUDA_VISIBLE_DEVICES=4,5,6,7 
+
 #data.max_batch_size=${train_prompt_batch_size} \
 #python3 -u -m verl.trainer.main_ppo \
 # python3 -u -m verl.trainer.main_ppo_with_time \
@@ -182,7 +181,7 @@ python3 -u -m  recipe.dapo.src.main_dapo \
     trainer.default_local_dir=/nvfile-heatstorage/teleai-infra/wlw/workspace/${project_name}/${experiment_name} \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
-    trainer.n_gpus_per_node=4 \
+    trainer.n_gpus_per_node=8 \
     trainer.nnodes=${nnode} \
     trainer.save_freq=10 \
     trainer.test_freq=20 \
