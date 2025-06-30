@@ -82,7 +82,7 @@ def _ulysses_flash_attention_forward(
         repeats = max(ulysses_sp_size // key_states.size(2), 1)
         key_states = repeat_kv(key_states, repeats)
         value_states = repeat_kv(value_states, repeats)
-
+        torch.cuda.empty_cache()
         # (bsz, seq_len/n, n_head, head_dim) -> (bsz, seq_len, n_head/n, head_dim)
         query_states = gather_seq_scatter_heads(query_states, seq_dim=1, head_dim=2)
         key_states = gather_seq_scatter_heads(key_states, seq_dim=1, head_dim=2)
@@ -104,7 +104,7 @@ def _ulysses_flash_attention_forward(
     if ulysses_sp_size > 1:
         # (bsz, seq_len, n_head/n, head_dim) -> (bsz, seq_len/n, n_head, head_dim)
         attn_output = gather_heads_scatter_seq(attn_output, seq_dim=1, head_dim=2)
-
+    torch.cuda.empty_cache()
     return attn_output
 
 

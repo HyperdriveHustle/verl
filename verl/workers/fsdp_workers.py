@@ -745,7 +745,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
         torch.cuda.memory._dump_snapshot(snapshot_filename)
-        torch.cuda.memory._record_memory_history(enabled=None)
 
         return output
 
