@@ -77,10 +77,37 @@ def unpad_responses(padded_tensor, pad_token_id):
         unpadded_responses.append(original_response)
     return unpadded_responses
 
+
 class RayDAPOTrainer(RayPPOTrainer):
     """
     Note that this trainer runs on the driver process on a single CPU/GPU node.
     """
+    def _verify_order(self, original_prompts, restored_prompts, n_samples, step):
+        print(f"--- Verifying Order at Global Step: {step} ---")
+        is_correct = True
+        
+        if len(original_prompts) * n_samples != len(restored_prompts):
+            print(f"ERROR: Length mismatch! Original * n_samples != Restored.")
+            is_correct = False
+            return is_correct
+
+        for i, restored_p in enumerate(restored_prompts):
+            original_p = original_prompts[i // n_samples]
+
+            if list(restored_p) != list(original_p):
+                print(f"ERROR: Mismatch at index {i}!")
+                print(f"  > Expected (from original prompt {i // n_samples}): {list(original_p)}")
+                print(f"  > Got: {list(restored_p)}")
+                is_correct = False
+                break 
+
+        if is_correct:
+            print("SUCCESS: Prompt order correctly restored after scheduling and generation.")
+        else:
+            print("FAILED: Prompt order was NOT restored correctly.")
+            raise RuntimeError("Order verification failed!")
+        print("--- End of Verification ---")
+        return is_correct
 
     def fit(self):
         """
@@ -128,7 +155,8 @@ class RayDAPOTrainer(RayPPOTrainer):
         num_gen_batches = 0
         for epoch in range(self.config.trainer.total_epochs):
             for bs_idx, batch_dict in enumerate(self.train_dataloader):
-
+                #to verify restore_order
+                #original_prompts_for_verification = deepcopy(batch_dict['raw_prompt_ids'])
                 self.req_scheduler.sched(batch_dict,
                                         self.actor_rollout_wg.world_size,
                                         self.config.actor_rollout_ref,
@@ -206,6 +234,14 @@ class RayDAPOTrainer(RayPPOTrainer):
                     # repeat to align with repeated responses in rollout
                     new_batch = new_batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     new_batch = new_batch.union(gen_batch_output)
+                    
+                    #to verify restore_order
+                    # self._verify_order(
+                    #     original_prompts=original_prompts_for_verification,
+                    #     restored_prompts=new_batch.non_tensor_batch['raw_prompt_ids'],
+                    #     n_samples=self.config.actor_rollout_ref.rollout.n,
+                    #     step=self.global_steps
+                    # )
 
                      #####################################
                     # data examine2 (union-ed)
@@ -216,7 +252,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                     
                     pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
                     model = self.config.actor_rollout_ref.model.path.split('/')[-1]
-                    breakpoint()
+                    #breakpoint()
                     dataset = self.config.data.train_files[0].split('/')[-1]
                     prefix = f'{dataset}_{model}_E{epoch}B{bs_idx}_data'
                     unpadded = unpad_responses(response, pad_ids)
