@@ -41,7 +41,7 @@ clip_ratio_high=0.28
 
 loss_agg_mode="token-mean"
 
-enable_filter_groups=False
+enable_filter_groups=True
 filter_groups_metric=acc
 max_num_gen_batches=10
 
@@ -70,7 +70,7 @@ top_k=-1 # 0 for HF rollout, -1 for vLLM rollout
 
 shuffle=False
 
-offload=True
+offload=False
 max_tokens=$((max_prompt_length  + max_response_length))
 gen_max_tokens=$((max_tokens * 2))
 log_prob_max_tokens=$((max_tokens * 2))
@@ -101,7 +101,8 @@ sleep 1
 export experiment_name=${model_name}_grpo_math_${suffix_name}-${req_algo}-${agg}_${nnode}node_reward_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_all_dapo_trick_${resume_type}_filter_data_${TIMESTAMP}
 mkdir /nvfile-heatstorage/teleai-infra/wlw/workspace/logs_sensecore
 rm -rf /workspace/tmp_tensorboard/*
-export CUDA_VISIBLE_DEVICES=4,5,6,7 
+
+export TENSORBOARD_DIR=/nvfile-heatstorage/teleai-infra/wlw/workspace/${project_name}/${experiment_name}
 #data.max_batch_size=${train_prompt_batch_size} \
 #python3 -u -m verl.trainer.main_ppo \
 # python3 -u -m verl.trainer.main_ppo_with_time \
@@ -118,6 +119,10 @@ python3 -u -m  recipe.dapo.main_dapo \
     data.filter_overlong_prompts=${filter_overlong_prompts} \
     data.max_prompt_length=${max_prompt_length} \
     data.max_response_length=${max_response_length} \
+    req_scheduler.seq_dir="$seq_dir" \
+    req_scheduler.log_dir="$log_dir" \
+    req_scheduler.agg="$agg" \
+    req_scheduler.algo="$req_algo" \
     data.gen_batch_size=${gen_prompt_bsz} \
     data.truncation='left' \
     algorithm.use_kl_in_reward=${use_kl_in_reward} \
@@ -131,7 +136,7 @@ python3 -u -m  recipe.dapo.main_dapo \
     algorithm.filter_groups.enable=${enable_filter_groups} \
     algorithm.filter_groups.max_num_gen_batches=${max_num_gen_batches} \
     algorithm.filter_groups.metric=${filter_groups_metric} \
-    actor_rollout_ref.model.use_remove_padding=False \
+    actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.use_dynamic_bsz=${use_dynamic_bsz} \
     actor_rollout_ref.ref.log_prob_use_dynamic_bsz=${use_dynamic_bsz} \
     actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=${use_dynamic_bsz} \
@@ -153,7 +158,7 @@ python3 -u -m  recipe.dapo.main_dapo \
     actor_rollout_ref.actor.loss_agg_mode=${loss_agg_mode} \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${vllm_tp} \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.4 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
     actor_rollout_ref.rollout.enable_chunked_prefill=True \
     actor_rollout_ref.rollout.max_num_batched_tokens=${gen_max_tokens} \
     actor_rollout_ref.rollout.temperature=${temperature} \

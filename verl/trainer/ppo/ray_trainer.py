@@ -497,19 +497,19 @@ class ReqScheduler:
         ):
         print(f"[ReqScheduler] sched, {world_size=}, {config=}")
         # get OUT len
-        outlens = []
+        pre_outlens = []
         for raw_prompt_ids in batch_dict['raw_prompt_ids']:
             outlen = self.lookup_table(raw_prompt_ids)
-            outlens.append(outlen)
+            pre_outlens.append(outlen)
 
         # sched
         tp_size = config.rollout.tensor_model_parallel_size
         assert world_size % tp_size == 0, f'world_size {world_size} must be divisible by tp_size {tp_size}'
         dp_size = world_size // tp_size
-        res = self._sched(outlens, dp_size, tp_size)
+        res = self._sched(pre_outlens, dp_size, tp_size)
 
         batch_dict['reqs_idx'] = res
-        batch_dict['outlens'] = np.array(outlens, dtype=np.int32)
+        batch_dict['pre_outlens'] = np.array(pre_outlens, dtype=np.int32)
         
         
     def print_stats(self, outlens, res):
@@ -1288,13 +1288,7 @@ class RayPPOTrainer:
         last_val_metrics = None
 
         for epoch in range(self.config.trainer.total_epochs):
-            for bs_idx, batch_dict in enumerate(self.train_dataloader):
-
-                self.req_scheduler.sched(batch_dict,
-                                        self.actor_rollout_wg.world_size,
-                                        self.config.actor_rollout_ref,
-                                    )
-                
+            for batch_dict in self.train_dataloader:
                 do_profile = self.global_steps in self.config.trainer.profile_steps if self.config.trainer.profile_steps is not None else False
                 if do_profile:
                     self.actor_rollout_wg.start_profile()
@@ -1311,7 +1305,7 @@ class RayPPOTrainer:
 
                 # pop those keys for generation
                 batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
-                non_tensor_batch_keys_to_pop = ["raw_prompt_ids",'reqs_idx', 'outlens']
+                non_tensor_batch_keys_to_pop = ["raw_prompt_ids"]
                 if "multi_modal_data" in batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("multi_modal_data")
                 if "raw_prompt" in batch.non_tensor_batch:
@@ -1327,19 +1321,8 @@ class RayPPOTrainer:
 
                 is_last_step = self.global_steps >= self.total_training_steps
 
-                idx = gen_batch.batch['input_ids']  # (bs, prompt_length)
-                attention_mask = gen_batch.batch['attention_mask']
-                position_ids = gen_batch.batch['position_ids']
-                raw_prompt_ids = gen_batch.non_tensor_batch['raw_prompt_ids'] # (bs, varlen)
-                batch.non_tensor_batch['raw_prompt_ids'] = raw_prompt_ids
-                reqs_idx = gen_batch.non_tensor_batch['reqs_idx']
-                outlens = gen_batch.non_tensor_batch['outlens']
-                print(
-                    f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()} {type(raw_prompt_ids)}'
-                )
                 with marked_timer("step", timing_raw):
                     # generate a batch
-                    # 这里传入的 batch 是所有的数据，到具体 rank 上再做分配
                     with marked_timer("gen", timing_raw, color="red"):
                         if not self.async_rollout_mode:
                             gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
@@ -1366,38 +1349,10 @@ class RayPPOTrainer:
 
                             del gen_baseline_batch, gen_baseline_output
 
-                    self.req_scheduler.restore_order(gen_batch_output, 
-                                                    reqs_idx,
-                                                    self.config.actor_rollout_ref.rollout.n,
-                                                    )
-                    
                     batch.non_tensor_batch["uid"] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object)
                     # repeat to align with repeated responses in rollout
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
-
-                     #####################################
-                    # data examine2 (union-ed)
-                    seq = batch.batch['input_ids']
-                    response = batch.batch['responses']
-                    raw_prompt_ids = batch.non_tensor_batch['raw_prompt_ids']
-                    print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape} {len(batch)} {batch.batch.keys()} {batch.non_tensor_batch.keys()}')
-                    
-                    pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
-                    model = self.config.actor_rollout_ref.model.path.split('/')[-1]
-                    dataset = self.config.data.train_files.split('/')[-1]
-                    prefix = f'{dataset}_{model}_E{epoch}B{bs_idx}_data'
-                    unpadded = unpad_responses(response, pad_ids)
-                    self.req_scheduler.log_seqlen(
-                        raw_prompt_ids, 
-                        unpadded,
-                        prefix, 
-                    )
-                    self.req_scheduler.update_table(
-                        raw_prompt_ids,
-                        unpadded,
-                    )
-
 
                     batch.batch["response_mask"] = compute_response_mask(batch)
                     # Balance the number of valid tokens across DP ranks.

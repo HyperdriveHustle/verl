@@ -111,8 +111,8 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             torch.distributed.init_process_group(backend=f"cpu:gloo,{get_device_name()}:{get_nccl_backend()}", rank=rank, world_size=world_size, init_method=os.environ.get("DIST_INIT_METHOD", None))
 
         import torch
-        print(f"[Rank {self.rank}] Starting memory history recording for init atcor model {self.rank}.")
-        torch.cuda.memory._record_memory_history()
+        #print(f"[Rank {self.rank}] Starting memory history recording for init atcor model {self.rank}.")
+        # torch.cuda.memory._record_memory_history()
 
         # build device mesh for FSDP
         world_size = torch.distributed.get_world_size()
@@ -613,11 +613,12 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 checkpoint_config=checkpoint_contents,
             )
         
-        snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
-        snapshot_filename = os.path.join(snapshot_dir, f"{self.rank}snapeshot_from_init_atcor_to_update.pickle")
-        print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
-        torch.cuda.memory._dump_snapshot(snapshot_filename)
-        torch.cuda.memory._record_memory_history(enabled=None)
+        # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
+        # snapshot_filename = os.path.join(snapshot_dir, f"{self.rank}snapeshot_from_init_atcor_to_update.pickle")
+        # print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
+        # torch.cuda.memory._dump_snapshot(snapshot_filename)
+        # torch.cuda.memory._record_memory_history(enabled=None)
+
         # print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
         # torch.cuda.memory._dump_snapshot(snapshot_filename)
         # torch.cuda.memory._record_memory_history(enabled=None)
@@ -705,12 +706,12 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
     @DistProfiler.annotate(color="red")
     def update_actor(self, data: DataProto):
         
-        snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapshot"
-        os.makedirs(snapshot_dir, exist_ok=True)
-        global_step = data.meta_info.get("global_steps", "unknown_step")
-        snapshot_filename = os.path.join(snapshot_dir, f"actor_update_rank_{self.rank}_step_{global_step}.pickle")
-        torch.cuda.memory._record_memory_history()
-        print(f"[Rank {self.rank}] Starting memory history recording for step {global_step}.")
+        # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapshot"
+        # os.makedirs(snapshot_dir, exist_ok=True)
+        # global_step = data.meta_info.get("global_steps", "unknown_step")
+        # snapshot_filename = os.path.join(snapshot_dir, f"actor_update_rank_{self.rank}_step_{global_step}.pickle")
+        # torch.cuda.memory._record_memory_history()
+        # print(f"[Rank {self.rank}] Starting memory history recording for step {global_step}.")
 
         # snapshot_dir = "/nvfile-heatstorage/teleai-infra/wlw/workspace/snapeshot"
         # os.makedirs(snapshot_dir, exist_ok=True)
@@ -754,13 +755,13 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
             log_gpu_memory_usage("After offload actor optimizer during update_actor", logger=logger)
 
-        print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
-        torch.cuda.memory._dump_snapshot(snapshot_filename)
+        # print(f"[Rank {self.rank}] Dumping memory snapshot to {snapshot_filename}")
+        # torch.cuda.memory._dump_snapshot(snapshot_filename)
 
         return output
     
 
-    @register(dispatch_mode=Dispatch.Dispatch.REQ_DISTRIBUTION)
+    @register(dispatch_mode=Dispatch.REQ_DISTRIBUTION)
     @DistProfiler.annotate(color="red")
     def generate_sequences(self, prompts: DataProto):
         # Support all hardwares
@@ -854,7 +855,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 actual_max = np.max(actual_outlen)
                 actual_min = np.min(actual_outlen)
 
-                print(f'[GENTIME] {rank=}, {timing_generate['generate_sequences']:.2f}s; Sum: predict_totallens={predict_tsum}, pre_outlens={pre_osum}, insum={insum} ; Total: {predict_tlongest=}, {predict_tshortest=}, {predict_tavg=}, {predict_tstd=}; In: {inlongest=}, {inshortest=}, inavg={inavg:.0f}, instd={instd:.0f}; ACTUAL: {actual_sum=}, {actual_mean=}, {actual_max=}, {actual_min=}')
+                print(f"[GENTIME] {rank=}, {timing_generate['generate_sequences']:.2f}s; Sum: predict_totallens={predict_tsum}, pre_outlens={pre_osum}, insum={insum} ; Total: {predict_tlongest=}, {predict_tshortest=}, {predict_tavg=}, {predict_tstd=}; In: {inlongest=}, {inshortest=}, inavg={inavg:.0f}, instd={instd:.0f}; ACTUAL: {actual_sum=}, {actual_mean=}, {actual_max=}, {actual_min=}")
             output = self.rollout_sharding_manager.postprocess_data(output)
 
         timing_generate.update(self.rollout_sharding_manager.timing)
@@ -863,7 +864,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         timing_generate = reduce_timing(timing_generate)
         output.meta_info["timing"] = timing_generate
         output = output.to("cpu")
-        gc.collect()
+        #gc.collect()
         # clear kv cache
         get_torch_device().empty_cache()
         return output
@@ -1049,6 +1050,10 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
     def stop_profile(self) -> None:
         """Stop profiling for the current rank in the current training step."""
         self.profiler.stop()
+
+    @register(dispatch_mode=Dispatch.ONE_TO_ALL)
+    def get_tokenizer_pad_id(self):
+        return self.tokenizer.pad_token_id
 
 
 class CriticWorker(Worker, DistProfilerExtension):

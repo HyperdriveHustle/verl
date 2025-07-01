@@ -24,7 +24,7 @@ from pprint import pprint
 import numpy as np
 import torch
 from tqdm import tqdm
-
+from contextlib import contextmanager
 from verl import DataProto
 from verl.trainer.ppo.core_algos import agg_loss
 from verl.trainer.ppo.metric_utils import (
@@ -36,6 +36,46 @@ from verl.trainer.ppo.metric_utils import (
 from verl.trainer.ppo.ray_trainer import AdvantageEstimator, RayPPOTrainer, apply_kl_penalty, compute_advantage, compute_response_mask
 from verl.utils.debug import marked_timer
 
+@contextmanager
+def suppress_stdout():
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
+
+
+def unpad_responses(padded_tensor, pad_token_id):
+    if isinstance(pad_token_id, list):
+        # from all worker
+        pid = pad_token_id[0]
+        for worker_pad_token_id in pad_token_id:
+            if worker_pad_token_id != pid:
+                raise ValueError("pad_token_id is not the same across all workers")
+        pad_token_id = pid
+
+    padded_tensor = padded_tensor.cpu()
+    # Convert tensor to list if it's a tensor
+    if isinstance(padded_tensor, torch.Tensor):
+        padded_list = padded_tensor.tolist()
+    else:
+        padded_list = padded_tensor
+    
+    # Reconstruct original responses by removing padding tokens
+    unpadded_responses = []
+    for padded_response in padded_list:
+        # Find where padding starts (first occurrence of pad_token_id)
+        try:
+            pad_start_idx = padded_response.index(pad_token_id)
+            # Get only the tokens before padding
+            original_response = padded_response[:pad_start_idx]
+        except ValueError:
+            # No padding found, use the full response
+            original_response = padded_response
+        
+        unpadded_responses.append(original_response)
+    return unpadded_responses
 
 class RayDAPOTrainer(RayPPOTrainer):
     """
@@ -87,7 +127,13 @@ class RayDAPOTrainer(RayPPOTrainer):
         num_prompt_in_batch = 0
         num_gen_batches = 0
         for epoch in range(self.config.trainer.total_epochs):
-            for batch_dict in self.train_dataloader:
+            for bs_idx, batch_dict in enumerate(self.train_dataloader):
+
+                self.req_scheduler.sched(batch_dict,
+                                        self.actor_rollout_wg.world_size,
+                                        self.config.actor_rollout_ref,
+                                    )
+
                 do_profile = self.global_steps in (self.config.trainer.profile_steps or [])
                 if do_profile:
                     self.actor_rollout_wg.start_profile()
@@ -111,13 +157,25 @@ class RayDAPOTrainer(RayPPOTrainer):
                 else:
                     gen_batch = new_batch.pop(
                         batch_keys=["input_ids", "attention_mask", "position_ids"],
-                        non_tensor_batch_keys=["raw_prompt_ids"],
+                        non_tensor_batch_keys=["raw_prompt_ids",'reqs_idx', 'pre_outlens'],
                     )
 
                 is_last_step = self.global_steps >= self.total_training_steps
 
+                idx = gen_batch.batch['input_ids']  # (bs, prompt_length)
+                attention_mask = gen_batch.batch['attention_mask']
+                position_ids = gen_batch.batch['position_ids']
+                raw_prompt_ids = gen_batch.non_tensor_batch['raw_prompt_ids'] # (bs, varlen)
+                new_batch.non_tensor_batch['raw_prompt_ids'] = raw_prompt_ids
+                reqs_idx = gen_batch.non_tensor_batch['reqs_idx']
+                pre_outlens = gen_batch.non_tensor_batch['pre_outlens']
+                print(
+                    f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()} {type(raw_prompt_ids)}'
+                )
+
                 with marked_timer("step", timing_raw):
                     # generate a batch
+                    # 这里传入的 batch 是所有的数据，到具体 rank 上再做分配
                     with marked_timer("gen", timing_raw, "red"):
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
                         timing_raw.update(gen_batch_output.meta_info["timing"])
@@ -139,10 +197,38 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                             del gen_baseline_batch, gen_baseline_output
 
+                    self.req_scheduler.restore_order(gen_batch_output, 
+                                                    reqs_idx,
+                                                    self.config.actor_rollout_ref.rollout.n,
+                                                )
+
                     new_batch.non_tensor_batch["uid"] = np.array([str(uuid.uuid4()) for _ in range(len(new_batch.batch))], dtype=object)
                     # repeat to align with repeated responses in rollout
                     new_batch = new_batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     new_batch = new_batch.union(gen_batch_output)
+
+                     #####################################
+                    # data examine2 (union-ed)
+                    seq = new_batch.batch['input_ids']
+                    response = new_batch.batch['responses']
+                    raw_prompt_ids = new_batch.non_tensor_batch['raw_prompt_ids']
+                    print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape} {len(new_batch)} {new_batch.batch.keys()} {new_batch.non_tensor_batch.keys()}')
+                    
+                    pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
+                    model = self.config.actor_rollout_ref.model.path.split('/')[-1]
+                    breakpoint()
+                    dataset = self.config.data.train_files[0].split('/')[-1]
+                    prefix = f'{dataset}_{model}_E{epoch}B{bs_idx}_data'
+                    unpadded = unpad_responses(response, pad_ids)
+                    self.req_scheduler.log_seqlen(
+                        raw_prompt_ids, 
+                        unpadded,
+                        prefix, 
+                    )
+                    self.req_scheduler.update_table(
+                        raw_prompt_ids,
+                        unpadded,
+                    )
 
                     with marked_timer("reward", timing_raw, "yellow"):
                         # compute scores. Support both model and function-based.

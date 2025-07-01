@@ -446,7 +446,7 @@ DISPATCH_MODE_FN_REGISTRY = {
     },
     Dispatch.REQ_DISTRIBUTION: {
         "dispatch_fn": dispatch_one_to_all,
-        "collect_fn": collect_all_to_all,
+        "collect_fn": collect_dp_compute_data_proto,
     },
 }
 
