@@ -140,7 +140,9 @@ class RLHFDataset(Dataset):
             dataframe = datasets.load_dataset("parquet", data_files=parquet_file)["train"]
             dataframes.append(dataframe)
         self.dataframe: datasets.Dataset = datasets.concatenate_datasets(dataframes)
-        self.dataframe = self.dataframe.select(range(100))
+        
+        #for debugging
+        #self.dataframe = self.dataframe.select(range(100))
         print(f"dataset len: {len(self.dataframe)}")
 
         # filter out too long prompts
