@@ -204,7 +204,7 @@ def create_rl_dataset(data_paths, data_config, tokenizer, processor):
     """
     from torch.utils.data import Dataset
 
-    from verl.utils.dataset.rl_dataset import RLHFDataset
+    from verl.utils.dataset.rl_dataset import RLHFDataset, RLHFDatasetFilter
 
     # Check if a custom dataset class is specified in the data configuration
     # and if the path to the custom class is provided
@@ -218,6 +218,7 @@ def create_rl_dataset(data_paths, data_config, tokenizer, processor):
             raise TypeError(f"The custom dataset class '{data_config.custom_cls.name}' from '{data_config.custom_cls.path}' must inherit from torch.utils.data.Dataset")
     else:
         # Use the default RLHFDataset class if no custom class is specified
+        #dataset_cls = RLHFDataset
         dataset_cls = RLHFDataset
     print(f"Using dataset class: {dataset_cls.__name__}")
 

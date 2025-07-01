@@ -21,12 +21,18 @@ This trainer supports model-agonistic model initialization with huggingface
 import json
 import os
 import uuid
+import heapq
+import sys
+import io
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from pprint import pprint
-from typing import Optional, Type
+from typing import Optional, Type, Dict
+from codetiming import Timer
+from contextlib import contextmanager
+import glob
 
 import numpy as np
 import ray
@@ -55,7 +61,7 @@ from verl.utils.debug import marked_timer
 from verl.utils.metric import (
     reduce_metrics,
 )
-from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance
+from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance, karmarkar_karp
 from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
 
@@ -273,6 +279,340 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
         data.batch["returns"] = returns
     return data
 
+@contextmanager
+def suppress_stdout():
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
+
+
+def unpad_responses(padded_tensor, pad_token_id):
+    if isinstance(pad_token_id, list):
+        # from all worker
+        pid = pad_token_id[0]
+        for worker_pad_token_id in pad_token_id:
+            if worker_pad_token_id != pid:
+                raise ValueError("pad_token_id is not the same across all workers")
+        pad_token_id = pid
+
+    padded_tensor = padded_tensor.cpu()
+    # Convert tensor to list if it's a tensor
+    if isinstance(padded_tensor, torch.Tensor):
+        padded_list = padded_tensor.tolist()
+    else:
+        padded_list = padded_tensor
+    
+    # Reconstruct original responses by removing padding tokens
+    unpadded_responses = []
+    for padded_response in padded_list:
+        # Find where padding starts (first occurrence of pad_token_id)
+        try:
+            pad_start_idx = padded_response.index(pad_token_id)
+            # Get only the tokens before padding
+            original_response = padded_response[:pad_start_idx]
+        except ValueError:
+            # No padding found, use the full response
+            original_response = padded_response
+        
+        unpadded_responses.append(original_response)
+    return unpadded_responses
+
+class ReqScheduler:
+    def __init__(self, config):
+        self.config = config
+
+        # prompt_ids -> len(reponse)
+        self.table: dict[tuple[int], int] = self.load_table()
+    
+    def load_table(self):
+        ''' 加载预存的 prompts 信息
+        预存的 table 数据格式
+        {
+            "prompts": [
+                [prompt_token_ids_1], 
+                [prompt_token_ids_2], 
+                ...
+            ],
+            "lengths": [
+                [120, 88, 85, 92, 95, 100, 90, 110],  // prompt 1 对应 sample n 个 response 长度
+                [105, 90, 95, 92, 100, 94, 90, 88],   // prompt 2
+                ...
+            ],
+            "stats": [ // 初始预计算存储，仍可保留便于快速调用
+                {"max": 120, "min": 85, "mean": 97.5, "std": 10.2, "sum": 780}, 
+                {"max": 105, "min": 88, "mean": 94.3, "std": 5.6, "sum": 754}, 
+                ...
+            ]
+        }
+        '''
+        if self.config.seq_dir is None:
+            return {}
+
+        # Find all JSON files in the directory
+        json_files = glob.glob(os.path.join(self.config.seq_dir, "*.json"))
+        print(f"[ReqScheduler] Found {len(json_files)} JSON files to process")
+
+        # prompts -> list[responses]
+        ans = {}
+        for json_file in json_files:
+            filename = os.path.basename(json_file)
+            #if key not in filename:
+            #    continue
+            try:
+                with open(json_file, 'r') as f:
+                    data = json.load(f)
+                
+                print(f"[ReqScheduler] data keys = {data.keys()} in {filename}")
+                # 按格式保存
+                ps = data['prompts']
+                ls = data['lengths']
+                for p, l in zip(ps, ls):
+                    p = tuple(p)
+                    if p not in ans:
+                        ans[p] = l
+                print(f"[ReqScheduler] Processed {filename}, found {len(ans)} unique prompts")
+            except Exception as e:
+                print(f"[ReqScheduler] Error processing {filename}: {str(e)}")
+                raise e
+                
+        # Aggregate prompts -> responses
+        agg = self.config.get('agg', 'mean')
+        if agg == 'max':
+            ans = {k: max(v) for k, v in ans.items()}
+        elif agg == 'min':
+            ans = {k: min(v) for k, v in ans.items()}
+        elif agg == 'mean':
+            ans = {k: int(np.mean(v)) for k, v in ans.items()}
+        elif agg =='median':
+            ans = {k: int(np.median(v)) for k, v in ans.items()}
+        elif agg == 'sum':
+            ans = {k: sum(v) for k, v in ans.items()}
+        else:
+            raise ValueError(f"Unknown agg {agg}")
+        print(f'[ReqScheduler] Table-Size: {len(ans)=}')
+        return ans
+
+    def lookup_table(self, prompt):
+        ''' 根据 table 预存的信息 查找 prompt 的相关信息
+        '''
+        if isinstance(prompt, list):
+            prompt = tuple(prompt)
+        assert isinstance(prompt, tuple), f"prompt type {type(prompt)} is not supported"
+        if prompt in self.table:
+            # print(f"[ReqScheduler] Found prompt {len(prompt)} in table with response length {self.table[prompt]}")
+            return self.table[prompt]
+        return None
+
+    def update_table(self, raw_prompt_ids, responses):
+        new_table = {}
+        for p, r in zip(raw_prompt_ids, responses):
+            p = tuple(p)
+            r = tuple(r)
+            if p not in new_table:
+                new_table[p] = []
+            new_table[p].append(len(r))
+
+        # Aggregate prompts -> responses
+        agg = self.config.get('agg', 'mean')
+        if agg == 'max':
+            new_table = {k: max(v) for k, v in new_table.items()}
+        elif agg == 'min':
+            new_table = {k: min(v) for k, v in new_table.items()}
+        elif agg == 'mean':
+            new_table = {k: int(np.mean(v)) for k, v in new_table.items()}
+        elif agg =='median':
+            new_table = {k: int(np.median(v)) for k, v in new_table.items()}
+        elif agg == 'sum':
+            new_table = {k: sum(v) for k, v in new_table.items()}
+        else:
+            raise ValueError(f"Unknown agg {agg}")
+        
+        # add or overwrite
+        for k, v in new_table.items():
+            self.table[k] = v
+        print(f'[ReqScheduler] in update_table, Table-Size: {len(self.table)=}')
+
+    def log_seqlen(self, raw_prompt_ids, responses, prefix):
+        print(f'[ReqScheduler] in log_seqlen, {type(raw_prompt_ids)}, {type(responses)}, {len(raw_prompt_ids)}, {len(responses)}')
+        assert len(raw_prompt_ids) == len(responses), f'{len(raw_prompt_ids)}, {len(responses)}'
+        prompts_dict = {}
+        prompts, response = [], []
+        for p, r in zip(raw_prompt_ids, responses):
+            if tuple(p) not in prompts_dict:
+                prompts_dict[tuple(p)] = []
+            prompts_dict[tuple(p)].append(len(r))
+        
+        for pid in prompts_dict:
+            prompts.append(list(pid))
+            response.append(prompts_dict[pid])
+
+        log_dir = self.config.log_dir
+        os.makedirs(log_dir, exist_ok=True)
+        data_files = glob.glob(f"{log_dir}/{prefix}_*.json")
+        file_num = len(data_files) + 1
+        output_file = f"{log_dir}/{prefix}_{file_num}.json"
+        with open(output_file, 'w') as f:
+            json.dump({
+                'prompts': prompts, 
+                'lengths': response
+            }, f)
+    
+    def restore_order(self,
+                      gen_batch_output: DataProto,
+                      reqs_idx,
+                      n_samples,
+                    ):
+        # the output is permutated by req scheduler
+        # this step store the original orders
+        # 
+        bs = len(gen_batch_output)
+        assert bs % n_samples == 0, f'bs {bs} must be divisible by n_samples {n_samples}'
+        assert bs//n_samples == len(reqs_idx), f'bs//n_samples {bs//n_samples} != len(reqs_idx) {len(reqs_idx)}'
+        print(f"[ReqScheduler] restore_order, {bs=}, {n_samples=}, {len(reqs_idx)=}")
+        # e.g. [1, 0] -> [16, 17, ..., 31, 0, 1, ... , 15]
+        cnt = 0
+        global_idx = [None for _ in range(bs)]
+        group_idx = 0
+        max_id = max(reqs_idx)
+        while group_idx <= max_id:
+            for i, idx in enumerate(reqs_idx):
+                if idx == group_idx:
+                    start_position = i * n_samples
+                    end_position = start_position + n_samples
+                    global_idx[start_position: end_position] = [j for j in range(cnt, cnt+n_samples)]
+                    cnt += n_samples
+            group_idx += 1
+
+        assert len(global_idx) == bs, f'len(global_idx) {len(global_idx)} != bs {bs}'
+
+        global_idx = torch.tensor(global_idx)
+        gen_batch_output.reorder(global_idx)
+
+    def sched(self, batch_dict: dict,
+            world_size: int,
+            config,
+        ):
+        print(f"[ReqScheduler] sched, {world_size=}, {config=}")
+        # get OUT len
+        outlens = []
+        for raw_prompt_ids in batch_dict['raw_prompt_ids']:
+            outlen = self.lookup_table(raw_prompt_ids)
+            outlens.append(outlen)
+
+        # sched
+        tp_size = config.rollout.tensor_model_parallel_size
+        assert world_size % tp_size == 0, f'world_size {world_size} must be divisible by tp_size {tp_size}'
+        dp_size = world_size // tp_size
+        res = self._sched(outlens, dp_size, tp_size)
+
+        batch_dict['reqs_idx'] = res
+        batch_dict['outlens'] = np.array(outlens, dtype=np.int32)
+        
+        
+    def print_stats(self, outlens, res):
+        longest = max(outlens)
+        shortest = min(outlens)
+        avg = np.mean(outlens)
+        std = np.std(outlens)
+        print(f"[ReqScheduler] Stats: {longest=}, {shortest=}, avg: {avg:.2f}, std: {std:.2f}")
+        num_group = np.unique(res)
+        group = [0 for _ in range(len(num_group))]
+        for v in res:
+            group[v] += 1
+        print(f"[ReqScheduler] Group: {group}")
+    
+    def _sched(self, outlens, dp_size, tp_size):
+        algo = self.config.algo
+
+        # if has None, the prompt is not in table
+        # so we use even_prompt
+        has_none = False
+        for outlen in outlens:
+            if outlen is None:
+                has_none = True
+                break
+        
+        agg = self.config.get('agg', 'mean')
+        if has_none:
+            print(f"[ReqScheduler] has None, reset {algo} to even_prompt; {agg=}")
+            algo = 'even_prompt'
+
+            # so that print stats will not fail
+            for i in range(len(outlens)):
+                outlens[i] = -1
+        else:
+            print(f"[ReqScheduler] algo: {algo}, {agg=}")
+        
+        # get method
+        method = getattr(self, algo)
+        res = method(outlens, dp_size, tp_size, self.config)
+        self.print_stats(outlens, res)
+        return res
+    
+    def dummy(self, outlens, dp_size, tp_size, config):
+        res = [0] * (len(outlens) - 1) + [1]
+        res = np.array(res, dtype=np.int32)
+        return res
+
+    def even_prompt(self, outlens: list[int], dp_size, tp_size, config):
+        per_dp = len(outlens) // dp_size
+        res = []
+        cnt = 0
+        for i in range(0, len(outlens), per_dp):
+            for j in range(per_dp):
+                res.append(cnt)
+            cnt += 1
+        return np.array(res, dtype=np.int32)
+    
+    def even_token(self, outlens, dp_size, tp_size, config):
+        prompt_indices = list(range(len(outlens)))
+        sorted_pairs = sorted(zip(outlens, prompt_indices), reverse=True)
+        heap = [(0, i) for i in range(dp_size)]
+        heapq.heapify(heap)
+        res = [None] * len(outlens)
+        for token_len, orig_idx in sorted_pairs:
+            total, group = heapq.heappop(heap)
+            res[orig_idx] = group
+            heapq.heappush(heap, (total + token_len, group))
+        return np.array(res, dtype=np.int32)
+    
+    def even_token_kk(self, outlens: list[int], dp_size: int, tp_size: int, config):
+        """
+        Schedules requests to balance the total number of tokens per DP group
+        using the Karmarkar-Karp (KK) number partitioning algorithm.
+        """
+        if not outlens:
+            return np.array([], dtype=np.int32)
+        
+        print(f"[ReqScheduler] Running Karmarkar-Karp for {len(outlens)} prompts into {dp_size} groups.")
+        
+        partitions = karmarkar_karp(
+            seqlen_list=outlens, 
+            k_partitions=dp_size, 
+            equal_size=False  # We want to balance sum of tokens, not count of prompts
+        )
+
+        res = [None] * len(outlens)
+        for group_idx, partition_indices in enumerate(partitions):
+            for original_prompt_idx in partition_indices:
+                res[original_prompt_idx] = group_idx
+
+        assert None not in res, "Karmarkar-Karp scheduling failed: not all prompts were assigned a group."
+
+        return np.array(res, dtype=np.int32)
+
+@contextmanager
+def _timer(name: str, timing_raw: Dict[str, float]):
+    with Timer(name=name, logger=None) as timer:
+        yield
+    if name not in timing_raw:
+        timing_raw[name] = 0
+    timing_raw[name] += timer.last
+
+
 
 class RayPPOTrainer:
     # TODO: support each role have individual ray_worker_group_cls,
@@ -356,6 +696,10 @@ class RayPPOTrainer:
             self.use_critic = False
         else:
             raise NotImplementedError
+
+        self.req_scheduler = ReqScheduler(
+            config=self.config.req_scheduler,
+        )
 
         self._validate_config()
         self._create_dataloader(train_dataset, val_dataset, collate_fn, train_sampler)
@@ -944,7 +1288,13 @@ class RayPPOTrainer:
         last_val_metrics = None
 
         for epoch in range(self.config.trainer.total_epochs):
-            for batch_dict in self.train_dataloader:
+            for bs_idx, batch_dict in enumerate(self.train_dataloader):
+
+                self.req_scheduler.sched(batch_dict,
+                                        self.actor_rollout_wg.world_size,
+                                        self.config.actor_rollout_ref,
+                                    )
+                
                 do_profile = self.global_steps in self.config.trainer.profile_steps if self.config.trainer.profile_steps is not None else False
                 if do_profile:
                     self.actor_rollout_wg.start_profile()
@@ -961,7 +1311,7 @@ class RayPPOTrainer:
 
                 # pop those keys for generation
                 batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
-                non_tensor_batch_keys_to_pop = ["raw_prompt_ids"]
+                non_tensor_batch_keys_to_pop = ["raw_prompt_ids",'reqs_idx', 'outlens']
                 if "multi_modal_data" in batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("multi_modal_data")
                 if "raw_prompt" in batch.non_tensor_batch:
@@ -977,8 +1327,19 @@ class RayPPOTrainer:
 
                 is_last_step = self.global_steps >= self.total_training_steps
 
+                idx = gen_batch.batch['input_ids']  # (bs, prompt_length)
+                attention_mask = gen_batch.batch['attention_mask']
+                position_ids = gen_batch.batch['position_ids']
+                raw_prompt_ids = gen_batch.non_tensor_batch['raw_prompt_ids'] # (bs, varlen)
+                batch.non_tensor_batch['raw_prompt_ids'] = raw_prompt_ids
+                reqs_idx = gen_batch.non_tensor_batch['reqs_idx']
+                outlens = gen_batch.non_tensor_batch['outlens']
+                print(
+                    f'[BATCH INPUT]: {idx.shape}, {attention_mask.shape}, {position_ids.shape}, {gen_batch.non_tensor_batch.keys()} {type(raw_prompt_ids)}'
+                )
                 with marked_timer("step", timing_raw):
                     # generate a batch
+                    # 这里传入的 batch 是所有的数据，到具体 rank 上再做分配
                     with marked_timer("gen", timing_raw, color="red"):
                         if not self.async_rollout_mode:
                             gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
@@ -1005,10 +1366,38 @@ class RayPPOTrainer:
 
                             del gen_baseline_batch, gen_baseline_output
 
+                    self.req_scheduler.restore_order(gen_batch_output, 
+                                                    reqs_idx,
+                                                    self.config.actor_rollout_ref.rollout.n,
+                                                    )
+                    
                     batch.non_tensor_batch["uid"] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object)
                     # repeat to align with repeated responses in rollout
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
+
+                     #####################################
+                    # data examine2 (union-ed)
+                    seq = batch.batch['input_ids']
+                    response = batch.batch['responses']
+                    raw_prompt_ids = batch.non_tensor_batch['raw_prompt_ids']
+                    print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape} {len(batch)} {batch.batch.keys()} {batch.non_tensor_batch.keys()}')
+                    
+                    pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
+                    model = self.config.actor_rollout_ref.model.path.split('/')[-1]
+                    dataset = self.config.data.train_files.split('/')[-1]
+                    prefix = f'{dataset}_{model}_E{epoch}B{bs_idx}_data'
+                    unpadded = unpad_responses(response, pad_ids)
+                    self.req_scheduler.log_seqlen(
+                        raw_prompt_ids, 
+                        unpadded,
+                        prefix, 
+                    )
+                    self.req_scheduler.update_table(
+                        raw_prompt_ids,
+                        unpadded,
+                    )
+
 
                     batch.batch["response_mask"] = compute_response_mask(batch)
                     # Balance the number of valid tokens across DP ranks.

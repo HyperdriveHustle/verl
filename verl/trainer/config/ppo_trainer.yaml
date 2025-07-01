@@ -30,8 +30,11 @@ data:
 
   # Maximum prompt length. All prompts will be left-padded to this length.
   # An error will be reported if the length is too long.
+  min_prompt_length: null
+
   max_prompt_length: 512
 
+  cap_dataset_size: null
   # Maximum response length. Rollout in RL algorithms (e.g. PPO) generates up to this length.
   max_response_length: 512
 
@@ -87,6 +90,12 @@ data:
 
     # The name of the dataset class within the specified file.
     name: null
+
+req_scheduler:
+  seq_dir: null
+  log_dir: null
+  agg: mean
+  algo: even_prompt
 
 # config for actor, rollout and reference model
 actor_rollout_ref:

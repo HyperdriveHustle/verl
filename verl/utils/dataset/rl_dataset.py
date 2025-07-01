@@ -20,6 +20,8 @@ import os
 import re
 from collections import defaultdict
 from typing import List, Optional, Union
+from time import time
+import pandas as pd
 
 import datasets
 import numpy as np
@@ -337,3 +339,143 @@ class RLHFDataset(Dataset):
             return state
 
         return self.__dict__.copy()
+    
+
+class RLHFDatasetFilter(RLHFDataset):
+    def __init__(self,
+                data_files: Union[str, List[str]],
+                tokenizer: PreTrainedTokenizer,
+                processor,
+                config: DictConfig,
+        ):
+        self.min_prompt_length = config.get("min_prompt_length", None)
+        self.max_prompt_length = config.get("max_prompt_length", 1024)
+        #
+        self.filter_overlong_prompts = config.get("filter_overlong_prompts", False)
+        self.cap_dataset_size = config.get("cap_dataset_size", None)
+
+        super().__init__(
+            data_files=data_files,
+            tokenizer=tokenizer,
+            config=config,
+            processor=processor,
+        )
+
+    def _generate_cache_id(self):
+        import hashlib
+        """Generate a unique identifier for the current dataset configuration"""
+        # [RLHFDatasetFilter]: _generate_cache_id, self.parquet_files=['/afs/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k_dedup.parquet'].
+        print(f'[RLHFDatasetFilter]: _generate_cache_id, {self.parquet_files=}.')          
+        # Create a string containing all parameters that would affect filtering
+        config_str = (
+            str(sorted(self.original_data_files))
+            + str(self.max_prompt_length)
+            + str(self.min_prompt_length)
+            + str(self.cap_dataset_size)
+        )
+        # Hash the configuration string to create a shorter identifier
+        return hashlib.md5(config_str.encode()).hexdigest()[:10]
+
+    def _read_files_and_tokenize(self):
+        import pickle
+        # Create a cache identifier based on input files and filtering parameters
+        cache_dir = os.path.dirname(self.data_files[0])
+        cache_id = self._generate_cache_id()
+        cache_file = os.path.join(cache_dir, f"filtered_data_{cache_id}.parquet")
+        cache_metadata_file = os.path.join(cache_dir, f"metadata_{cache_id}.pkl")
+        # [RLHFDatasetFilter]: cache_file='/afs/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/filtered_data_8aff3605b0.parquet'.
+        print(f'[RLHFDatasetFilter]: {cache_file=}.')          
+        
+        # Check if cached filtered data exists
+        if os.path.exists(cache_file) and os.path.exists(cache_metadata_file):
+            try:
+                # Load metadata to verify cache is valid
+                with open(cache_metadata_file, 'rb') as f:
+                    metadata = pickle.load(f)
+                
+                # Verify the cache is still valid for our current parameters
+                if (metadata['max_prompt_length'] == self.max_prompt_length and
+                    metadata['min_prompt_length'] == self.min_prompt_length):
+                    print(f"[RLHFDatasetFilter] Loading pre-filtered dataset from cache: {cache_file}")
+                    self.dataframe = pd.read_parquet(cache_file)
+                    print(f'[RLHFDatasetFilter]: {len(self.dataframe)=} {list(self.dataframe.columns)}')
+                    return
+
+            except Exception as e:
+                print(f"[RLHFDatasetFilter] Cache loading failed: {e}. Rebuilding cache.")
+
+        # If cache doesn't exist or is invalid, process the data
+        # Read and concatenate all input files
+        print("[RLHFDatasetFilter] Processing data and building cache...")
+        dataframes = [pd.read_parquet(f) for f in self.data_files]
+        self.dataframe = pd.concat(dataframes, ignore_index=True)
+
+        # XXX, for req scheduling, we need to build a table map from req_id to output len
+        # the dataset is too large, we just hacky downsmaple for now
+        full_len = len(self.dataframe)
+        if self.cap_dataset_size is not None:
+            self.dataframe = self.dataframe.iloc[:self.cap_dataset_size]
+        print(f'[RLHFDatasetFilter]: {full_len=} {len(self.dataframe)=} {list(self.dataframe.columns)}')
+        
+        # apply filter
+        if self.filter_overlong_prompts:
+            tokenizer = self.tokenizer
+            prompt_key = self.prompt_key
+
+            # add a new col for efficient filtering!
+            new_key = 'applied_chat_template_prompts'
+            self.dataframe[new_key] = self.dataframe[prompt_key].apply(lambda prompt: tokenizer.apply_chat_template(prompt, add_generation_prompt=True,))
+
+            # filter prompt
+            t1 = time()
+            prompt_lengths = self.dataframe[new_key].apply(lambda x: len(tokenizer.encode(x)))
+            # def filter_long(doc):
+            #     return len(doc[new_key]) <= self.max_prompt_length
+            # def filter_short(doc):
+            #     return len(doc[new_key]) >= self.min_prompt_length
+            if self.min_prompt_length is not None:
+                self.dataframe = self.dataframe[prompt_lengths >= self.min_prompt_length]
+            if self.max_prompt_length is not None:
+                self.dataframe = self.dataframe[prompt_lengths <= self.max_prompt_length]
+            t2 = time()
+            print(f'[RLHFDatasetFilter] filter prompt: {len(self.dataframe)=}, {self.min_prompt_length}:{self.max_prompt_length},  time cost: {t2-t1:.2f}s')
+
+    def __getitem__(self, item):
+        # print(f'[RLHFDatasetFilter] items: {item} {type(item)}, end=')
+        row_dict: dict = self.dataframe.iloc[item].to_dict()
+        # 原数据格式
+        # 输出结果：row_dict keys: dict_keys(['data_source', 'prompt', 'ability', 'reward_model', 'extra_info'])
+        # print(f'[RLHFDatasetFilter] row_dict keys: {row_dict.keys()}')
+
+        chat = row_dict.pop(self.prompt_key)
+        # self.prompt_key='prompt' or message
+        # print(f'[RLHFDatasetFilter] {self.prompt_key=}')
+
+        prompt_with_chat_template = self.tokenizer.apply_chat_template(chat, add_generation_prompt=True, tokenize=False)
+
+        assert self.image_key not in row_dict, 'multi-modal is not supported yet'
+        raw_prompt = prompt_with_chat_template
+
+        input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(prompt=prompt_with_chat_template,
+                                                                         tokenizer=self.tokenizer,
+                                                                         max_length=self.max_prompt_length,
+                                                                         pad_token_id=self.tokenizer.pad_token_id,
+                                                                         left_pad=True,
+                                                                         truncation=self.truncation,
+                                                                        )
+        position_ids = compute_position_id_with_mask(attention_mask)
+
+        row_dict['input_ids'] = input_ids[0]
+        row_dict['attention_mask'] = attention_mask[0]
+        row_dict['position_ids'] = position_ids[0]
+        row_dict['raw_prompt_ids'] = self.tokenizer.encode(raw_prompt, add_special_tokens=False)
+
+        # encode prompts without chat template
+        if self.return_raw_chat:
+            row_dict['raw_prompt'] = chat.tolist()
+
+        # add index for each prompt
+        index = row_dict.get("extra_info", {}).get("index", 0)
+        row_dict["index"] = index
+
+        return row_dict
