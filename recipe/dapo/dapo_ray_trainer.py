@@ -206,8 +206,8 @@ class RayDAPOTrainer(RayPPOTrainer):
                     # 这里传入的 batch 是所有的数据，到具体 rank 上再做分配
                     with marked_timer("gen", timing_raw, "red"):
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
-                        timing_raw.update(gen_batch_output.meta_info["timing"])
-                        gen_batch_output.meta_info.pop("timing", None)
+                        #timing_raw.update(gen_batch_output.meta_info["timing"])
+                        #gen_batch_output.meta_info.pop("timing", None)
 
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         with marked_timer("gen_max", timing_raw, "red"):
@@ -428,6 +428,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                 # TODO: implement actual tflpo and theoretical tflpo
                 n_gpus = self.resource_pool_manager.get_n_gpus()
                 metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+                print(f"global_step={self.global_steps}, timing_raw={timing_raw}")
                 timing_raw = defaultdict(float)  # clear timing
 
                 metrics["train/num_gen_batches"] = num_gen_batches

@@ -37,7 +37,7 @@ def run_ppo(config) -> None:
         # this is for local ray cluster
         ray.init(
             runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", 
-            "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN", "RAY_DEBUG": "1",
+            "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
             "TENSORBOARD_DIR":os.environ.get("TENSORBOARD_DIR")}},
             num_cpus=config.ray_init.num_cpus,
         )

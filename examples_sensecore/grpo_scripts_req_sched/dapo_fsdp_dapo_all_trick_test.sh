@@ -19,10 +19,10 @@ export project_name=${project_name:-verl_dapo_math_grpo_dapo_req_sched}
 export total_epochs=${total_epochs:-10}
 export vllm_tp=${vllm_tp:-1}
 
-export train_prompt_batch_size=${train_prompt_batch_size:-16}
-export grpo_rollout_n=${grpo_rollout_n:-8}
+export train_prompt_batch_size=${train_prompt_batch_size:-512}
+export grpo_rollout_n=${grpo_rollout_n:-16}
 # model params
-export max_response_length=${max_response_length:-4096}
+export max_response_length=${max_response_length:-20000}
 export prompt_key=${prompt_key:-prompt}
 export resume_type=${resume_type:-resume_step230}
 # env config
@@ -181,7 +181,7 @@ python3 -u -m  recipe.dapo.main_dapo \
     trainer.default_local_dir=/nvfile-heatstorage/teleai-infra/wlw/workspace/${project_name}/${experiment_name} \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
-    trainer.n_gpus_per_node=4 \
+    trainer.n_gpus_per_node=8 \
     trainer.nnodes=${nnode} \
     trainer.save_freq=10 \
     trainer.test_freq=20 \
