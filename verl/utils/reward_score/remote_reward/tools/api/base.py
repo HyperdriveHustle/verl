@@ -6,7 +6,7 @@ import openai
 from openai import AzureOpenAI
 
 
-from recipe.genrm_remote.tools.base import Tool, GenerateTool
+from verl.utils.reward_score.remote_reward.tools.base import Tool, GenerateTool
 
 
 class OpenAIClientTool(GenerateTool):

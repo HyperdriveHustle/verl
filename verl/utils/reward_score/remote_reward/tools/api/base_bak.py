@@ -4,7 +4,7 @@ from typing import List, Dict
 from tqdm import tqdm
 import openai
 
-from recipe.genrm_remote.tools.api.base import Tool, GenerateTool
+from verl.utils.reward_score.remote_reward.tools.base import Tool, GenerateTool
 
 
 class OpenAIClientTool(GenerateTool):

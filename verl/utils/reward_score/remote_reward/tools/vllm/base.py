@@ -3,7 +3,7 @@ from typing import List, Dict
 import vllm
 from transformers import AutoTokenizer, GenerationConfig
 
-from recipe.genrm_remote.tools.api.base import Tool, GenerateTool
+from verl.utils.reward_score.remote_reward.tools.base import Tool, GenerateTool
 
 
 class VllmTool(GenerateTool):
