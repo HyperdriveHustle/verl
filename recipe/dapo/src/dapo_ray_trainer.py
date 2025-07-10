@@ -266,7 +266,10 @@ class RLHFDatasetFilter(RLHFDataset):
         # 输出结果：row_dict keys: dict_keys(['data_source', 'prompt', 'ability', 'reward_model', 'extra_info'])
         # print(f'[RLHFDatasetFilter] row_dict keys: {row_dict.keys()}')
 
-        chat = row_dict.pop(self.prompt_key)
+        # chat = row_dict.pop(self.prompt_key) # hwq 0710
+        chat = row_dict.get(self.prompt_key)
+        # print(f"---------------chat:{chat}---------------------")
+
         # self.prompt_key='prompt' or message
         # print(f'[RLHFDatasetFilter] {self.prompt_key=}')
 
@@ -936,7 +939,7 @@ class RayDAPOTrainer(RayPPOTrainer):
             # gh512 disable for debug
             val_metrics = self._validate()
             pprint(f'Initial validation metrics: {val_metrics}')
-            # logger.log(data=val_metrics, step=self.global_steps)
+            logger.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get('val_only', False):
                 return
 

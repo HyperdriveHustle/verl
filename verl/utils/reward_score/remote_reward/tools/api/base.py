@@ -41,21 +41,26 @@ class OpenAIClientTool(GenerateTool):
         frequency_penalty = kwargs.get('frequency_penalty', 0.0)
         stop = kwargs.get('stop', None)
 
+        call_kwargs = dict(
+            model=model_name,
+            messages=messages,
+            n=n,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            stop=stop,
+        )
+        # 仅在 Qwen3 系列模型时添加 extra_body
+        if model_name.lower().startswith("Qwen3"):
+            call_kwargs["extra_body"] = {
+                "chat_template_kwargs": {"enable_thinking": False}
+            }
         completion = None
 
         try:
-            completion = self.client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                extra_body={"chat_template_kwargs": {"enable_thinking": False}}, # nothinking
-                n=n,
-                temperature=temperature,
-                top_p=top_p,
-                max_tokens=max_tokens,
-                presence_penalty=presence_penalty,
-                frequency_penalty=frequency_penalty,
-                stop=stop
-            )
+            completion = self.client.chat.completions.create(**call_kwargs)
             return [choice.message.content for choice in completion.choices]
         except Exception as e:
             print(f">>> Exception while process {model_name} api, completion: {completion}, error: {e}")

@@ -29,6 +29,19 @@ BASE_DELAY = 2
 MAX_WORKERS = 50
 # MODEL_NAME = "Qwen2.5-32B-Instruct"
 MODEL_NAME = "Qwen3-30B-A3B"
+SAVE_JUDGE_PATH = "/afs/chatrl/users/hwq/code/verl-remote-reward/examples_sensecore/grpo_remote_reward/output.jsonl"  # 设置你要保存的 JSONL 文件路径
+
+
+# 供训练阶段动态覆写
+def init_remote_reward(cfg: dict | None = None):
+    """Inject cfg from Hydra once at program start."""
+    global BASE_URL, API_KEY, MODEL_NAME, SAVE_JUDGE_PATH
+    if not cfg:
+        return
+    BASE_URL   = cfg.get("base_url",  BASE_URL)
+    API_KEY    = cfg.get("api_key",   API_KEY)
+    MODEL_NAME = cfg.get("model_name",MODEL_NAME)
+    SAVE_JUDGE_PATH = cfg.get("save_judge_path",SAVE_JUDGE_PATH)
 
 
 
@@ -60,7 +73,6 @@ Do not output anything other than the above.
 Output:
 '''.strip()
 
-SAVE_PATH = "/afs/chatrl/users/hwq/code/verl-remote-reward/examples_sensecore/grpo_remote_reward/output.jsonl"  # 设置你要保存的 JSONL 文件路径
 
 
 def save_to_jsonl(prompt, response):
@@ -68,7 +80,7 @@ def save_to_jsonl(prompt, response):
         "prompt": prompt,
         "response": response
     }
-    with open(SAVE_PATH, 'a', encoding='utf-8') as f:
+    with open(SAVE_JUDGE_PATH, 'a', encoding='utf-8') as f:
         f.write(json.dumps(record, ensure_ascii=False) + '\n')
 
 def match_answer_content(processed_str, answer_pattern = r'<answer>(.*?)</answer>'):
@@ -137,7 +149,8 @@ def compute_reward_result_tag(judge_response):
 
 def compute_score(data_source, solution_str, ground_truth, extra_info):
 
-    problem = extra_info["question"]
+    # problem = extra_info["question"]
+    problem = extra_info
     response_str = solution_str[-300:]  # The longest answer in MATH-500 has 159 characters
     # 按照 pattern 抽取出答案的部分
     pred = match_answer_content(

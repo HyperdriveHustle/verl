@@ -1,4 +1,5 @@
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
+# Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -66,8 +67,8 @@ def run_ppo(config) -> None:
                 'NCCL_DEBUG': 'WARN',
                 'VLLM_LOGGING_LEVEL': 'WARN'
             }
+        # },local_mode=True)
         })
-
     runner = TaskRunner.remote()
     ray.get(runner.run.remote(config))
 
@@ -156,6 +157,9 @@ class TaskRunner:
         elif reward_manager_name == 'dapo':
             from verl.workers.reward_manager import DAPORewardManager
             reward_manager_cls = DAPORewardManager
+        elif reward_manager_name == "remote":
+            from verl.workers.reward_manager import REMOTERewardManager
+            reward_manager_cls = REMOTERewardManager
         else:
 
             raise NotImplementedError
@@ -165,14 +169,16 @@ class TaskRunner:
                                        num_examine=0,
                                        compute_score=compute_score,
                                        reward_fn_key=config.data.reward_fn_key,
+                                       remote_reward_cfg=config.get("remote_reward"),
                                        max_resp_len=config.data.max_response_length,
                                        overlong_buffer_cfg=config.reward_model.overlong_buffer)
 
         # Note that we always use function-based RM for validation
         val_reward_fn = reward_manager_cls(tokenizer=tokenizer,
-                                           num_examine=1,
+                                           num_examine=10,
                                            compute_score=compute_score,
                                            reward_fn_key=config.data.reward_fn_key,
+                                           remote_reward_cfg=config.get("remote_reward"),
                                            max_resp_len=config.data.max_response_length,
                                            overlong_buffer_cfg=config.reward_model.overlong_buffer)
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
