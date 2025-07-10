@@ -68,7 +68,11 @@ We use a pre-defined rule-based reward model. We force the model to produce a fi
 answer following 4 “#” as shown in the solution. We extract the final
 answer from both the solution and model's output using regular
 expression matching. We assign a reward of 1 to correct
+<<<<<<< HEAD
 answer, 0.1 to incorrect answer and 0 to no answer. 
+=======
+answer, 0.0 to incorrect answer and 0 to no answer. 
+>>>>>>> verl_0626
 
 For more details, please refer to `verl/utils/reward_score/gsm8k.py <https://github.com/volcengine/verl/blob/v0.1/verl/utils/reward_score/gsm8k.py>`_.
 

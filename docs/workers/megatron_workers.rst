@@ -1,4 +1,5 @@
 Megatron-LM Backend
+<<<<<<< HEAD
 =====================
 
 We support Megatron Backend by implementing various workers for actor,
@@ -9,11 +10,26 @@ critic, reference, rollout and reward models. We also implement the
 
 - Support 3D parallelism and sequence parallelism for best scalablility
   and throughput.
+=======
+===================
+
+We support Megatron Backend by implementing various workers for actor,
+critic, reference, rollout and reward models. We also implement the
+``3DHybridEngine`` using Megatron-LM and vLLM/SGLang in
+`megatron_vllm.py <https://github.com/volcengine/verl/blob/main/verl/workers/sharding_manager/megatron_vllm.py>`_
+and `megatron_sglang.py <https://github.com/volcengine/verl/blob/main/verl/workers/sharding_manager/megatron_sglang.py>`_.
+
+**Pros**
+
+- Support 5D parallelism (TP, EP, CP, DP, PP) and sequence parallelism
+  for best scalablility and throughput.
+>>>>>>> verl_0626
 - 3D HybridEngine can significantly reduce peak memory usage and reduce
   weight synchronize overhead between actor and rollout.
 
 **Cons**
 
+<<<<<<< HEAD
 - Users should implement their own models for Megatron-LM
 - Users should implement the corresponding weight_loader to
 
@@ -23,13 +39,74 @@ critic, reference, rollout and reward models. We also implement the
 
 Megatron Workers
 ----------------
+=======
+- Huggingface Models and Megatron checkpoints need tools for conversion.
+
+
+Development Progress
+--------------------
+
+
+Note that [Deprecated] means that the feature is not supported in the latest
+version of verl.
+[To-Optimize] means that the feature is implemented but not optimized yet.
+[WIP] means that the feature is working in progress.
+[In-Release] means that the feature is ready and in review process,
+coming at any time.
+
+
++---------------+-----------------------------------------------------------+
+| [Deprecated]  | Megatron 3D Parallelism with custom models                |
++---------------+-----------------------------------------------------------+
+| [Done]        | Megatron 0.11.0 ``GPTModel`` support                      |
++---------------+-----------------------------------------------------------+
+| [Done]        | Megatron GRPO support                                     |
++---------------+-----------------------------------------------------------+
+| [Done]        | Megatron with vLLM 0.8.2, with per-tensor weights loading |
++---------------+-----------------------------------------------------------+
+| [Done]        | Megatron with Context Parallel                            |
++---------------+-----------------------------------------------------------+
+| [Done]        | Qwen2MoE model support                                    |
++---------------+-----------------------------------------------------------+
+| [To-Optimize] | Megatron dist Checkpoint                                  |
++---------------+-----------------------------------------------------------+
+| [To-Optimize] | Huggingface and Megatron Checkpoint Converter             |
++---------------+-----------------------------------------------------------+
+| [To-Optimize] | Efficient fused linear, entropy and cross entropy         |
++---------------+-----------------------------------------------------------+
+| [Done]        | Megatron offload(param, grad, optimizer)                  |
++---------------+-----------------------------------------------------------+
+| [Done]        | Megatron Profiler                                         |
++---------------+-----------------------------------------------------------+
+| [In-Release]  | Megatron 0.12.0, TE 2.2 with vLLM 0.8.3 and Fused Attn    |
++---------------+-----------------------------------------------------------+
+| [WIP]         | Moonlight/DeepSeek-V3 model support                       |
++---------------+-----------------------------------------------------------+
+| [WIP]         | Expert Parallel support                                   |
++---------------+-----------------------------------------------------------+
+| [WIP]         | Megatron support dynamic batch size                       |
++---------------+-----------------------------------------------------------+
+| [To-Do]       | Performance tuning                                        |
++---------------+-----------------------------------------------------------+
+| [MileStone]   | Runnable with DeepSeek-V3 671B post-training              |
++---------------+-----------------------------------------------------------+
+
+
+
+Utils of Megatron Workers
+-------------------------
+>>>>>>> verl_0626
 
 MegatronWorker
 ^^^^^^^^^^^^^^
 
 ``MegatronWorker`` is the base class of different megatron worker
 classes. In this class, ``get_megatron_global_info`` and
+<<<<<<< HEAD
 ``get_megatron_rank_info`` function to retrive the 3D parallel world
+=======
+``get_megatron_rank_info`` function to retrieve the 3D parallel world
+>>>>>>> verl_0626
 size and rank of each ``Worker`` running on specific GPU. These information
 will be used in transfer protocol for Megatron Backend.
 
@@ -65,6 +142,7 @@ initialization process.
 The initialization details of HybridEngine, Actor and Rollout are
 highlighted below:
 
+<<<<<<< HEAD
 1. ``AllGatherPPModel`` holds memory buffer for both Actor and Rollout
    and support weight resharding between actor and rollout.
 2. ``MegatronPPOActor`` implements the simple PPO computation logics
@@ -74,18 +152,30 @@ highlighted below:
    Engine and make it executed under SPMD to fit into our
    ``WorkerGroup`` design.
 4. ``MegatronVLLMShardingManager`` a context manager to perform actual
+=======
+1. ``MegatronPPOActor`` implements the simple PPO computation logics
+   when the model is built with Megatron, including compute log prob,
+   model update.
+2. ``vLLMRollout`` support generation with vLLM. We modify the vLLM
+   Engine and make it executed under SPMD to fit into our
+   ``WorkerGroup`` design.
+3. ``MegatronVLLMShardingManager`` a context manager to perform actual
+>>>>>>> verl_0626
    resharding between actor and rollout.
 
 See `source code <https://github.com/volcengine/verl/blob/main/verl/workers/megatron_workers.py#L63>`_ for more information.
 
 .. code:: python
 
+<<<<<<< HEAD
    # Initialize the 3D HybridEngine
    hybrid_engine = AllGatherPPModel(model_provider=megatron_actor_model_provider)
    # Fetch the model at current rank
    actor_module = hybrid_engine.this_rank_models
    ...
 
+=======
+>>>>>>> verl_0626
    # build actor model
    self.actor = MegatronPPOActor(config=self.config.actor,
                                  model_config=self.actor_model_config,
@@ -108,7 +198,11 @@ See `source code <https://github.com/volcengine/verl/blob/main/verl/workers/mega
                                                   layer_name_mapping=layer_name_mapping)
    ...
 
+<<<<<<< HEAD
 2. Generate sequence and recompute log prob
+=======
+1. Generate sequence and recompute log prob
+>>>>>>> verl_0626
 
 .. code:: python
 
@@ -123,7 +217,11 @@ See `source code <https://github.com/volcengine/verl/blob/main/verl/workers/mega
   TP dimension. Therefore, the corresponding data should be dispatched
   and collected through the 3D parallel group of the rollout model,
   rather than the actor model. However, the world_size and rank
+<<<<<<< HEAD
   information can only be retrived from ``get_megatron_global_info`` and
+=======
+  information can only be retrieved from ``get_megatron_global_info`` and
+>>>>>>> verl_0626
   ``get_megatron_rank_info``, which records the 3D information for the
   actor model. Moreover, the data resharding inside TP dimension will be
   processed within the HybridEngine.
@@ -145,6 +243,16 @@ See `source code <https://github.com/volcengine/verl/blob/main/verl/workers/mega
   the last pp.
 - Update the actor model weight using PPO & entropy loss.
 
+<<<<<<< HEAD
+=======
+
+..note:: 
+
+   Currently, training Tensor Parallel Size can be different from inference
+   Tensor Parallel Size.
+
+
+>>>>>>> verl_0626
 ReferenceModel
 ''''''''''''''
 
@@ -193,6 +301,7 @@ additional initialization for the Optimizer.
    @register(dispatch_mode=Dispatch.MEGATRON_COMPUTE_PROTO)
    def compute_rm_score(self, data: DataProto):
 
+<<<<<<< HEAD
 Context Parallel
 ----------------
 
@@ -201,3 +310,65 @@ Currently we can only use LLaMa and Qwen models implemented in verl, and context
 We are working in progress to support Megatron implementation of GPTModel, with TransformerEngine support. So if the itegration goes well, we can support Ulysses, Ring and AllGather context parallel in the future.
 
 Now we support Megatron checkpointing save/load function with original models. Please check the :ref:`config-explain-page` page to see how to use the APIs.
+=======
+
+Utils of Train Optimization
+---------------------------
+
+Offload
+^^^^^^^
+When resources are tight, the offload method can lower GPU memory 
+usage, helping training and inference frameworks work well under verl. 
+It moves parameters, gradients, and optimizers to CPU memory and only 
+loads them back to the GPU when needed.
+
+If you want to use the offload, you can add the following parameters 
+for the actor and ref separately. 
+
+.. code:: python
+
+   # For the actor
+   actor_rollout_ref.actor.megatron.param_offload=True \
+   actor_rollout_ref.actor.megatron.grad_offload=True \
+   actor_rollout_ref.actor.megatron.optimizer_offload=True \
+   # For the ref w/o grad and optimizer
+   actor_rollout_ref.ref.megatron.param_offload=True \
+
+
+For the critic, you can include these parameters.
+
+.. code:: python
+
+   # For the critic
+   critic.megatron.param_offload=True \
+   critic.megatron.grad_offload=True \
+   critic.megatron.optimizer_offload=True \
+
+Profiler
+^^^^^^^^
+
+The profiler is a tool that helps you understand the performance of your 
+model. It can be used to profile the time spent on different operations 
+and identify the bottlenecks. You can get more information from 
+`torch.profiler <https://pytorch.org/docs/stable/profiler.html>`_.
+
+In verl, now the profiler is only support for the actor role In Megatron. You can set 
+the begin step and end step to profile. Notice, one step means one gradient update. And 
+the profile result will be saved in the save_path. If you just want to profile in the 
+specific rank, you can set the profile_ranks, by default, it will be [0].
+
+.. code:: python
+
+   actor_rollout_ref.actor.profile.use_profile=True \
+   actor_rollout_ref.actor.profile.profile_ranks=[0] \
+   actor_rollout_ref.actor.profile.step_start=0 \
+   actor_rollout_ref.actor.profile.step_end=1 \
+   actor_rollout_ref.actor.profile.save_path="./profile"
+
+
+Related MCore Document
+----------------------
+
+There is also a detailed document of using MCore to train different
+kinds of models, please refer to `MCore Document <https://github.com/volcengine/verl/blob/main/verl/models/mcore/readme.md>`_.
+>>>>>>> verl_0626

@@ -6,8 +6,12 @@ Author: `Yusheng Su <https://yushengsu-thu.github.io/>`_
 Setup
 -----
 
+<<<<<<< HEAD
 If you run on AMD GPUs (MI300) with ROCM platform, you cannot use the previous quickstart to run VeRL. You should follow the following steps to build a docker and assign ``HIP_VISIBLE_DEVICES`` and ``ROCR_VISIBLE_DEVICES`` when starting RLHF training.
 
+=======
+If you run on AMD GPUs (MI300) with ROCM platform, you cannot use the previous quickstart to run verl. You should follow the following steps to build a docker and set ``RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES`` or ``RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES`` when starting ray in verl's RLHF training.
+>>>>>>> verl_0626
 
 
 docker/Dockerfile.rocm
@@ -15,10 +19,22 @@ docker/Dockerfile.rocm
 
 .. code-block:: bash
 
+<<<<<<< HEAD
     #  Build the docker in the repo dir:
     # docker build -f docker/Dockerfile.rocm -t verl-rocm:03.04.2015 .
     # docker images # you can find your built docker
     FROM rocm/vllm:rocm6.2_mi300_ubuntu20.04_py3.9_vllm_0.6.4
+=======
+    # Build the docker in the repo dir:
+    # docker build -f docker/Dockerfile.rocm -t verl-rocm .
+    # docker images # you can find your built docker
+
+
+    # Support - Traing: fsdp; Inference: vllm
+    # FROM rocm/vllm:rocm6.2_mi300_ubuntu20.04_py3.9_vllm_0.6.4
+    # Support - Traing: fsdp; Inference: vllm, sglang
+    FROM lmsysorg/sglang:v0.4.6.post5-rocm630
+>>>>>>> verl_0626
 
     # Set working directory
     # WORKDIR $PWD/app
@@ -26,6 +42,13 @@ docker/Dockerfile.rocm
     # Set environment variables
     ENV PYTORCH_ROCM_ARCH="gfx90a;gfx942"
 
+<<<<<<< HEAD
+=======
+    ENV HIPCC_COMPILE_FLAGS_APPEND="--amdgpu-target=gfx90a;gfx942 -D__HIP_PLATFORM_AMD__"
+    ENV CFLAGS="-D__HIP_PLATFORM_AMD__"
+    ENV CXXFLAGS="-D__HIP_PLATFORM_AMD__"
+
+>>>>>>> verl_0626
     # Install vllm
     RUN pip uninstall -y vllm && \
         rm -rf vllm && \
@@ -51,7 +74,11 @@ docker/Dockerfile.rocm
         peft \
         "pyarrow>=15.0.0" \
         pylatexenc \
+<<<<<<< HEAD
         "ray[data,train,tune,serve]" \
+=======
+        "ray[data,train,tune,serve]>=2.45.0" \
+>>>>>>> verl_0626
         torchdata \
         transformers \
         wandb \
@@ -59,6 +86,13 @@ docker/Dockerfile.rocm
         pybind11 && \
         pip install -e . --no-deps
 
+<<<<<<< HEAD
+=======
+    # Install torch_memory_saver
+    RUN pip install git+https://github.com/ExtremeViscent/torch_memory_saver.git --no-deps
+
+
+>>>>>>> verl_0626
 Build the image:
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -90,13 +124,26 @@ Optional: Running without root and with user permissions
       verl-rocm \
       /bin/bash
 
+<<<<<<< HEAD
 (Optional): If you do not want to root mode and require assign yuorself as the user
+=======
+(Optional): If you do not want to root mode and require assign yourself as the user
+>>>>>>> verl_0626
 Please add ``-e HOST_UID=$(id -u)`` and ``-e HOST_GID=$(id -g)`` into the above docker launch script. 
 
 Example
 -------
 
+<<<<<<< HEAD
 Due to to special setting in AMD (ROCM) torch, you need to assign ``HIP_VISIBLE_DEVICES`` and ``ROCR_VISIBLE_DEVICES`` when starting Ray in VeRL's RLHF training.
+=======
+Due to to special setting in AMD (ROCM) torch, 
+1. If your ``ray>=2.45.0`` (default), you need to set ``RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES`` when starting ray in verl's RLHF training.
+2. If your ``ray<2.45.0``, you need to set ``RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES`` when starting ray in verl's RLHF training.
+Inference ``$ENGINE`` can be ``vllm`` or ``sglang``. We choose ``vllm`` as default in the following examples.
+
+
+>>>>>>> verl_0626
 
 PPO
 ~~~
@@ -106,12 +153,27 @@ PPO
     YOUR_PROJECT_NAME=r1-verl-ppo-upstream
     YOUR_RUN_NAME=r1-training_ppo-upstream 
     # export HYDRA_FULL_ERROR=1
+<<<<<<< HEAD
     export HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export ROCR_VISIBLE_DEVICES=$HIP_VISIBLE_DEVICES
+=======
+
+    # [ray] < 2.45.0
+    #export RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES=1
+
+    # [ray] >= 2.45.0
+    export RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1 # Patch with https://github.com/ray-project/ray/pull/52794
+
+>>>>>>> verl_0626
     GPUS_PER_NODE=8
     MODEL_PATH=Qwen/Qwen2.5-0.5B-Instruct
     python3 examples/data_preprocess/gsm8k.py --local_dir data/gsm8k
     python3 -c "import transformers; transformers.pipeline('text-generation', model='$MODEL_PATH')"
+<<<<<<< HEAD
+=======
+    ENGINE=vllm #sglang
+
+>>>>>>> verl_0626
     PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
      data.train_files=data/gsm8k/train.parquet \
      data.val_files=data/gsm8k/test.parquet \
@@ -125,6 +187,10 @@ PPO
      actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
      actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
      actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+<<<<<<< HEAD
+=======
+     actor_rollout_ref.rollout.name=$ENGINE \
+>>>>>>> verl_0626
      actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
      actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=4 \
      critic.optim.lr=1e-5 \
@@ -151,13 +217,28 @@ GRPO
     YOUR_RUN_NAME=r1-training_grpo-upstream
     # export HYDRA_FULL_ERROR=1
     # export FSDP_VERBOSE=1 
+<<<<<<< HEAD
     export HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export ROCR_VISIBLE_DEVICES=$HIP_VISIBLE_DEVICES
+=======
+
+    # [ray] < 2.45.0
+    #export RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES=1
+
+    # [ray] >= 2.45.0
+    export RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1 # Patch with https://github.com/ray-project/ray/pull/52794
+
+>>>>>>> verl_0626
     GPUS_PER_NODE=8
     MODEL_PATH=Qwen/Qwen2.5-0.5B-Instruct
     # MODEL_PATH=Qwen/Qwen2-7B-Instruct
     python3 examples/data_preprocess/gsm8k.py --local_dir data/gsm8k
     python3 -c "import transformers; transformers.pipeline('text-generation', model='$MODEL_PATH')"
+<<<<<<< HEAD
+=======
+    ENGINE=vllm #sglang
+    
+>>>>>>> verl_0626
     python3 -m verl.trainer.main_ppo \
         algorithm.adv_estimator=grpo \
         data.train_files=data/gsm8k/train.parquet \
@@ -179,7 +260,11 @@ GRPO
         actor_rollout_ref.actor.fsdp_config.param_offload=False \
         actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
         actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
+<<<<<<< HEAD
         actor_rollout_ref.rollout.name=vllm \
+=======
+        actor_rollout_ref.rollout.name=$ENGINE \
+>>>>>>> verl_0626
         actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
         actor_rollout_ref.rollout.n=5 \
         actor_rollout_ref.ref.fsdp_config.param_offload=False \
@@ -272,9 +357,17 @@ slurm_script.sh
     ##########################################################################
 
     ### For rocm and training script
+<<<<<<< HEAD
     export HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export ROCR_VISIBLE_DEVICES=$HIP_VISIBLE_DEVICES
     export CUDA_VISIBLE_DEVICES=$HIP_VISIBLE_DEVICES
+=======
+    # [ray] < 2.45.0
+    #export RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES=1
+
+    # [ray] >= 2.45.0
+    export RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1 # Patch with https://github.com/ray-project/ray/pull/52794
+>>>>>>> verl_0626
 
 
     # Build and launch the Docker container
@@ -304,9 +397,14 @@ slurm_script.sh
         # Launch the docker
         docker run --rm -d \
         -e HYDRA_FULL_ERROR=1 \
+<<<<<<< HEAD
         -e HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES} \
         -e ROCR_VISIBLE_DEVICES=${ROCR_VISIBLE_DEVICES} \
         -e CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} \
+=======
+        -e RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES=1 \
+        -e RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1 \
+>>>>>>> verl_0626
         -e NCCL_DEBUG=${NCCL_DEBUG} \
         -e GPU_MAX_HW_QUEUES=${GPU_MAX_HW_QUEUES} \
         -e TORCH_NCCL_HIGH_PRIORITY=${TORCH_NCCL_HIGH_PRIORITY} \
@@ -372,7 +470,12 @@ slurm_script.sh
     echo "IP Head: $ip_head"
 
     # make sure we set environment variables before Ray initialization
+<<<<<<< HEAD
     export VLLM_ATTENTION_BACKEND=XFORMERS
+=======
+    # If you are using vllm<=0.6.3, you might need to set the following environment variable to avoid bugs:
+    # export VLLM_ATTENTION_BACKEND=XFORMERS
+>>>>>>> verl_0626
 
     # Print out all env variables
     printenv
@@ -406,7 +509,11 @@ slurm_script.sh
 
 
 
+<<<<<<< HEAD
     # Ray initlization test (See whether any error in the above excution)
+=======
+    # Ray initlization test (See whether any error in the above execution)
+>>>>>>> verl_0626
     echo "Testing Ray initialization in the slurm nodes..."
     docker exec "${CONTAINER_NAME}" python3 -c '
     import ray

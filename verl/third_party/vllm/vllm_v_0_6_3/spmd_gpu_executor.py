@@ -15,7 +15,11 @@
 
 import os
 import socket
+<<<<<<< HEAD
 from typing import Dict, List, Optional, Set, Tuple
+=======
+from typing import Iterable, List, Optional, Set, Tuple
+>>>>>>> verl_0626
 
 import torch
 from vllm.config import (
@@ -80,7 +84,11 @@ class SPMDGPUExecutor(ExecutorBase):
     def _init_workers_sp(self, model, distributed_init_method: str):
         # Lazy import the Worker to avoid importing torch.cuda/xformers
         # before CUDA_VISIBLE_DEVICES is set in the Worker
+<<<<<<< HEAD
         from .worker import Worker  # pylint: disable=import-outside-toplevel
+=======
+        from .worker import Worker
+>>>>>>> verl_0626
 
         rank = int(os.getenv("RANK"))
         local_rank = int(os.getenv("LOCAL_RANK"))
@@ -143,6 +151,7 @@ class SPMDGPUExecutor(ExecutorBase):
         self.cache_config.num_cpu_blocks = num_cpu_blocks
 
         if torch.distributed.get_rank() == 0:
+<<<<<<< HEAD
             print(
                 f"before init cache memory allocated: {torch.cuda.memory_allocated() / 1e9}GB, reserved: {torch.cuda.memory_reserved() / 1e9}GB"
             )
@@ -151,6 +160,12 @@ class SPMDGPUExecutor(ExecutorBase):
             print(
                 f"after init cache memory allocated: {torch.cuda.memory_allocated() / 1e9}GB, reserved: {torch.cuda.memory_reserved() / 1e9}GB"
             )
+=======
+            print(f"before init cache memory allocated: {torch.cuda.memory_allocated() / 1e9}GB, reserved: {torch.cuda.memory_reserved() / 1e9}GB")
+        self.worker.initialize_cache(num_gpu_blocks=num_gpu_blocks, num_cpu_blocks=num_cpu_blocks)
+        if torch.distributed.get_rank() == 0:
+            print(f"after init cache memory allocated: {torch.cuda.memory_allocated() / 1e9}GB, reserved: {torch.cuda.memory_reserved() / 1e9}GB")
+>>>>>>> verl_0626
 
     # NOTE(sgm): This will not profile & capture the model(CUDAGraph) when rebuilding KVCache
     def init_cache_engine(self) -> None:
@@ -209,7 +224,11 @@ class SPMDGPUExecutor(ExecutorBase):
     def offload_model_weights(self) -> None:
         self.worker.offload_model_weights()
 
+<<<<<<< HEAD
     def sync_model_weights(self, actor_weights: Dict[str, torch.Tensor], load_format: str) -> None:
+=======
+    def sync_model_weights(self, actor_weights: Iterable, load_format: str) -> None:
+>>>>>>> verl_0626
         self.worker.sync_model_weights(actor_weights=actor_weights, load_format=load_format)
 
 
@@ -229,7 +248,10 @@ def initialize_cluster(
     """
 
     # Initialize cluster locally.
+<<<<<<< HEAD
     port = get_open_port()
+=======
+>>>>>>> verl_0626
     # We need to setup the distributed init method to make sure
     # the distributed megatron code (e.g., get world size) works correctly.
     # distributed_init_method = f"tcp://localhost:{port}"
@@ -245,7 +267,10 @@ def get_open_port():
 
 # TODO(sgm): not implemented async executor yet
 class SPMDGPUExecutorAsync(SPMDGPUExecutor, ExecutorAsyncBase):
+<<<<<<< HEAD
 
+=======
+>>>>>>> verl_0626
     async def execute_model_async(self, execute_model_req: ExecuteModelRequest) -> List[SamplerOutput]:
         """Executes one model step on the given sequences."""
         raise NotImplementedError

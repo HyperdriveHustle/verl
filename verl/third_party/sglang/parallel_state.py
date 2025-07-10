@@ -4,18 +4,32 @@
 # https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/parallel_state.py
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 """Model and data parallel groups."""
+<<<<<<< HEAD
 import os
 from typing import Optional
 
 import torch
 import torch.distributed
 import sglang.srt.distributed.parallel_state as ps
+=======
+
+import os
+from typing import Optional
+
+import sglang.srt.distributed.parallel_state as ps
+import torch
+import torch.distributed
+>>>>>>> verl_0626
 from sglang.srt.distributed.parallel_state import (
     get_pp_group,
     get_world_group,
     init_distributed_environment,
     init_model_parallel_group,
 )
+<<<<<<< HEAD
+=======
+
+>>>>>>> verl_0626
 """
 This version is strongly tied with Megatron to implement HybridEngine and weight sharing between vllm and Megatron.
 - We assume the Megatron tp+dp+pp world is already established before calling this function.
@@ -57,7 +71,11 @@ def initialize_parallel_state(
     assert world_size != -1, "The world_size is set to -1, not initialized by TORCHRUN"
     init_distributed_environment(world_size, rank, distributed_init_method, local_rank, backend)
     if torch.distributed.get_world_size() > 1:
+<<<<<<< HEAD
         # NOTE: build a sepearate inference group with infer tp & micro dp
+=======
+        # NOTE: build a separate inference group with infer tp & micro dp
+>>>>>>> verl_0626
         initialize_model_parallel_for_sglang(
             tensor_model_parallel_size=tensor_model_parallel_size,
             num_tensor_model_parallel_groups_per_train_tp=num_tp_per_train_tp,
@@ -70,7 +88,11 @@ def initialize_parallel_state(
 # this function to sync the _TP, _PP define at the beginning of this file. Otherwise, only the conterparts
 # inside sglang.srt.distributed are init as ProcessGroup, the symbols defined in this file remain as None.
 # It could be weird to maintain two _TP and _PP, I follow the same way to maintain an extra ones for
+<<<<<<< HEAD
 # veRL itself as how it was done in verl.third_party.vllm.parallel_state. Note that the process is a little
+=======
+# verl itself as how it was done in verl.third_party.vllm.parallel_state. Note that the process is a little
+>>>>>>> verl_0626
 # bit different
 def ensure_model_parallel_initialized(
     tensor_model_parallel_size: int,
@@ -87,6 +109,7 @@ def ensure_model_parallel_initialized(
         initialize_model_parallel(tensor_model_parallel_size, pipeline_model_parallel_size, backend)
         return
 
+<<<<<<< HEAD
     assert get_tensor_model_parallel_world_size() == tensor_model_parallel_size, (
         "tensor parallel group already initialized, but of unexpected size: "
         f"{get_tensor_model_parallel_world_size()=} vs. "
@@ -96,6 +119,11 @@ def ensure_model_parallel_initialized(
         "pipeline parallel group already initialized, but of unexpected size: "
         f"{pp_world_size=} vs. "
         f"{pipeline_model_parallel_size=}")
+=======
+    assert get_tensor_model_parallel_world_size() == tensor_model_parallel_size, f"tensor parallel group already initialized, but of unexpected size: {get_tensor_model_parallel_world_size()=} vs. {tensor_model_parallel_size=}"
+    pp_world_size = get_pp_group().world_size
+    assert pp_world_size == pipeline_model_parallel_size, f"pipeline parallel group already initialized, but of unexpected size: {pp_world_size=} vs. {pipeline_model_parallel_size=}"
+>>>>>>> verl_0626
 
 
 # TODO(sgm): deviate from the v0.5.4, not pp now
@@ -128,8 +156,11 @@ def initialize_model_parallel_for_sglang(
 
     world_size: int = torch.distributed.get_world_size()
 
+<<<<<<< HEAD
     rank = torch.distributed.get_rank()
 
+=======
+>>>>>>> verl_0626
     backend = torch.distributed.get_backend()
 
     num_tensor_model_parallel_groups = world_size // tensor_model_parallel_size
@@ -299,7 +330,11 @@ Tensor model parallel utilities
 """
 
 
+<<<<<<< HEAD
 # NOTE(linjunrong): In the vllm version parallel_state.py. veRL created its own _TP and _PP as veRL want to use
+=======
+# NOTE(linjunrong): In the vllm version parallel_state.py. verl created its own _TP and _PP as verl want to use
+>>>>>>> verl_0626
 # the process group for some extra purpose. Under the hood, there is no difference between them and the original
 # one in vllm.distributed.parallel_state. However, the implementation need to hack the init process of inference
 # engine, as we do not maintain another SGLang here, I just use the original _TP and _PP directly.

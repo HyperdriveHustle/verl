@@ -13,7 +13,11 @@
 # limitations under the License.
 # Adapted from https://github.com/vllm-project/vllm/tree/main/vllm/model_executor/model_loader
 
+<<<<<<< HEAD
 from typing import Dict
+=======
+from typing import Dict, Iterable
+>>>>>>> verl_0626
 
 import torch
 import torch.nn as nn
@@ -25,11 +29,16 @@ from vllm.model_executor.models import ModelRegistry
 # NOTE(shengguangming): replace the origin weight loader function in the class
 def parallel_weight_loader(self, param: torch.Tensor, loaded_weight: torch.Tensor) -> None:
     """Parallel Linear weight loader."""
+<<<<<<< HEAD
     assert (param.size() == loaded_weight.size(
     )), "the parameter size is not align with the loaded weight size, param size: {}, loaded_weight size: {}".format(
         param.size(), loaded_weight.size())
     assert (param.data.dtype == loaded_weight.data.dtype
            ), "if we want to shared weights, the data type should also be the same"
+=======
+    assert param.size() == loaded_weight.size(), "the parameter size is not align with the loaded weight size, param size: {}, loaded_weight size: {}".format(param.size(), loaded_weight.size())
+    assert param.data.dtype == loaded_weight.data.dtype, "if we want to shared weights, the data type should also be the same"
+>>>>>>> verl_0626
 
     param.data = loaded_weight.data
 
@@ -37,8 +46,12 @@ def parallel_weight_loader(self, param: torch.Tensor, loaded_weight: torch.Tenso
 def default_weight_loader(param: torch.Tensor, loaded_weight: torch.Tensor) -> None:
     """Default weight loader."""
     assert param.size() == loaded_weight.size()
+<<<<<<< HEAD
     assert (param.data.dtype == loaded_weight.data.dtype
            ), "if we want to shared weights, the data type should also be the same"
+=======
+    assert param.data.dtype == loaded_weight.data.dtype, "if we want to shared weights, the data type should also be the same"
+>>>>>>> verl_0626
 
     param.data = loaded_weight.data
 
@@ -179,6 +192,7 @@ def _replace_name(megatron_name, name_mapping):
             return param_name
 
 
+<<<<<<< HEAD
 def llama_megatron_core_te_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn.Module:
     params_mapping = [
         # (megatron core gpt model name, vllm model name)
@@ -267,12 +281,31 @@ def mistral_megatron_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -
     # TODO: need to implement a general way to deal with prefix
     params_dict = dict(vllm_model.named_parameters())
     for name, loaded_weight in actor_weights.items():
+=======
+def mistral_megatron_weight_loader(actor_weights: Iterable, vllm_model: nn.Module) -> nn.Module:
+    # TODO: need to implement a general way to deal with prefix
+    params_dict = dict(vllm_model.named_parameters())
+    for name, weight in actor_weights:
+>>>>>>> verl_0626
         if "rotary_emb.inv_freq" in name:
             continue
         else:
             param = params_dict[name]
             weight_loader = getattr(param, "weight_loader", default_weight_loader)
+<<<<<<< HEAD
             weight_loader(param, loaded_weight)
+=======
+            weight_loader(param, weight)
+
+
+def megatron_core_te_weight_loader(actor_weights: Iterable, vllm_model: nn.Module) -> nn.Module:
+    # NOTE(shengguangming): the megatron llama may have this prefix
+    params_dict = dict(vllm_model.named_parameters())
+    for name, weight in actor_weights:
+        param = params_dict[name]
+        weight_loader = getattr(param, "weight_loader", default_weight_loader)
+        weight_loader(param, weight)
+>>>>>>> verl_0626
 
 
 __LAYER_WEIGHT_MEGATRON_LOADER_REGISTRY__ = {
@@ -292,16 +325,27 @@ __LAYER_WEIGHT_MEGATRON_LOADER_REGISTRY__ = {
 
 __MODEL_MEGATRON_WEIGHT_LOADER_REGISTRY__ = {
     "GPT2LMHeadModel": gpt2_weight_loader,
+<<<<<<< HEAD
     "LlamaForCausalLM": llama_megatron_weight_loader,  # use te backend for open-source megatron
     "LLaMAForCausalLM": llama_megatron_weight_loader,
     "MistralForCausalLM": mistral_megatron_weight_loader,
     'Qwen2ForCausalLM': qwen2_megatron_weight_loader,
+=======
+    "LlamaForCausalLM": megatron_core_te_weight_loader,  # use te backend for open-source megatron
+    "LLaMAForCausalLM": megatron_core_te_weight_loader,
+    "MistralForCausalLM": mistral_megatron_weight_loader,
+    "Qwen2ForCausalLM": megatron_core_te_weight_loader,
+>>>>>>> verl_0626
 }
 
 
 # the actor model is .state_dict()
 # Load megatron weights
+<<<<<<< HEAD
 def load_megatron_weights(actor_weights: Dict, vllm_model: nn.Module):
+=======
+def load_megatron_weights(actor_weights: Iterable, vllm_model: nn.Module):
+>>>>>>> verl_0626
     weight_loader = _get_model_weight_loader(vllm_model.__class__.__name__)
     weight_loader(actor_weights, vllm_model)
     # NOTE(sgm) to reduce peak memory usage, we offload vllm model to cpu
@@ -312,8 +356,12 @@ def load_megatron_weights(actor_weights: Dict, vllm_model: nn.Module):
 def _get_model_weight_loader(arch: str):
     if arch in __MODEL_MEGATRON_WEIGHT_LOADER_REGISTRY__:
         return __MODEL_MEGATRON_WEIGHT_LOADER_REGISTRY__[arch]
+<<<<<<< HEAD
     raise ValueError(f"Model architectures {arch} are not supported for now. "
                      f"Supported architectures: {ModelRegistry.get_supported_archs()}")
+=======
+    raise ValueError(f"Model architectures {arch} are not supported for now. Supported architectures: {ModelRegistry.get_supported_archs()}")
+>>>>>>> verl_0626
 
 
 def update_megatron_weight_loader():
