@@ -28,18 +28,22 @@ def _default_compute_score(data_source, solution_str, ground_truth, extra_info=N
 
         # from . import math_verify
         # res = math_verify.compute_score(solution_str, ground_truth)
-    elif data_source == 'deepmath_103k' or data_source.startswith("math_verify"):
-        from . import math_verify
-        res = math_verify.compute_score(solution_str, ground_truth)
-    elif data_source == 'math_dapo' or data_source.startswith("aime") or data_source.startswith("dapo_"):
+    elif data_source in [
+            'train-math-numinamath1.5_aops_forum', 'DeepScaleR_no_system', 'dapo_aime2025_s32_no_system', 'dapo_aime2024_s32_no_system',
+            'train-math-numinamath1.5_aops_forum_int', 'train-math-numinamath1.5_aops_forum_total',
+            'train-math-numinamath1.5_olympiads_int', 'train-math-numinamath1.5_olympiads_total', 
+            'gpqa_diamond'
+    ] or data_source.startswith("aime"):
         from . import math_dapo
         res = math_dapo.compute_score(solution_str, ground_truth)
-    elif data_source in [
-            'numina_aops_forum', 'numina_synthetic_math', 'numina_amc_aime', 'numina_synthetic_amc', 'numina_cn_k12',
-            'numina_olympiads'
-    ]:
-        from . import prime_math
-        res = prime_math.compute_score(solution_str, ground_truth)
+    elif data_source.startswith("math_judge"):
+        from . import remote_reward
+        # 调用judge model，
+        # r"\\boxed\s*{([^}]*)}"匹配response中的pred 在路径/afs/chatrl/users/hwq/code/verl-req-sched/verl/utils/reward_score/remote_reward/__init__.py
+        # qwen3默认配置nothinking模式，可在下面文件修改/afs/chatrl/users/hwq/code/verl-req-sched/verl/utils/reward_score/remote_reward/tools/api/base.py
+        # extra_body={"chat_template_kwargs": {"enable_thinking": False}}, # nothinking，改成True为thinking
+        # 有任何报错找胡文晴
+        res = remote_reward.compute_score(data_source, solution_str, ground_truth, extra_info)
     elif data_source in ['codecontests', 'apps', 'codeforces', 'taco']:
         from . import prime_code
         res = prime_code.compute_score(solution_str, ground_truth, continuous=True)
