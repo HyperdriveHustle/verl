@@ -37,10 +37,6 @@ tmp/
 *.egg-info/
 .installed.cfg
 *.egg
-<<<<<<< HEAD
-*.whl
-=======
->>>>>>> verl_0626
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -113,12 +109,6 @@ ENV/
 # Mac
 .DS_Store
 
-<<<<<<< HEAD
-# output logs
-tests/e2e/toy_examples/deepspeed/synchronous/output.txt
-
-=======
->>>>>>> verl_0626
 # vim
 *.swp
 
@@ -133,7 +123,4 @@ tests/e2e/toy_examples/deepspeed/synchronous/output.txt
 logs
 log
 outputs
-<<<<<<< HEAD
-=======
 .history
->>>>>>> verl_0626
