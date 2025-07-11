@@ -17,10 +17,7 @@ from typing import Dict
 
 import torch.nn as nn
 from torch.distributed._tensor import DTensor
-<<<<<<< HEAD
-=======
 from vllm.model_executor.layers.fused_moe import FusedMoE
->>>>>>> verl_0626
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 from vllm.model_executor.models.utils import is_pp_missing_parameter
 
@@ -226,12 +223,6 @@ def qwen2vl_dtensor_weight_loader(actor_weights: Dict, vllm_model: nn.Module) ->
             weight_loader(param, local_loaded_weight.to(dtype=param.dtype))
 
 
-<<<<<<< HEAD
-from vllm.model_executor.layers.fused_moe import FusedMoE
-
-
-=======
->>>>>>> verl_0626
 def deepseekv2_dtensor_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn.Module:
     stacked_params_mapping = [
         # (param_name, shard_name, shard_id)
@@ -319,18 +310,9 @@ def gpt2_dtensor_weight_loader(actor_weights: Dict, vllm_model: nn.Module) -> nn
 def redistribute_dtensor(param_name: str, loaded_weights: DTensor, parallelize_plan: Dict = None):
     param_name = _process_parameter_names(name=param_name)
     if parallelize_plan is not None:
-<<<<<<< HEAD
-        assert (
-            param_name
-            in parallelize_plan.keys()), f"param name: {param_name} not in parallelize_plan :{parallelize_plan.keys()}"
-        placement = parallelize_plan[param_name]
-        local_loaded_weights = loaded_weights.redistribute(device_mesh=loaded_weights.device_mesh,
-                                                           placements=placement).to_local()
-=======
         assert param_name in parallelize_plan, f"param name: {param_name} not in parallelize_plan :{parallelize_plan.keys()}"
         placement = parallelize_plan[param_name]
         local_loaded_weights = loaded_weights.redistribute(device_mesh=loaded_weights.device_mesh, placements=placement).to_local()
->>>>>>> verl_0626
     else:
         local_loaded_weights = loaded_weights.full_tensor()
     return local_loaded_weights
@@ -384,12 +366,7 @@ def load_dtensor_weights(actor_weights: Dict, vllm_model: nn.Module):
 def _get_model_weight_loader(arch: str):
     if arch in __MODEL_DTENSOR_WEIGHT_LOADER_REGISTRY__:
         return __MODEL_DTENSOR_WEIGHT_LOADER_REGISTRY__[arch]
-<<<<<<< HEAD
-    raise ValueError(f"Model architectures {arch} are not supported for now. "
-                     f"Supported architectures: {__MODEL_DTENSOR_WEIGHT_LOADER_REGISTRY__.keys()}")
-=======
     raise ValueError(f"Model architectures {arch} are not supported for now. Supported architectures: {__MODEL_DTENSOR_WEIGHT_LOADER_REGISTRY__.keys()}")
->>>>>>> verl_0626
 
 
 # NOTE(sgm): we use per-parameter weight loader in each vllm sub

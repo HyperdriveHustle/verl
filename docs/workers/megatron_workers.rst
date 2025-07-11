@@ -1,16 +1,4 @@
 Megatron-LM Backend
-<<<<<<< HEAD
-=====================
-
-We support Megatron Backend by implementing various workers for actor,
-critic, reference, rollout and reward models. We also implement the
-``3DHybridEngine`` using Megatron-LM and vLLM in `megatron_vllm.py <https://github.com/volcengine/verl/blob/main/verl/workers/sharding_manager/megatron_vllm.py>`_.
-
-**Pros**
-
-- Support 3D parallelism and sequence parallelism for best scalablility
-  and throughput.
-=======
 ===================
 
 We support Megatron Backend by implementing various workers for actor,
@@ -23,23 +11,11 @@ and `megatron_sglang.py <https://github.com/volcengine/verl/blob/main/verl/worke
 
 - Support 5D parallelism (TP, EP, CP, DP, PP) and sequence parallelism
   for best scalablility and throughput.
->>>>>>> verl_0626
 - 3D HybridEngine can significantly reduce peak memory usage and reduce
   weight synchronize overhead between actor and rollout.
 
 **Cons**
 
-<<<<<<< HEAD
-- Users should implement their own models for Megatron-LM
-- Users should implement the corresponding weight_loader to
-
-  - synchronize the model weight between actor (in Megatron) and rollout
-    (in vLLM).
-  - load weights from checkpoints to corresponding model in Megatron-LM
-
-Megatron Workers
-----------------
-=======
 - Huggingface Models and Megatron checkpoints need tools for conversion.
 
 
@@ -95,18 +71,13 @@ coming at any time.
 
 Utils of Megatron Workers
 -------------------------
->>>>>>> verl_0626
 
 MegatronWorker
 ^^^^^^^^^^^^^^
 
 ``MegatronWorker`` is the base class of different megatron worker
 classes. In this class, ``get_megatron_global_info`` and
-<<<<<<< HEAD
-``get_megatron_rank_info`` function to retrive the 3D parallel world
-=======
 ``get_megatron_rank_info`` function to retrieve the 3D parallel world
->>>>>>> verl_0626
 size and rank of each ``Worker`` running on specific GPU. These information
 will be used in transfer protocol for Megatron Backend.
 
@@ -142,17 +113,6 @@ initialization process.
 The initialization details of HybridEngine, Actor and Rollout are
 highlighted below:
 
-<<<<<<< HEAD
-1. ``AllGatherPPModel`` holds memory buffer for both Actor and Rollout
-   and support weight resharding between actor and rollout.
-2. ``MegatronPPOActor`` implements the simple PPO computation logics
-   when the model is built with Megatron, including compute log prob,
-   model update.
-3. ``vLLMRollout`` support generation with vLLM. We modify the vLLM
-   Engine and make it executed under SPMD to fit into our
-   ``WorkerGroup`` design.
-4. ``MegatronVLLMShardingManager`` a context manager to perform actual
-=======
 1. ``MegatronPPOActor`` implements the simple PPO computation logics
    when the model is built with Megatron, including compute log prob,
    model update.
@@ -160,22 +120,12 @@ highlighted below:
    Engine and make it executed under SPMD to fit into our
    ``WorkerGroup`` design.
 3. ``MegatronVLLMShardingManager`` a context manager to perform actual
->>>>>>> verl_0626
    resharding between actor and rollout.
 
 See `source code <https://github.com/volcengine/verl/blob/main/verl/workers/megatron_workers.py#L63>`_ for more information.
 
 .. code:: python
 
-<<<<<<< HEAD
-   # Initialize the 3D HybridEngine
-   hybrid_engine = AllGatherPPModel(model_provider=megatron_actor_model_provider)
-   # Fetch the model at current rank
-   actor_module = hybrid_engine.this_rank_models
-   ...
-
-=======
->>>>>>> verl_0626
    # build actor model
    self.actor = MegatronPPOActor(config=self.config.actor,
                                  model_config=self.actor_model_config,
@@ -198,11 +148,7 @@ See `source code <https://github.com/volcengine/verl/blob/main/verl/workers/mega
                                                   layer_name_mapping=layer_name_mapping)
    ...
 
-<<<<<<< HEAD
-2. Generate sequence and recompute log prob
-=======
 1. Generate sequence and recompute log prob
->>>>>>> verl_0626
 
 .. code:: python
 
@@ -217,11 +163,7 @@ See `source code <https://github.com/volcengine/verl/blob/main/verl/workers/mega
   TP dimension. Therefore, the corresponding data should be dispatched
   and collected through the 3D parallel group of the rollout model,
   rather than the actor model. However, the world_size and rank
-<<<<<<< HEAD
-  information can only be retrived from ``get_megatron_global_info`` and
-=======
   information can only be retrieved from ``get_megatron_global_info`` and
->>>>>>> verl_0626
   ``get_megatron_rank_info``, which records the 3D information for the
   actor model. Moreover, the data resharding inside TP dimension will be
   processed within the HybridEngine.
@@ -243,8 +185,6 @@ See `source code <https://github.com/volcengine/verl/blob/main/verl/workers/mega
   the last pp.
 - Update the actor model weight using PPO & entropy loss.
 
-<<<<<<< HEAD
-=======
 
 ..note:: 
 
@@ -252,7 +192,6 @@ See `source code <https://github.com/volcengine/verl/blob/main/verl/workers/mega
    Tensor Parallel Size.
 
 
->>>>>>> verl_0626
 ReferenceModel
 ''''''''''''''
 
@@ -301,16 +240,6 @@ additional initialization for the Optimizer.
    @register(dispatch_mode=Dispatch.MEGATRON_COMPUTE_PROTO)
    def compute_rm_score(self, data: DataProto):
 
-<<<<<<< HEAD
-Context Parallel
-----------------
-
-Currently we can only use LLaMa and Qwen models implemented in verl, and context parallel is not supported by far.
-
-We are working in progress to support Megatron implementation of GPTModel, with TransformerEngine support. So if the itegration goes well, we can support Ulysses, Ring and AllGather context parallel in the future.
-
-Now we support Megatron checkpointing save/load function with original models. Please check the :ref:`config-explain-page` page to see how to use the APIs.
-=======
 
 Utils of Train Optimization
 ---------------------------
@@ -371,4 +300,3 @@ Related MCore Document
 
 There is also a detailed document of using MCore to train different
 kinds of models, please refer to `MCore Document <https://github.com/volcengine/verl/blob/main/verl/models/mcore/readme.md>`_.
->>>>>>> verl_0626

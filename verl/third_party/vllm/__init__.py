@@ -12,15 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-<<<<<<< HEAD
-from importlib.metadata import version, PackageNotFoundError
-from packaging import version as vs
-=======
 from importlib.metadata import PackageNotFoundError, version
 
 from packaging import version as vs
 
->>>>>>> verl_0626
 from verl.utils.import_utils import is_sglang_available
 
 
@@ -31,38 +26,6 @@ def get_version(pkg):
         return None
 
 
-<<<<<<< HEAD
-package_name = 'vllm'
-package_version = get_version(package_name)
-vllm_version = None
-
-if package_version == '0.3.1':
-    vllm_version = '0.3.1'
-    from .vllm_v_0_3_1.llm import LLM
-    from .vllm_v_0_3_1.llm import LLMEngine
-    from .vllm_v_0_3_1 import parallel_state
-elif package_version == '0.4.2':
-    vllm_version = '0.4.2'
-    from .vllm_v_0_4_2.llm import LLM
-    from .vllm_v_0_4_2.llm import LLMEngine
-    from .vllm_v_0_4_2 import parallel_state
-elif package_version == '0.5.4':
-    vllm_version = '0.5.4'
-    from .vllm_v_0_5_4.llm import LLM
-    from .vllm_v_0_5_4.llm import LLMEngine
-    from .vllm_v_0_5_4 import parallel_state
-elif package_version == '0.6.3':
-    vllm_version = '0.6.3'
-    from .vllm_v_0_6_3.llm import LLM
-    from .vllm_v_0_6_3.llm import LLMEngine
-    from .vllm_v_0_6_3 import parallel_state
-elif package_version == '0.6.3+rocm624':
-    vllm_version = '0.6.3'
-    from .vllm_v_0_6_3.llm import LLM
-    from .vllm_v_0_6_3.llm import LLMEngine
-    from .vllm_v_0_6_3 import parallel_state
-elif vs.parse(package_version) >= vs.parse('0.7.0'):
-=======
 package_name = "vllm"
 package_version = get_version(package_name)
 vllm_version = None
@@ -80,7 +43,6 @@ elif package_version == "0.6.3" or package_version.startswith("0.6.3"):
     from .vllm_v_0_6_3 import parallel_state
     from .vllm_v_0_6_3.llm import LLM, LLMEngine
 elif vs.parse(package_version) >= vs.parse("0.7.0"):
->>>>>>> verl_0626
     # From 0.6.6.post2 on, vllm supports SPMD inference
     # See https://github.com/vllm-project/vllm/pull/12071
 
@@ -88,12 +50,6 @@ elif vs.parse(package_version) >= vs.parse("0.7.0"):
     from vllm.distributed import parallel_state
 else:
     if not is_sglang_available():
-<<<<<<< HEAD
-        raise ValueError(
-            f'vllm version {package_version} not supported and SGLang also not Found. Currently supported vllm versions are 0.3.1, 0.4.2, 0.5.4, 0.6.3 and 0.7.0+'
-        )
-=======
         raise ValueError(f"vllm version {package_version} not supported and SGLang also not Found. Currently supported vllm versions are 0.6.3 and 0.7.0+")
 
 __all__ = ["LLM", "LLMEngine", "parallel_state"]
->>>>>>> verl_0626

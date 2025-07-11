@@ -26,20 +26,6 @@ So the inner checkpoint structure of **FSDP** is like:
     checkpoints/${trainer.project_name}/${trainer.experiment_name}
     ├── global_steps_${i}
     │   ├── actor
-<<<<<<< HEAD
-    │   │   ├── model_world_size_{self.world_size}_rank_{self.rank}.pt
-    │   │   ├── optim_world_size_{self.world_size}_rank_{self.rank}.pt
-    │   │   └── extra_state_world_size_{self.world_size}_rank_{self.rank}.pt
-    │   ├── actor_huggingface
-    │   ├── critic
-    │   │   ├── model_world_size_{self.world_size}_rank_{self.rank}.pt
-    │   │   ├── optim_world_size_{self.world_size}_rank_{self.rank}.pt
-    │   │   └── extra_state_world_size_{self.world_size}_rank_{self.rank}.pt
-    │   └── critic_huggingface
-    └── latest_checkpointed_iteration.txt
-
-All model shards, optimizers and extra states are stored togather, in a sharded and distributed way.
-=======
     │   │   ├── huggingface     # default save config and tokenizer, save huggingface model if include ``hf_model`` in checkpoint.contents
     │   │   ├── model_world_size_{self.world_size}_rank_{self.rank}.pt
     │   │   ├── optim_world_size_{self.world_size}_rank_{self.rank}.pt
@@ -52,7 +38,6 @@ All model shards, optimizers and extra states are stored togather, in a sharded 
     └── latest_checkpointed_iteration.txt
 
 All model shards, optimizers and extra states are stored together, in a sharded and distributed way.
->>>>>>> verl_0626
 
 While **Megatron** current checkpoint structure is:
 
@@ -61,58 +46,17 @@ While **Megatron** current checkpoint structure is:
     checkpoints/${trainer.project_name}/${trainer.experiment_name}
     ├── global_steps_${i}
     │   ├── actor
-<<<<<<< HEAD
-    │   │   ├── huggingface     # default save tokenizer, save huggingface model if include ``hf_mode`` in checkpoint.contents
-    │   │   ├── model           # save sharded model, naming the same as Megatron
-    │   │   │   ├── mp_rank_xx_yyy          # xx is tp_rank in 2 digits, yyy is pp_rank in 3 digits
-    │   │   │   │   └── model_states.pt
-    │   │   │   └── mp_rank_xx_xxx
-    │   │   ├── optim
-    │   │   │   ├── distrib_optim_pp{x}_tp{y}.pt
-    │   │   │   └── distrib_optim_pp{x}_tp{y}.pt
-    │   │   └── rng_states
-    │   └── critic
-    │   │   ├── huggingface
-    │   │   ├── model
-    │   │   ├── optim
-    │   │   └── rng_states
-=======
     │   │   ├── huggingface     # default save config and tokenizer, save huggingface model if include ``hf_mode`` in checkpoint.contents
     │   │   └── dist_ckpt       # save sharded model/optimizer/rng_states, naming the same as Megatron
     │   └── critic
     │   │   ├── huggingface
     │   │   └── dist_ckpt
->>>>>>> verl_0626
     └── latest_checkpointed_iteration.txt
 
 Convert FSDP and Megatron Checkpoints to HuggingFace Format Model
 -----------------------------------------------------------------
 
 We provide a tool to convert the FSDP and Megatron checkpoints to HuggingFace format model.
-<<<<<<< HEAD
-The tool is located in ``scripts/model_merger.py``.
-
-The arguments are as follows:
-
-.. code:: bash
-
-    usage: model_merger.py [-h] [--backend {fsdp,megatron}]
-                           [--tie-word-embedding whether the model share embedding weights]
-                           [--is-value-model whether the model is critic model]
-                           [--hf_model_path $original_model_path, like {Qwen/Qwen2-7B}]
-                           [--local_dir $local_directory saved fsdp or megatron models]
-                           [--target_dir $target_dir to save converted models, default is tmp]
-                           [--hf_upload_path $huggingface_repo to upload]
-
-So example use of Megatron model merger is:
-
-.. code:: bash
-
-    python3 scripts/model_merger.py --backend megatron \
-        --is-value-model \
-        --hf_model_path Qwen/Qwen2-7B \
-        --local_dir checkpoints/verl_megatron_gsm8k_examples/deepseek_megatron_checkpoint_saveload/global_step_1/actor/model
-=======
 The tool is located in ``verl/model_merger``.
 
 The script supports two main sub-commands: `merge` (to convert and save checkpoints) and `test` (to validate merged checkpoints against a reference model).
@@ -159,7 +103,6 @@ Example usage for merging FSDP checkpoints:
         --local_dir checkpoints/verl_fsdp_gsm8k_examples/qwen2_5_0b5_fsdp_saveload/global_step_1/actor \
         --target_dir /path/to/merged_hf_model
 
->>>>>>> verl_0626
 
 Megatron Merger details
 -----------------------
@@ -175,8 +118,6 @@ There are 3 ways to correct this behavior:
 
 Current implementation use solution 2.
 
-<<<<<<< HEAD
-=======
 
 HuggingFace to Megatron DistCheckpoint details
 ----------------------------------------------
@@ -199,7 +140,6 @@ Example command to convert the model is as follows:
         --use_cpu_initialization    # Only work for MoE models
 
 
->>>>>>> verl_0626
 Original Checkpoint Utils
 -------------------------
 

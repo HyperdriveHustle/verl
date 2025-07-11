@@ -13,33 +13,6 @@
 # limitations under the License.
 # Adapted from https://github.com/vllm-project/vllm/blob/main/vllm/engine/llm_engine.py
 
-<<<<<<< HEAD
-import torch
-from typing import Dict, Optional, Union, Type
-
-import vllm.envs as envs
-from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig, EngineConfig, LoRAConfig, MultiModalConfig,
-                         ObservabilityConfig, ParallelConfig, PromptAdapterConfig, SchedulerConfig, SpeculativeConfig)
-from vllm.core.scheduler import Scheduler
-from vllm.engine.output_processor.interfaces import (SequenceGroupOutputProcessor)
-from vllm.engine.output_processor.stop_checker import StopChecker
-from vllm.executor.executor_base import ExecutorBase
-from vllm.inputs import INPUT_REGISTRY, LLMInputs, PromptInputs
-from vllm.logger import init_logger
-from vllm.transformers_utils.detokenizer import Detokenizer
-from vllm.engine.metrics import (LoggingStatLogger, PrometheusStatLogger, StatLoggerBase, Stats)
-from vllm.tracing import (SpanAttributes, SpanKind, extract_trace_context, init_tracer)
-from vllm.usage.usage_lib import (UsageContext, is_usage_stats_enabled, usage_message)
-from vllm.utils import Counter
-from vllm.engine.llm_engine import _load_generation_config_dict
-from vllm.engine.llm_engine import LLMEngine
-from vllm.version import __version__ as VLLM_VERSION
-
-import torch.nn as nn
-from .arg_utils import EngineArgs
-from .tokenizer import TokenizerGroup
-from .config import ModelConfig, LoadConfig
-=======
 from typing import Dict, Iterable, Optional, Type, Union
 
 from torch import nn
@@ -73,7 +46,6 @@ from vllm.version import __version__ as VLLM_VERSION
 from .arg_utils import EngineArgs
 from .config import LoadConfig, ModelConfig
 from .tokenizer import TokenizerGroup
->>>>>>> verl_0626
 
 logger = init_logger(__name__)
 _LOCAL_LOGGING_INTERVAL_SEC = 5
@@ -113,11 +85,7 @@ class LLMEngine(LLMEngine):
     def __init__(
         self,
         # NOTE(sgm): first two arguments are added for verl
-<<<<<<< HEAD
-        model: Union[nn.Module, Dict], # model itself or its parameter dict
-=======
         model: Union[nn.Module, Dict],  # model itself or its parameter dict
->>>>>>> verl_0626
         tokenizer: nn.Module,
         # NOTE(sgm): vllm original arguments
         model_config: ModelConfig,
@@ -211,11 +179,7 @@ class LLMEngine(LLMEngine):
         self.input_processor = INPUT_REGISTRY.create_input_processor(self.model_config)
 
         self.model_executor = executor_class(
-<<<<<<< HEAD
-            model=model, # add for spmd_gpu_executor
-=======
             model=model,  # add for spmd_gpu_executor
->>>>>>> verl_0626
             model_config=model_config,
             cache_config=cache_config,
             parallel_config=parallel_config,
@@ -234,12 +198,8 @@ class LLMEngine(LLMEngine):
 
         # If usage stat is enabled, collect relevant info.
         if is_usage_stats_enabled():
-<<<<<<< HEAD
-            from vllm.model_executor.model_loader import (get_architecture_class_name)
-=======
             from vllm.model_executor.model_loader import get_architecture_class_name
 
->>>>>>> verl_0626
             usage_message.report_usage(
                 get_architecture_class_name(model_config),
                 usage_context,
@@ -249,29 +209,17 @@ class LLMEngine(LLMEngine):
                     "tensor_parallel_size": parallel_config.tensor_parallel_size,
                     "block_size": cache_config.block_size,
                     "gpu_memory_utilization": cache_config.gpu_memory_utilization,
-<<<<<<< HEAD
-
                     # Quantization
                     "quantization": model_config.quantization,
                     "kv_cache_dtype": str(cache_config.cache_dtype),
-
-=======
-                    # Quantization
-                    "quantization": model_config.quantization,
-                    "kv_cache_dtype": str(cache_config.cache_dtype),
->>>>>>> verl_0626
                     # Feature flags
                     "enable_lora": bool(lora_config),
                     "enable_prompt_adapter": bool(prompt_adapter_config),
                     "enable_prefix_caching": cache_config.enable_prefix_caching,
                     "enforce_eager": model_config.enforce_eager,
                     "disable_custom_all_reduce": parallel_config.disable_custom_all_reduce,
-<<<<<<< HEAD
-                })
-=======
                 },
             )
->>>>>>> verl_0626
 
         if self.tokenizer:
             # Ping the tokenizer to ensure liveness if it runs in a
@@ -281,14 +229,7 @@ class LLMEngine(LLMEngine):
         # Create the scheduler.
         # NOTE: the cache_config here have been updated with the numbers of
         # GPU and CPU blocks, which are profiled in the distributed executor.
-<<<<<<< HEAD
-        self.scheduler = [
-            Scheduler(scheduler_config, cache_config, lora_config, parallel_config.pipeline_parallel_size)
-            for _ in range(parallel_config.pipeline_parallel_size)
-        ]
-=======
         self.scheduler = [Scheduler(scheduler_config, cache_config, lora_config, parallel_config.pipeline_parallel_size) for _ in range(parallel_config.pipeline_parallel_size)]
->>>>>>> verl_0626
 
         # Metric Logging.
         if self.log_stats:
@@ -296,21 +237,12 @@ class LLMEngine(LLMEngine):
                 self.stat_loggers = stat_loggers
             else:
                 self.stat_loggers = {
-<<<<<<< HEAD
-                    "logging":
-                        LoggingStatLogger(local_interval=_LOCAL_LOGGING_INTERVAL_SEC),
-                    "prometheus":
-                        PrometheusStatLogger(local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
-                                             labels=dict(model_name=model_config.served_model_name),
-                                             max_model_len=self.model_config.max_model_len),
-=======
                     "logging": LoggingStatLogger(local_interval=_LOCAL_LOGGING_INTERVAL_SEC),
                     "prometheus": PrometheusStatLogger(
                         local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
                         labels=dict(model_name=model_config.served_model_name),
                         max_model_len=self.model_config.max_model_len,
                     ),
->>>>>>> verl_0626
                 }
                 self.stat_loggers["prometheus"].info("cache_config", self.cache_config)
 
@@ -320,11 +252,7 @@ class LLMEngine(LLMEngine):
 
         # Create sequence output processor, e.g. for beam search or
         # speculative decoding.
-<<<<<<< HEAD
-        self.output_processor = (SequenceGroupOutputProcessor.create_output_processor(
-=======
         self.output_processor = SequenceGroupOutputProcessor.create_output_processor(
->>>>>>> verl_0626
             self.scheduler_config,
             self.detokenizer,
             self.scheduler,
@@ -334,21 +262,11 @@ class LLMEngine(LLMEngine):
                 self.scheduler_config.max_model_len,
                 self.get_tokenizer_for_seq,
             ),
-<<<<<<< HEAD
-        ))
-
-    # TODO(sgm): add for verl but we may not tokenizer in Rollout
-    def _init_tokenizer(self, tokenizer, **tokenizer_init_kwargs):
-        init_kwargs = dict(enable_lora=bool(self.lora_config),
-                           max_num_seqs=self.scheduler_config.max_num_seqs,
-                           max_input_length=None)
-=======
         )
 
     # TODO(sgm): add for verl but we may not tokenizer in Rollout
     def _init_tokenizer(self, tokenizer, **tokenizer_init_kwargs):
         init_kwargs = dict(enable_lora=bool(self.lora_config), max_num_seqs=self.scheduler_config.max_num_seqs, max_input_length=None)
->>>>>>> verl_0626
         init_kwargs.update(tokenizer_init_kwargs)
         return TokenizerGroup(tokenizer, **init_kwargs)
 
@@ -364,21 +282,12 @@ class LLMEngine(LLMEngine):
     # The GPUExecutor remove the Ray dependency
     @classmethod
     def _get_executor_cls(cls, engine_config: EngineConfig) -> Type[ExecutorBase]:
-<<<<<<< HEAD
-        assert engine_config.device_config.device_type == "cuda", \
-            "Currently, the vllm in verl only support running on GPU"
-=======
         assert engine_config.device_config.device_type == "cuda", "Currently, the vllm in verl only support running on GPU"
->>>>>>> verl_0626
 
         if engine_config.parallel_config.world_size == 1:
             engine_config.load_config.load_format = "dummy_hf"
 
         from .spmd_gpu_executor import SPMDGPUExecutor
-<<<<<<< HEAD
-=======
-
->>>>>>> verl_0626
         executor_class = SPMDGPUExecutor
         return executor_class
 
@@ -396,17 +305,10 @@ class LLMEngine(LLMEngine):
         engine_config = engine_args.create_engine_config()
         executor_class = cls._get_executor_cls(engine_config)
         # Initialize the cluster and specify the executor class.
-<<<<<<< HEAD
-        assert engine_config.device_config.device_type == "cuda", \
-            "Currently, the vllm in verl only support running on GPU"
-
-        from .spmd_gpu_executor import SPMDGPUExecutor
-=======
         assert engine_config.device_config.device_type == "cuda", "Currently, the vllm in verl only support running on GPU"
 
         from .spmd_gpu_executor import SPMDGPUExecutor
 
->>>>>>> verl_0626
         executor_class = SPMDGPUExecutor
 
         # Create the LLM engine.
@@ -421,11 +323,7 @@ class LLMEngine(LLMEngine):
         )
         return engine
 
-<<<<<<< HEAD
-    def sync_model_weights(self, actor_weights: Dict[str, torch.Tensor], load_format: str) -> None:
-=======
     def sync_model_weights(self, actor_weights: Iterable, load_format: str) -> None:
->>>>>>> verl_0626
         self.model_executor.sync_model_weights(actor_weights=actor_weights, load_format=load_format)
 
     def offload_model_weights(self) -> None:

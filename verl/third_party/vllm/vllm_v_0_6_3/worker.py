@@ -13,16 +13,10 @@
 # limitations under the License.
 # Adapted from https://github.com/vllm-project/vllm/blob/main/vllm/worker/worker.py
 """A GPU worker class."""
-<<<<<<< HEAD
-import gc
-import os
-from typing import Dict, List, Optional, Tuple, Type, Union
-=======
 
 import gc
 import os
 from typing import Dict, Iterable, List, Optional, Tuple, Type, Union
->>>>>>> verl_0626
 
 import torch
 import torch.distributed
@@ -108,15 +102,7 @@ class Worker(Worker):
 
         # Return hidden states from target model if the draft model is an
         # mlp_speculator
-<<<<<<< HEAD
-        speculative_args = (
-            {} if speculative_config is None or (speculative_config.draft_model_config.model == model_config.model) or
-            (speculative_config.draft_model_config.hf_config.model_type not in ["medusa", "mlp_speculator"]) else {
-                "return_hidden_states": True
-            })
-=======
         speculative_args = {} if speculative_config is None or (speculative_config.draft_model_config.model == model_config.model) or (speculative_config.draft_model_config.hf_config.model_type not in ["medusa", "mlp_speculator"]) else {"return_hidden_states": True}
->>>>>>> verl_0626
 
         # TODO(sgm): set correct model runner class
         ModelRunnerClass: Type[GPUModelRunnerBase] = ModelRunner
@@ -178,12 +164,7 @@ class Worker(Worker):
             raise RuntimeError(f"Not support device type: {self.device_config.device}")
 
         # Initialize the distributed environment.
-<<<<<<< HEAD
-        init_worker_distributed_environment(self.parallel_config, self.rank, self.distributed_init_method,
-                                            self.local_rank)
-=======
         init_worker_distributed_environment(self.parallel_config, self.rank, self.distributed_init_method, self.local_rank)
->>>>>>> verl_0626
         # Set random seed.
         set_random_seed(self.model_config.seed)
         # self.model = get_model(actor_model=self.model, model_config=self.model_config)
@@ -216,12 +197,7 @@ class Worker(Worker):
         free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
         peak_memory = total_gpu_memory - free_gpu_memory
 
-<<<<<<< HEAD
-        assert peak_memory > 0, ("Error in memory profiling. This happens when the GPU memory was "
-                                 "not properly cleaned up before initializing the vLLM instance.")
-=======
         assert peak_memory > 0, "Error in memory profiling. This happens when the GPU memory was not properly cleaned up before initializing the vLLM instance."
->>>>>>> verl_0626
 
         cache_block_size = self.get_cache_block_size_bytes()
 
@@ -239,17 +215,8 @@ class Worker(Worker):
         num_gpu_blocks = torch.tensor([num_gpu_blocks], device="cuda")
         num_cpu_blocks = torch.tensor([num_cpu_blocks], device="cuda")
 
-<<<<<<< HEAD
-        torch.distributed.all_reduce(num_gpu_blocks,
-                                     op=torch.distributed.ReduceOp.MIN,
-                                     group=get_tensor_model_parallel_group().device_group)
-        torch.distributed.all_reduce(num_cpu_blocks,
-                                     op=torch.distributed.ReduceOp.MIN,
-                                     group=get_tensor_model_parallel_group().device_group)
-=======
         torch.distributed.all_reduce(num_gpu_blocks, op=torch.distributed.ReduceOp.MIN, group=get_tensor_model_parallel_group().device_group)
         torch.distributed.all_reduce(num_cpu_blocks, op=torch.distributed.ReduceOp.MIN, group=get_tensor_model_parallel_group().device_group)
->>>>>>> verl_0626
         num_gpu_blocks = num_gpu_blocks.item()
         num_cpu_blocks = num_cpu_blocks.item()
         gc.collect()
@@ -266,29 +233,15 @@ class Worker(Worker):
         self.gpu_cache = None
 
     # NOTE(sgm): [VERL]: adapt from _execute_model_spmd()
-<<<<<<< HEAD
-    def execute_model(self,
-                      execute_model_req: ExecuteModelRequest,
-                      intermediate_tensors: Optional[IntermediateTensors] = None) -> Optional[List[SamplerOutput]]:
-=======
     def execute_model(self, execute_model_req: ExecuteModelRequest, intermediate_tensors: Optional[IntermediateTensors] = None) -> Optional[List[SamplerOutput]]:
->>>>>>> verl_0626
         """
         Execute model in Single Program Multiple Data (SPMD) fashion.
         All workers take the same request, prepare the input and
         execute the model.
         """
-<<<<<<< HEAD
-        assert execute_model_req is not None, ("_execute_model_spmd() requires each worker to take in an "
-                                               "ExecuteModelRequest")
-        worker_input: WorkerInput = self.prepare_worker_input(execute_model_req=execute_model_req)
-        model_input: ModelRunnerInputBase = self.model_runner.prepare_model_input(
-            execute_model_req.seq_group_metadata_list)
-=======
         assert execute_model_req is not None, "_execute_model_spmd() requires each worker to take in an ExecuteModelRequest"
         worker_input: WorkerInput = self.prepare_worker_input(execute_model_req=execute_model_req)
         model_input: ModelRunnerInputBase = self.model_runner.prepare_model_input(execute_model_req.seq_group_metadata_list)
->>>>>>> verl_0626
 
         # verl.worker.workerbase.WorkerBase
         # swap cache
@@ -305,29 +258,17 @@ class Worker(Worker):
         )
 
     # assume the input is .state_dict()
-<<<<<<< HEAD
-    def sync_model_weights(self, actor_weights: Dict, load_format: str):
-        if load_format in [LoadFormat.MEGATRON, LoadFormat.AUTO]:
-            load_megatron_weights(actor_weights, self.model_runner.model)
-        elif load_format == LoadFormat.HF:
-            # full model state dict without no sharding
-=======
     def sync_model_weights(self, actor_weights: Iterable, load_format: str):
         if load_format in [LoadFormat.MEGATRON, LoadFormat.AUTO]:
             load_megatron_weights(actor_weights, self.model_runner.model)
         elif load_format == LoadFormat.HF:
             # full model state iterable without no sharding
->>>>>>> verl_0626
             load_hf_weights(actor_weights, self.model_runner.model)
         elif load_format == LoadFormat.DTENSOR:
             load_dtensor_weights(actor_weights, self.model_runner.model)
 
     def offload_model_weights(self) -> None:
-<<<<<<< HEAD
-        if self.cpu_model == None:
-=======
         if self.cpu_model is None:
->>>>>>> verl_0626
             self.cpu_model = {}
             for name, params in self.model_runner.model.named_parameters():
                 self.cpu_model[name] = torch.empty_like(params, device="cpu")

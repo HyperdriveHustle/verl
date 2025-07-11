@@ -10,8 +10,6 @@ How to add breakpoint for debugging with distributed Ray?
 Please checkout the official debugging guide from Ray: https://docs.ray.io/en/latest/ray-observability/ray-distributed-debugger.html
 
 
-<<<<<<< HEAD
-=======
 "Unable to register worker with raylet"
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -21,7 +19,6 @@ some constraints of SLURM restricts the `core-workers` seeing the `raylet` proce
 
 To fix this issue, you can set the config term ``ray_init.num_cpus`` to a number allowed by your system.
 
->>>>>>> verl_0626
 Distributed training
 ------------------------
 
@@ -58,12 +55,6 @@ Please note that Slurm cluster setup may vary. If you encounter any issues, plea
 
 If you changed Slurm resource specifications, please make sure to update the environment variables in the job script if necessary.
 
-<<<<<<< HEAD
-Illegal memory access
----------------------------------
-
-If you encounter the error message like ``CUDA error: an illegal memory access was encountered`` during rollout, most likely it is due to a known issue from vllm.
-=======
 
 Install related
 ------------------------
@@ -110,7 +101,6 @@ Illegal memory access
 ---------------------------------
 
 If you encounter the error message like ``CUDA error: an illegal memory access was encountered`` during rollout, most likely it is due to a known issue from vllm(<=0.6.3).
->>>>>>> verl_0626
 Please set the following environment variable. The env var must be set before the ``ray start`` command if any.
 
 .. code:: bash
@@ -122,9 +112,6 @@ If in doubt, print this env var in each rank to make sure it is properly set.
 Checkpoints
 ------------------------
 
-<<<<<<< HEAD
-If you want to convert the model checkpoint into huggingface safetensor format, please refer to ``scripts/model_merger.py``.
-=======
 If you want to convert the model checkpoint into huggingface safetensor format, please refer to ``verl/model_merger``.
 
 
@@ -194,4 +181,3 @@ Comparing to using global https_proxy env variable, this approach won't mess up 
 .. code:: bash
 
   +trainer.wandb_proxy=http://<your proxy and port>
->>>>>>> verl_0626

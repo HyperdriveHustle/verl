@@ -135,13 +135,13 @@ class RayDAPOTrainer(RayPPOTrainer):
 
         # perform validation before training
         # currently, we only support validation using the reward_function.
-        # if self.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
-        #     val_metrics = self._validate()
-        #     assert val_metrics, f"{val_metrics=}"
-        #     pprint(f"Initial validation metrics: {val_metrics}")
-        #     logger.log(data=val_metrics, step=self.global_steps)
-        #     if self.config.trainer.get("val_only", False):
-        #         return
+        if self.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
+            val_metrics = self._validate()
+            assert val_metrics, f"{val_metrics=}"
+            pprint(f"Initial validation metrics: {val_metrics}")
+            logger.log(data=val_metrics, step=self.global_steps)
+            if self.config.trainer.get("val_only", False):
+                return
 
         # add tqdm
         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
@@ -319,28 +319,21 @@ class RayDAPOTrainer(RayPPOTrainer):
                         for prompt_uid, metric_vals in prompt_uid2metric_vals.items():
                             prompt_uid2metric_std[prompt_uid] = np.std(metric_vals)
 
-                        if self.global_steps < 20:
+                        if self.config.algorithm.filter_groups.filter_score_high is not None \
+                                and self.config.algorithm.filter_groups.filter_score_low is not None:
+                            print(f"apply filter_groups: {self.config.algorithm.filter_groups.filter_score_low=}, {self.config.algorithm.filter_groups.filter_score_high=}")
+                            kept_prompt_uids = [
+                                uid for uid, metric_val in prompt_uid2metric_vals.items()
+                                if np.mean(metric_val) >= self.config.algorithm.filter_groups.filter_score_low \
+                                    and np.mean(metric_val) <= self.config.algorithm.filter_groups.filter_score_high
+                            ]
+                        else:
+                            # 原始逻辑，去掉方差为 0 的
                             print(f"apply filter_groups by std > 0")
                             kept_prompt_uids = [
                                 uid for uid, std in prompt_uid2metric_std.items()
                                 if std > 0 or len(prompt_uid2metric_vals[uid]) == 1
                             ]
-                        else:  # @xiaohuihu 调整 keep prompt 的逻辑，改成 value 均值在 0.2-0.8 之间的留下
-                            if self.config.algorithm.filter_groups.filter_score_high is not None \
-                                    and self.config.algorithm.filter_groups.filter_score_low is not None:
-                                print(f"apply filter_groups: {self.config.algorithm.filter_groups.filter_score_low=}, {self.config.algorithm.filter_groups.filter_score_high=}")
-                                kept_prompt_uids = [
-                                    uid for uid, metric_val in prompt_uid2metric_vals.items()
-                                    if np.mean(metric_val) >= self.config.algorithm.filter_groups.filter_score_low \
-                                        and np.mean(metric_val) <= self.config.algorithm.filter_groups.filter_score_high
-                                ]
-                            else:
-                                # 原始逻辑，去掉方差为 0 的
-                                print(f"apply filter_groups by std > 0")
-                                kept_prompt_uids = [
-                                    uid for uid, std in prompt_uid2metric_std.items()
-                                    if std > 0 or len(prompt_uid2metric_vals[uid]) == 1
-                                ]
                         # kept_prompt_uids = [uid for uid, std in prompt_uid2metric_std.items() if std > 0 or len(prompt_uid2metric_vals[uid]) == 1]
                         num_prompt_in_batch += len(kept_prompt_uids)
 

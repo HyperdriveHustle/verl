@@ -67,11 +67,6 @@ Slurm
 -----
 TBD
 
-<<<<<<< HEAD
-How to debug?
----------------------
-
-=======
 dstack
 ------
 `dstackai/dstack <https://github.com/dstackai/dstack>`_ is an open-source container orchestrator that simplifies distributed training across cloud providers and on-premises environments
@@ -264,7 +259,6 @@ Ray Distributed Debugger VSCode Extension (Recommended)
    .. image:: https://github.com/aoshen524/verl/blob/main/docs/start/6e83c910a62c82fecb89c6619e001cd.png?raw=true
       :alt: Disconnecting and reconnecting the debugger
 
->>>>>>> verl_0626
 Legacy Ray Debugger
 ~~~~~~~~~~~~~~~~~~~
 1. Ray has a builtin legacy `debugger <https://docs.ray.io/en/latest/ray-observability/user-guides/debug-apps/ray-debugging.html>`_ that allows you to debug your distributed applications. To enable debugger, start ray cluster with ``RAY_DEBUG=legacy`` and ``--ray-debugger-external``.
@@ -280,29 +274,6 @@ Legacy Ray Debugger
 
 .. image:: https://github.com/eric-haibin-lin/verl-community/blob/main/docs/ray/legacy.png?raw=true
 
-<<<<<<< HEAD
-Ray Distributed Debugger VSCode Extension
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-1. Starting with Ray 2.39, Anyscale introduce a new `Ray Distributed Debugger <https://docs.ray.io/en/latest/ray-observability/ray-distributed-debugger.html>`_ VSCode extension. Please follow the instruction to install the extension, and then add cluster with the dashboard address you get above.
-
-*NOTE: Don't forget remove RAY_DEBUG=legacy and --ray-debugger-external in ray start*
-
-.. image:: https://github.com/eric-haibin-lin/verl-community/blob/main/docs/ray/debugger.png?raw=true
-
-2. Set up breakpoint in your code, and submit job to cluster. Then the extension will show the breakpoint information.
-
-.. image:: https://github.com/eric-haibin-lin/verl-community/blob/main/docs/ray/breakpoint.png?raw=true
-
-
-
-
-
-
-
-
-=======
->>>>>>> verl_0626
 
 Multi-node training on AMD clusters
 ---------------------------------------------------------------------------------------
@@ -481,12 +452,8 @@ slurm_script.sh
     echo "IP Head: $ip_head"
 
     # make sure we set environment variables before Ray initialization
-<<<<<<< HEAD
-    export VLLM_ATTENTION_BACKEND=XFORMERS
-=======
     # If you are using vllm<=0.6.3, you might need to set the following environment variable to avoid bugs:
     # export VLLM_ATTENTION_BACKEND=XFORMERS
->>>>>>> verl_0626
 
     # Print out all env variables
     printenv
@@ -520,11 +487,7 @@ slurm_script.sh
 
 
 
-<<<<<<< HEAD
-    # Ray initlization test (See whether any error in the above excution)
-=======
     # Ray initlization test (See whether any error in the above execution)
->>>>>>> verl_0626
     echo "Testing Ray initialization in the slurm nodes..."
     docker exec "${CONTAINER_NAME}" python3 -c '
     import ray

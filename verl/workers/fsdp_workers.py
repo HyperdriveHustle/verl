@@ -772,6 +772,8 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         my_req_idx = rank // tp_size
         if rank % tp_size == 0:
             is_first_tp_rank = True
+        else:
+            is_first_tp_rank = False
         
         reqs_idx = prompts.non_tensor_batch.pop('reqs_idx')
         pre_outlens = prompts.non_tensor_batch.pop('pre_outlens')

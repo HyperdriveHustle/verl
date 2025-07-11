@@ -4,8 +4,6 @@ Add models with the Megatron-LM backend
 Model
 -----------
 
-<<<<<<< HEAD
-=======
 
 If use latest verl, we have direct support of ``GPTModel`` for Megatron backend. 
 You can use the similar way of using Megatron to pretrain custom models. 
@@ -24,7 +22,6 @@ Add Models with old version of verl
 -----------------------------------
 
 
->>>>>>> verl_0626
 The most challenging aspect to use the Megatron-LM backend is implementing
 the models for training. Currently, we implement Llama model that
 support data parallelism, tensor parallelism, pipeline parallelism (also

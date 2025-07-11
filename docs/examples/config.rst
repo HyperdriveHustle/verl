@@ -3,13 +3,8 @@
 Config Explanation
 ===================
 
-<<<<<<< HEAD
-ppo_trainer.yaml for FSDP Backend
----------------------------------
-=======
 ppo_trainer.yaml for RL FSDP Backend
 -------------------------------------
->>>>>>> verl_0626
 
 Data
 ~~~~
@@ -26,12 +21,6 @@ Data
      train_batch_size: 1024
      return_raw_input_ids: False  # This should be set to true when the tokenizer between policy and rm differs
      return_raw_chat: False
-<<<<<<< HEAD
-     shuffle: True
-     filter_overlong_prompts: False # for large-scale dataset, filtering overlong prompts could be timeconsuming. You should disable this and set `truncation='left'
-     truncation: error
-     image_key: images
-=======
      return_full_prompt: False
      shuffle: True
      filter_overlong_prompts: False
@@ -39,7 +28,6 @@ Data
      truncation: error
      image_key: images
      trust_remote_code: True
->>>>>>> verl_0626
      custom_cls:
         path: null
         name: null
@@ -57,11 +45,7 @@ Data
   left-padded to this length. An error will be reported if the length is
   too long
 - ``data.max_response_length``: Maximum response length. Rollout in RL
-<<<<<<< HEAD
-  algorithms (e.g. PPO) generates up to this length
-=======
   algorithms (e.g. PPO) generates up to this length
->>>>>>> verl_0626
 - ``data.train_batch_size``: Batch size sampled for one training
   iteration of different RL algorithms.
 - ``data.return_raw_input_ids``: Whether to return the original
@@ -70,13 +54,6 @@ Data
   from the policy. It needs to be decoded first, then apply the RM's
   chat template. If using a model-based RM, and the policy and RM
   chat_templates are different, this flag needs to be set
-<<<<<<< HEAD
-- ``data.return_raw_chat``:
-- ``data.shuffle``: Whether to shuffle the data in the dataloader.
-- ``data.filter_overlong_prompts``: Default don't filter. You can filter for small-scale dataset. 
-  For large-scale dataset, filtering overlong prompts could be timeconsuming. 
-  You should disable this and set ``truncation='left``
-=======
 - ``data.return_raw_chat``: Whether to return the original chat (prompt)
   without applying chat template.
 - ``data.return_full_prompt``: Whether to return the full prompt with chat template
@@ -85,18 +62,14 @@ Data
 - ``data.filter_overlong_prompts_workers``: For large-scale dataset, filtering
   overlong prompts could be timeconsuming. You cat set the ``filter_overlong_prompts_workers``
   to use multiprocessing for speed up. Default to 1.
->>>>>>> verl_0626
 - ``data.truncation``: Truncate the input_ids or prompt length if they
   exceed max_prompt_length. Default is 'error', not allow exceed the
   max_prompt_length. The users should increase the max_prompt_length if
   throwing the error. You can also set ``left`` and ``right``.
 - ``data.image_key``: The field in the multi-modal dataset where the image is
   located. Default is 'images'.
-<<<<<<< HEAD
-=======
 - ``data.trust_remote_code``: If the remote tokenizer has python file, we can use this field to allow 
   using remote tokenizer. For example: moonshotai/Moonlight-16B-A3B-Instruct
->>>>>>> verl_0626
 
 Customized Dataset
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -122,10 +95,6 @@ Actor/Rollout/Reference Policy
     model:
       path: ~/models/deepseek-llm-7b-chat
       external_lib: null
-<<<<<<< HEAD
-      override_config: { }
-      enable_gradient_checkpointing: False
-=======
       override_config:
         model_config: {}
         moe_config:  # Megatron only, can adjust moe configuration
@@ -133,7 +102,6 @@ Actor/Rollout/Reference Policy
       enable_gradient_checkpointing: False
       enable_activation_offload: False
       trust_remote_code: False
->>>>>>> verl_0626
       use_remove_padding: False
     actor:
       strategy: fsdp  # This is for backward-compatibility
@@ -144,32 +112,21 @@ Actor/Rollout/Reference Policy
       ppo_max_token_len_per_gpu: 16384 # n * ${data.max_prompt_length} + ${data.max_response_length}
       grad_clip: 1.0
       clip_ratio: 0.2
-<<<<<<< HEAD
-      entropy_coeff: 0.001
-=======
       entropy_coeff: 0.0
->>>>>>> verl_0626
       use_kl_loss: False # True for GRPO
       use_torch_compile: True # False to disable torch compile
       kl_loss_coef: 0.001 # for grpo
       kl_loss_type: low_var_kl # for grpo
       ppo_epochs: 1
-<<<<<<< HEAD
-=======
       data_loader_seed: null
->>>>>>> verl_0626
       shuffle: False
       ulysses_sequence_parallel_size: 1 # sp size
       optim:
         lr: 1e-6
         lr_warmup_steps: -1 # Prioritized. Negative values mean delegating to lr_warmup_steps_ratio.
         lr_warmup_steps_ratio: 0.  # the total steps will be injected during runtime
-<<<<<<< HEAD
-        min_lr_ratio: null   # only useful for warmup with cosine
-=======
         min_lr_ratio: 0.0   # only used with cosine lr scheduler, default to 0.0
         num_cycles: 0.5     # only used with cosine lr scheduler, default to 0.5
->>>>>>> verl_0626
         warmup_style: constant  # select from constant/cosine
         total_training_steps: -1  # must be override by program
       fsdp_config:
@@ -180,15 +137,11 @@ Actor/Rollout/Reference Policy
         optimizer_offload: False
         fsdp_size: -1
       checkpoint:
-<<<<<<< HEAD
-        contents: ['model', 'optimizer', 'extra']
-=======
         # What to include in saved checkpoints
         # with 'hf_model' you can save whole model as hf format, now only use sharded model checkpoint to save space
         save_contents: ['model', 'optimizer', 'extra']
         # For more flexibility, you can specify the contents to load from the checkpoint.
         load_contents: ${actor_rollout_ref.actor.checkpoint.save_contents}
->>>>>>> verl_0626
     ref:
       fsdp_config:
         param_offload: False
@@ -223,10 +176,6 @@ Actor/Rollout/Reference Policy
       log_prob_max_token_len_per_gpu: ${actor_rollout_ref.actor.ppo_max_token_len_per_gpu}
       # for hf rollout
       do_sample: True
-<<<<<<< HEAD
-      # number of responses (i.e. num sample times)
-      n: 1 # > 1 for grpo, rloo
-=======
       engine_kwargs: # inference engine parameters
         vllm:
           swap_space: null # null means "use the engine default value" (usually 4 GB), setting it to, e.g., 32 means 32 GB
@@ -242,7 +191,6 @@ Actor/Rollout/Reference Policy
         temperature: 0
         n: 1
         do_sample: False # default eager for validation
->>>>>>> verl_0626
 
 **Common config for actor, rollout and reference model**
 
@@ -258,13 +206,10 @@ Actor/Rollout/Reference Policy
   the model's original configurations, mainly dropout
 - ``actor_rollout_ref.model.enable_gradient_checkpointing``: Whether to
   enable gradient checkpointing for the actor
-<<<<<<< HEAD
-=======
 - ``actor_rollout_ref.model.enable_activation_offload``: Whether to enable
   activation offloading for the actor
 - ``actor_rollout_ref.model.trust_remote_code``: Whether to enable loading
   a remote code model
->>>>>>> verl_0626
 
 **Actor model**
 
@@ -292,22 +237,15 @@ Actor/Rollout/Reference Policy
 - ``actor_rollout_ref.actor.use_torch_compile``: Whether to use torch compile in actor
 
 - ``actor_rollout_ref.actor.entropy_coeff``: The weight of entropy when
-<<<<<<< HEAD
-  calculating PPO loss
-=======
   calculating PPO loss. The default value is changed to 0.0 since v0.3.x
->>>>>>> verl_0626
 
 - ``actor_rollout_ref.actor.ppo_epochs``: Number of epochs for PPO
   updates on one set of sampled data
 
-<<<<<<< HEAD
-=======
 - ``actor_rollout_ref.actor.data_loader_seed``: From torch 2.6.0 Megatron backend can get wrong seed generated by pytorch 
   between cp ranks and cause misalignment between data on these ranks, so we shall manually set the seed to avoid hanging
   issue. if ``actor_rollout_ref.actor.shuffle`` is not null, this must be set.
 
->>>>>>> verl_0626
 - ``actor_rollout_ref.actor.shuffle``: Whether to shuffle data when
   there are multiple epochs
 
@@ -330,16 +268,6 @@ Actor/Rollout/Reference Policy
 
 - ``actor_rollout_ref.actor.kl_loss_coef``: The coefficient of kl loss. Default is 0.001. 
 
-<<<<<<< HEAD
-- ``actor_rollout_ref.actor.kl_loss_type``: Support ``kl``, ``abs``, ``mse``, ``low_var_kl`` and ``full``. How to calculate the kl divergence between actor and reference policy. For
-    specific options, refer to `kl_penalty()` in `core_algos.py <https://github.com/volcengine/verl/blob/main/verl/trainer/ppo/core_algos.py>`_ .
-
-- ``actor_rollout_ref.actor.checkpoint``: The configurations of checkpoint function in actor
-
-  - ``contents``: The contents to save in the checkpoint. By default, we save model, optimizer and extra information in the checkpoint.
-    The extra information includes Rng states currently, FSDP supported lr_scheduler, and Megatron opt_param_scheduler will coming soon.
-    We do not store hf_model in checkpoint by default, but we provide a tool in `scripts/model_merge.py` to convert checkpoint format to hf format.
-=======
 - ``actor_rollout_ref.actor.kl_loss_type``: Support ``kl`` (``k1``), ``abs``, ``mse`` (``k2``), ``low_var_kl`` (``k3``) and ``full``. How to calculate the kl divergence between actor and reference policy. For specific options, refer to `kl_penalty()` in `core_algos.py <https://github.com/volcengine/verl/blob/main/verl/trainer/ppo/core_algos.py>`_ . See this blog post for detailed analysis: http://joschu.net/blog/kl-approx.html
 
 - ``actor_rollout_ref.actor.checkpoint``: The configurations of checkpoint function in actor
@@ -349,7 +277,6 @@ Actor/Rollout/Reference Policy
     We do not store hf_model in checkpoint by default, but we provide a tool in ``scripts/model_merge.py`` to convert checkpoint format to hf format.
 
   - ``load_contents``: The contents to load in the checkpoint, you can specify different checkpoint loading contents. By default, it is the same with ``save_checkpoint``.
->>>>>>> verl_0626
 
 **Reference Model**
 
@@ -375,27 +302,6 @@ Reference model will be enabled when ``actor.use_kl_loss`` or/and ``algorithm.us
   - ``temperature``, ``top_k``, ``top_p`` and others: Sampling
     parameters in ``SamplingParams``.
 
-<<<<<<< HEAD
-- ``dtype``: Rollout model parameters type. This should be align with
-  the actor model parameter type in FSDP/Megatron backend.
-
-- ``gpu_memory_utilization``: The proportion of the remaining GPU memory
-  allocated for kv cache after other models have initialized when using
-  vllm.
-
-- ``tensor_model_parallel_size``: TP size for rollout. Only effective
-  for vllm.
-
-- ``actor_rollout_ref.ref.log_prob_micro_batch_size``: [Will be deprecate, use log_prob_micro_batch_size_per_gpu]
-  The batch size for one forward pass in the computation of ``log_prob``. The value represent the global num.
-
-- ``log_prob_micro_batch_size_per_gpu``: Micro batch size per gpu (The batch size for
-  one forward pass) for recalculating ``log_prob``. The value represent the local num per gpu.
-
-- ``do_sample``: Whether to sample. If set to False, the rollout model
-  will perform greedy sampling. We disable ``do_sample`` during
-  validation.
-=======
 - ``actor_rollout_ref.rollout.dtype``: Rollout model parameters type. This should be align with
   the actor model parameter type in FSDP/Megatron backend.
 
@@ -442,7 +348,6 @@ Reference model will be enabled when ``actor.use_kl_loss`` or/and ``algorithm.us
     - ``flashinfer``: Use flashinfer attention backend.
     - ``triton``: Use triton attention backend.
     - ``flashmla``: Use flashmla attention backend.
->>>>>>> verl_0626
 
 - ``actor_rollout_ref.rollout.ignore_eos``: Whether to ignore the EOS
   token and continue generating tokens after the EOS token is generated.
@@ -477,8 +382,6 @@ Reference model will be enabled when ``actor.use_kl_loss`` or/and ``algorithm.us
 
 .. note:: **NOTED**: In this config field, users only need to select from ``dummy_megatron``, ``dummy_dtensor``, ``dummy_hf`` for rollout initialization and our hybrid engine will select the corresponding weight loader (i.e., ``megatron``, ``dtensor``, ``hf``) during actor/rollout weight synchronization.
 
-<<<<<<< HEAD
-=======
 
 Megatron Optimizer and Optimizer Parameter Scheduler
 ____________________________________________________
@@ -510,7 +413,6 @@ Notice that there are some differences in APIs between Megatron optimizer and FS
 - ``use_checkpoint_opt_param_scheduler`` determines whether to use the checkpoint optimizer parameter scheduler. If set to True, the optimizer parameter scheduler will be saved in the checkpoint and loaded from the checkpoint during resuming training.
 
 
->>>>>>> verl_0626
 Critic Model
 ~~~~~~~~~~~~
 
@@ -527,10 +429,7 @@ Reward Model
        input_tokenizer: ${actor_rollout_ref.model.path}  # set this to null if the chat template is identical
        path: ~/models/Anomy-RM-v0.1
        external_lib: ${actor_rollout_ref.model.external_lib}
-<<<<<<< HEAD
-=======
        trust_remote_code: False
->>>>>>> verl_0626
        fsdp_config:
          min_num_params: 0
          param_offload: False
@@ -552,11 +451,8 @@ Reward Model
   - ``path``: RM's HDFS path or local path. Note that RM only supports
     AutoModelForSequenceClassification. Other model types need to define
     their own RewardModelWorker and pass it from the code.
-<<<<<<< HEAD
-=======
   - ``trust_remote_code``: Whether to enable loading a remote code model,
     default to False.
->>>>>>> verl_0626
 - ``reward_model.reward_manager``:  Reward Manager. This defines the mechanism
   of computing rule-based reward and handling different reward sources. Default
   is ``naive``. If all verification functions are multiprocessing-safe, the reward
@@ -593,11 +489,7 @@ Algorithm
 
 - ``gemma``: discount factor
 - ``lam``: Trade-off between bias and variance in the GAE estimator
-<<<<<<< HEAD
-- ``adv_estimator``: Support ``gae``, ``grpo``, ``reinforce_plus_plus``, ``rloo``
-=======
 - ``adv_estimator``: Support ``gae``, ``grpo``, ``reinforce_plus_plus``, ``reinforce_plus_plus_baseline``, ``rloo``
->>>>>>> verl_0626
 - ``use_kl_in_reward``: Whether to enable in-reward kl penalty. Default is False.
 - ``kl_penalty``: Support ``kl``, ``abs``, ``mse``, ``low_var_kl`` and ``full``. How to
   calculate the kl divergence between actor and reference policy. For
@@ -630,10 +522,7 @@ Trainer
      resume_from_path: null
      remove_previous_ckpt_in_save: False
      del_local_ckpt_after_load: False
-<<<<<<< HEAD
-=======
      ray_wait_register_center_timeout: 300
->>>>>>> verl_0626
 
 - ``trainer.total_epochs``: Number of epochs in training.
 - ``trainer.project_name``: For wandb, swanlab, mlflow
@@ -651,11 +540,7 @@ Trainer
 - ``trainer.resume_mode``: The mode of resuming training. Support
   ``disable``, ``auto`` and ``resume_path``. If set to ``auto`` as default, the
   program will automatically resume from the latest checkpoint in the
-<<<<<<< HEAD
-  default_hdfs_dir. If set to ``resume_path``, the program will resume
-=======
   ``default_local_dir``. If set to ``resume_path``, the program will resume
->>>>>>> verl_0626
   from the path specified in ``resume_from_path``.
 - ``trainer.resume_from_path``: The path to resume training from. Only
   effective when ``resume_mode`` is set to ``resume_path``.
@@ -663,8 +548,6 @@ Trainer
   checkpoints in the save directory. Default is False.
 - ``trainer.del_local_ckpt_after_load``: Whether to delete local
   checkpoints after loading them. Default is False.
-<<<<<<< HEAD
-=======
 - ``trainer.ray_wait_register_center_timeout``: The timeout for waiting
   for the ray register center to be ready. Default is 300 seconds.
 
@@ -776,4 +659,3 @@ Most parameters for Model are similar to Reward Model.
 
 - ``use_liger``: Whether to enable Liger kernel, default to False. If True,
   we apply Liger kernel to the model (depends on `liger-kernel`).
->>>>>>> verl_0626

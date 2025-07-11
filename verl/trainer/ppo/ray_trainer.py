@@ -954,6 +954,7 @@ class RayPPOTrainer:
             self.req_scheduler.sched(
                 test_data, self.actor_rollout_wg.world_size, self.config.actor_rollout_ref,
             )
+            print(">> test_data = ", test_data.keys())
             test_batch = DataProto.from_single_dict(test_data)
 
             # repeat test batch
@@ -971,7 +972,7 @@ class RayPPOTrainer:
 
             batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
             # xiaohui: add key for req scheduler
-            non_tensor_batch_keys_to_pop = ["raw_prompt_ids", "reqs_idx", "outlens"]
+            non_tensor_batch_keys_to_pop = ["raw_prompt_ids", "reqs_idx", "pre_outlens"]
             if "multi_modal_data" in test_batch.non_tensor_batch:
                 non_tensor_batch_keys_to_pop.append("multi_modal_data")
             if "raw_prompt" in test_batch.non_tensor_batch:
