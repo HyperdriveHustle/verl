@@ -42,9 +42,21 @@ def get_random_string(length: int) -> str:
 
 
 def func_generator(self, method_name, dispatch_fn, collect_fn, execute_fn, blocking):
+    from time import perf_counter
     class Functor:
         def __call__(this, *args, **kwargs):
-            args, kwargs = dispatch_fn(self, *args, **kwargs)
+            should_record_time = False
+            print("*" * 100)
+            print(method_name, self.ray_cls_with_init.cls)
+            if method_name == "actor_rollout_generate_sequences":
+                should_record_time = True
+            if should_record_time:
+                start_time = perf_counter()
+                args, kwargs = dispatch_fn(self, *args, **kwargs)
+                end_time = perf_counter()
+                print(f"Dispatch time for {method_name}: {end_time - start_time} seconds")
+            else:
+                args, kwargs = dispatch_fn(self, *args, **kwargs)
             padding_count = kwargs.pop(_padding_size_key, 0)
             output = execute_fn(method_name, *args, **kwargs)
             if blocking:
