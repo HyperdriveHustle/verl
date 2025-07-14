@@ -6,24 +6,27 @@ set -x
 # export deepmath_train_path=${deepmath_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_deepmath_by_acc_0.2_0.7.parquet}
 # export math7d5k_train_path=${math7d5k_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_math_train_by_acc_0_0.7.parquet}
 
-export aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8_no_prompt.parquet}
-export aime2025_test_path=${aime2025_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2025/dapo_aime2025_sample8_no_prompt.parquet}
+# export aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8_no_prompt.parquet}
+# export aime2025_test_path=${aime2025_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2025/dapo_aime2025_sample8_no_prompt.parquet}
 
-export dapo_train_path=/afs/chatrl/users/hxh/data/math_data/dapo-math/rule_based_rl/dapo-math-17k_dedup_no_prompt_sft_0614_acc_0d1-0d7.parquet
-export math7d5k_train_path=/afs/chatrl/users/hxh/data/math_data/MATH_train/rule_based_rl/train_7d5k_math_verify_sft_0614_acc_0-0d7.parquet
+# export dapo_train_path=/afs/chatrl/users/hxh/data/math_data/dapo-math/rule_based_rl/dapo-math-17k_dedup_no_prompt_sft_0614_acc_0d1-0d7.parquet
+# export math7d5k_train_path=/afs/chatrl/users/hxh/data/math_data/MATH_train/rule_based_rl/train_7d5k_math_verify_sft_0614_acc_0-0d7.parquet
+
+dapo_train_path=/afs/chatrl/users/lyy/data/train/dapo-math-17k.parquet
+aime2024_test_path=/afs/chatrl/users/lyy/data/eval/aime2025_dapo_sample1.parquet
 
 # export train_files="['$math7d5k_train_path', '$dapo_train_path']"
-
-export train_files="['$math7d5k_train_path', '$dapo_train_path']"
+export train_files="['$dapo_train_path']"
 
 # train_files="['$math7d5k_train_path', '$dapo_train_path', '$deepmath_train_path']"
 # export train_files=${train_files:-"['$math7d5k_train_path', '$dapo_train_path', '$deepmath_train_path']"}
 
-test_files="['$aime2024_test_path', '$aime2025_test_path']"
+test_files="['$aime2024_test_path']"
 
 # resume config
 export resume_mode=${resume_mode:-auto}
 export resume_from_path=${resume_from_path:-null}
+# export model_path=${model_path:-/afs/chatrl/public/models/Qwen2.5-32B}
 export model_path=${model_path:-/afs/chatrl/public/models/Qwen2.5-32B}
 export model_name=$(basename "$model_path")
 
@@ -123,11 +126,12 @@ rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=/afs/chatrl/users/hxh/models/verl_rl_models/${project_name}/${experiment_name}
 
 #data.max_batch_size=${train_prompt_batch_size} \
-#python3 -u -m verl.trainer.main_ppo \
+
 # python3 -u -m verl.trainer.main_ppo_with_time \
-python3 -u -m  recipe.dapo.main_dapo \
-    --config-path=config \
-    --config-name='dapo_trainer.yaml' \
+# python3 -u -m  recipe.dapo.main_dapo \
+    # --config-path=config \
+    # --config-name='dapo_trainer.yaml' \
+python3 -u -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
@@ -142,7 +146,7 @@ python3 -u -m  recipe.dapo.main_dapo \
     req_scheduler.log_dir="$log_dir" \
     req_scheduler.agg="$agg" \
     req_scheduler.algo="$req_algo" \
-    data.gen_batch_size=${gen_prompt_bsz} \
+    # data.gen_batch_size=${gen_prompt_bsz} \
     data.truncation='left' \
     algorithm.use_kl_in_reward=${use_kl_in_reward} \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \

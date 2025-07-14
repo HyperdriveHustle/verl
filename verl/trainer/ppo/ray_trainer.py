@@ -1353,7 +1353,13 @@ class RayPPOTrainer:
 
                 is_last_step = self.global_steps >= self.total_training_steps
 
+                idx = gen_batch.batch['input_ids']  # (bs, prompt_length)
                 reqs_idx = gen_batch.non_tensor_batch['reqs_idx']
+                raw_prompt_ids = gen_batch.non_tensor_batch['raw_prompt_ids'] # (bs, varlen)
+                batch.non_tensor_batch['raw_prompt_ids'] = raw_prompt_ids
+                print(
+                    f'[BATCH INPUT]: {idx.shape}, {gen_batch.non_tensor_batch.keys()=}, raw_prompt_ids = {type(raw_prompt_ids)}'
+                )
 
                 with marked_timer("step", timing_raw):
                     # generate a batch

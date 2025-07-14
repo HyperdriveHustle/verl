@@ -778,6 +778,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         reqs_idx = prompts.non_tensor_batch.pop('reqs_idx')
         pre_outlens = prompts.non_tensor_batch.pop('pre_outlens')
 
+        # print(f"[Rank {rank}] {my_req_idx=}, {reqs_idx=},{pre_outlens=}")
         my_idx = [i for i, idx in enumerate(reqs_idx) if idx == my_req_idx]
         if len(my_idx) == 0:
             raise RuntimeError(f'Empty reqs {rank} {tp_size=} {my_req_idx=} {reqs_idx=}')
