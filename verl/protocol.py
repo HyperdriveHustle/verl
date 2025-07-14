@@ -84,7 +84,14 @@ def pad_dataproto_to_divisor(data: "DataProto", size_divisor: int):
         remaining_pad = pad_size
         while remaining_pad > 0:
             take_size = min(remaining_pad, len(data))
-            padding_protos.append(data[:take_size])
+            slice_data = data[:take_size]
+
+            if slice_data.non_tensor_batch is None:
+                slice_data.non_tensor_batch = {}
+
+            slice_data.non_tensor_batch["reqs_idx"] = np.full(take_size, -1, dtype=object)
+
+            padding_protos.append(slice_data)
             remaining_pad -= take_size
         data_padded = DataProto.concat([data] + padding_protos)
     else:
@@ -92,12 +99,15 @@ def pad_dataproto_to_divisor(data: "DataProto", size_divisor: int):
             logging.warning("padding a DataProto with no item, no changed made")
         pad_size = 0
         data_padded = data
+    # print(f"DataProto size after padding: data_padded = {len(data_padded)}")
     return data_padded, pad_size
 
-
+#TODO
 def unpad_dataproto(data: "DataProto", pad_size):
     """Unpad the data proto with pad_size. i.e. `data[:-pad_size]`"""
     if pad_size != 0:
+        #TODO 把reqs_idx为-1的扔掉
+        print(data)
         data = data[:-pad_size]
     return data
 

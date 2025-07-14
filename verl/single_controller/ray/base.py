@@ -57,6 +57,7 @@ def func_generator(self, method_name, dispatch_fn, collect_fn, execute_fn, block
                 print(f"Dispatch time for {method_name}: {end_time - start_time} seconds")
             else:
                 args, kwargs = dispatch_fn(self, *args, **kwargs)
+            
             padding_count = kwargs.pop(_padding_size_key, 0)
             output = execute_fn(method_name, *args, **kwargs)
             if blocking:

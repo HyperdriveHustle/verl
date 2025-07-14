@@ -111,7 +111,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 
 sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=Qwen25-32B-${base_model_suffix}_dapo-${req_algo}-${agg}_${nnode}node_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_all_dapo_trick_${resume_type}_${TIMESTAMP}
+export experiment_name=Qwen25-32B-${base_model_suffix}_dapo-${req_algo}-${agg}_${nnode}node_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_all_dapo_trick_${resume_type}
 
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=/afs/chatrl/users/hxh/models/verl_rl_models/${project_name}/${experiment_name}

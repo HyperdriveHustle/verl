@@ -507,6 +507,9 @@ class ReqScheduler:
         assert world_size % tp_size == 0, f'world_size {world_size} must be divisible by tp_size {tp_size}'
         dp_size = world_size // tp_size
         res = self._sched(pre_outlens, dp_size, tp_size)
+        # print(f"[sched] {dp_size=}, {tp_size=}, {len(pre_outlens)=}, {len(res)=}")
+        # print(f"[sched] {res}")
+
 
         batch_dict['reqs_idx'] = res
         batch_dict['pre_outlens'] = np.array(pre_outlens, dtype=np.int32)
@@ -997,7 +1000,10 @@ class RayPPOTrainer:
             print(f"test_gen_batch meta info: {test_gen_batch.meta_info}")
 
             # pad to be divisible by dp_size
+            # print(f"test_gen_batch size before padding: {len(test_gen_batch)}")
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
+            # print(f"test_gen_batch size after padding: {len(test_gen_batch_padded)}")
+
             if not self.async_rollout_mode:
                 test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
             else:
@@ -1005,13 +1011,15 @@ class RayPPOTrainer:
                 test_output_gen_batch_padded = self.async_rollout_manager.generate_sequences(test_gen_batch_padded)
                 self.async_rollout_manager.sleep()
 
+            # unpad
+            test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
+            
             self.req_scheduler.restore_order(
                 test_output_gen_batch_padded, 
                 test_reqs_idx, 
                 n_samples=self.config.actor_rollout_ref.rollout.val_kwargs.n
             )
-            # unpad
-            test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
+            
             print("validation generation end")
 
             # Store generated outputs
@@ -1300,7 +1308,13 @@ class RayPPOTrainer:
         last_val_metrics = None
 
         for epoch in range(self.config.trainer.total_epochs):
-            for batch_dict in self.train_dataloader:
+            for bs_idx, batch_dict in enumerate(self.train_dataloader):
+                #to verify restore_order
+                self.req_scheduler.sched(batch_dict,
+                    self.actor_rollout_wg.world_size,
+                    self.config.actor_rollout_ref,
+                )
+
                 do_profile = self.global_steps in self.config.trainer.profile_steps if self.config.trainer.profile_steps is not None else False
                 if do_profile:
                     self.actor_rollout_wg.start_profile()
@@ -1326,12 +1340,20 @@ class RayPPOTrainer:
                     non_tensor_batch_keys_to_pop.append("tools_kwargs")
                 if "interaction_kwargs" in batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("interaction_kwargs")
+                if "reqs_idx" in batch.non_tensor_batch:
+                    non_tensor_batch_keys_to_pop.append("reqs_idx")
+                if "pre_outlens" in batch.non_tensor_batch:
+                    non_tensor_batch_keys_to_pop.append("pre_outlens")
+
+                print(f"> {non_tensor_batch_keys_to_pop=}")
                 gen_batch = batch.pop(
                     batch_keys=batch_keys_to_pop,
                     non_tensor_batch_keys=non_tensor_batch_keys_to_pop,
                 )
 
                 is_last_step = self.global_steps >= self.total_training_steps
+
+                reqs_idx = gen_batch.non_tensor_batch['reqs_idx']
 
                 with marked_timer("step", timing_raw):
                     # generate a batch
@@ -1361,10 +1383,37 @@ class RayPPOTrainer:
 
                             del gen_baseline_batch, gen_baseline_output
 
+                    self.req_scheduler.restore_order(
+                        gen_batch_output, 
+                        reqs_idx,
+                        self.config.actor_rollout_ref.rollout.n,
+                    )
                     batch.non_tensor_batch["uid"] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object)
                     # repeat to align with repeated responses in rollout
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
+                    #####################################
+                    # data examine2 (union-ed)
+                    seq = batch.batch['input_ids']
+                    response = batch.batch['responses']
+                    raw_prompt_ids = batch.non_tensor_batch['raw_prompt_ids']
+                    print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape} {len(batch)} {batch.batch.keys()} {batch.non_tensor_batch.keys()}')
+                    
+                    pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
+                    model = self.config.actor_rollout_ref.model.path.split('/')[-1]
+                    # breakpoint()
+                    dataset = self.config.data.train_files[0].split('/')[-1]
+                    prefix = f'{dataset}_{model}_E{epoch}B{bs_idx}_data'
+                    unpadded = unpad_responses(response, pad_ids)
+                    self.req_scheduler.log_seqlen(
+                        raw_prompt_ids, 
+                        unpadded,
+                        prefix, 
+                    )
+                    self.req_scheduler.update_table(
+                        raw_prompt_ids,
+                        unpadded,
+                    )
 
                     batch.batch["response_mask"] = compute_response_mask(batch)
                     # Balance the number of valid tokens across DP ranks.
