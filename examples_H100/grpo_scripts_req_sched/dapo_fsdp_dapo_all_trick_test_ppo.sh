@@ -3,7 +3,7 @@ set -x
 # export dapo_train_path=${dapo_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k_dedup.parquet}
 # export aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8.parquet}
 export dapo_train_path=${dapo_train_path:-/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k_dedup.parquet}
-export aime2024_test_path=${aime2024_test_path:-/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data/aime-2024.parquet}
+export aime2024_test_path=${aime2024_test_path:-/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/aime2025_dapo_sample1.parquet}
 # export aime2025_test_path=${aime2025_test_path:-/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/AIME-2025/dapo_aime2025_sample8.parquet}
 train_files="['$dapo_train_path']"
 test_files="['$aime2024_test_path']"
@@ -17,9 +17,9 @@ export model_name=$(basename "$model_path")
 export project_name=${project_name:-verl_dapo_math_grpo_dapo_req_sched}
 # train params
 export total_epochs=${total_epochs:-10}
-export vllm_tp=${vllm_tp:-1}
+export vllm_tp=${vllm_tp:-4}
 
-export train_prompt_batch_size=${train_prompt_batch_size:-512}
+export train_prompt_batch_size=${train_prompt_batch_size:-32}
 export grpo_rollout_n=${grpo_rollout_n:-16}
 # model params
 export max_response_length=${max_response_length:-20000}
@@ -105,16 +105,18 @@ export TENSORBOARD_DIR=/nvfile-heatstorage/teleai-infra/wlw/workspace/${project_
 #data.max_batch_size=${train_prompt_batch_size} \
 #python3 -u -m verl.trainer.main_ppo \
 # python3 -u -m verl.trainer.main_ppo_with_time \
-python3 -u -m  recipe.dapo.main_dapo \
-    --config-path=config \
-    --config-name='dapo_trainer.yaml' \
+# python3 -u -m  recipe.dapo.main_dapo \
+
+#     --config-path=config \
+#     --config-name='dapo_trainer.yaml' \
+python3 -u -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
     data.prompt_key=${prompt_key} \
     data.train_batch_size=${train_prompt_batch_size} \
     actor_rollout_ref.rollout.n=${grpo_rollout_n} \
-    data.shuffle=False \
+    data.shuffle=True \
     data.filter_overlong_prompts=${filter_overlong_prompts} \
     data.max_prompt_length=${max_prompt_length} \
     data.max_response_length=${max_response_length} \
@@ -122,19 +124,15 @@ python3 -u -m  recipe.dapo.main_dapo \
     req_scheduler.log_dir="$log_dir" \
     req_scheduler.agg="$agg" \
     req_scheduler.algo="$req_algo" \
-    data.gen_batch_size=${gen_prompt_bsz} \
     data.truncation='left' \
     algorithm.use_kl_in_reward=${use_kl_in_reward} \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
-    actor_rollout_ref.actor.profiler.all_ranks=True\
+    actor_rollout_ref.actor.profiler.all_ranks=True \
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
     actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
     actor_rollout_ref.actor.clip_ratio_c=10.0 \
-    algorithm.filter_groups.enable=${enable_filter_groups} \
-    algorithm.filter_groups.max_num_gen_batches=${max_num_gen_batches} \
-    algorithm.filter_groups.metric=${filter_groups_metric} \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.use_dynamic_bsz=${use_dynamic_bsz} \
     actor_rollout_ref.ref.log_prob_use_dynamic_bsz=${use_dynamic_bsz} \
@@ -170,10 +168,6 @@ python3 -u -m  recipe.dapo.main_dapo \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=${offload} \
     actor_rollout_ref.actor.fsdp_config.fsdp_size=-1 \
-    reward_model.reward_manager=dapo \
-    reward_model.overlong_buffer.enable=${enable_overlong_buffer} \
-    reward_model.overlong_buffer.len=${overlong_buffer_len} \
-    reward_model.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
     trainer.resume_mode=${resume_mode} \
     trainer.resume_from_path=${resume_from_path} \
     trainer.logger=['tensorboard'] \

@@ -561,13 +561,18 @@ class ReqScheduler:
         return res
 
     def even_prompt(self, outlens: list[int], dp_size, tp_size, config):
-        per_dp = len(outlens) // dp_size
+        num_prompts = len(outlens)
+        if num_prompts == 0:
+            return np.array([], dtype=np.int32)
+        if dp_size <= 0:
+            raise ValueError("dp_size must be a positive integer.")
+        
+        base_prompts_per_dp = num_prompts // dp_size
+        remainder_prompts = num_prompts % dp_size
         res = []
-        cnt = 0
-        for i in range(0, len(outlens), per_dp):
-            for j in range(per_dp):
-                res.append(cnt)
-            cnt += 1
+        for i in range(dp_size):
+            num_in_group = base_prompts_per_dp + (1 if i < remainder_prompts else 0)
+            res.extend([i] * num_in_group)
         return np.array(res, dtype=np.int32)
     
     def even_token(self, outlens, dp_size, tp_size, config):
@@ -1003,22 +1008,23 @@ class RayPPOTrainer:
             # print(f"test_gen_batch size before padding: {len(test_gen_batch)}")
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
             # print(f"test_gen_batch size after padding: {len(test_gen_batch_padded)}")
-
+            #breakpoint()
             if not self.async_rollout_mode:
-                test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
+                test_output_gen_batch = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
             else:
                 self.async_rollout_manager.wake_up()
-                test_output_gen_batch_padded = self.async_rollout_manager.generate_sequences(test_gen_batch_padded)
+                test_output_gen_batch = self.async_rollout_manager.generate_sequences(test_gen_batch_padded)
                 self.async_rollout_manager.sleep()
 
             # unpad
-            print("become unpad")
-            print(test_output_gen_batch_padded)
             print("+"*100)
-            test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
+            print(test_output_gen_batch)
+            print("+"*100)
+            #already unpad in generate_sequneces
+            #test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
             
             self.req_scheduler.restore_order(
-                test_output_gen_batch_padded, 
+                test_output_gen_batch, 
                 test_reqs_idx, 
                 n_samples=self.config.actor_rollout_ref.rollout.val_kwargs.n
             )
