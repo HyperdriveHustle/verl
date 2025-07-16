@@ -11,11 +11,13 @@ set -x
 
 # export dapo_train_path=/afs/chatrl/users/hxh/data/math_data/dapo-math/rule_based_rl/dapo-math-17k_dedup_no_prompt_sft_0614_acc_0d1-0d7.parquet
 # export math7d5k_train_path=/afs/chatrl/users/hxh/data/math_data/MATH_train/rule_based_rl/train_7d5k_math_verify_sft_0614_acc_0-0d7.parquet
-export dapo_train_path=/afs/chatrl/users/hxh/data/math_data/dapo-math/rule_based_rl/dapo-math-17k_dedup_no_prompt_sft_0614_acc_0d1-0d7.parquet
+# export dapo_train_path=/afs/chatrl/users/hxh/data/math_data/dapo-math/rule_based_rl/dapo-math-17k_dedup_no_prompt_sft_0614_acc_0d1-0d7.parquet
+dapo_train_path=/afs/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k_dedup.parquet
+
 # sample-1 共计 30 条
-# aime2024_test_path=/afs/chatrl/users/lyy/data/eval/aime2025_dapo_sample1.parquet
+aime2024_test_path=/afs/chatrl/users/lyy/data/eval/aime2025_dapo_sample1.parquet
 # sample-8 共计 30 条
-aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8_no_prompt.parquet}
+# aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8_no_prompt.parquet}
 
 # export train_files="['$math7d5k_train_path', '$dapo_train_path']"
 export train_files="['$dapo_train_path']"
@@ -39,13 +41,13 @@ export project_name=${project_name:-verl_qwen_7b_dapo_req_sched_v0626}
 
 # train params
 export total_epochs=${total_epochs:-50}
-export vllm_tp=${vllm_tp:-1}
+export vllm_tp=${vllm_tp:-4}
 
 export train_prompt_batch_size=${train_prompt_batch_size:-32}
 export grpo_rollout_n=${grpo_rollout_n:-16}
 # model params
 export max_response_length=${max_response_length:-20000}
-export prompt_key=${prompt_key:-messages}
+export prompt_key=${prompt_key:-prompt}
 export resume_type=${resume_type:-no_resume}
 # env config
 export nnode=${WORLD_SIZE:-1}

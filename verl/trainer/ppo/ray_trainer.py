@@ -1012,6 +1012,9 @@ class RayPPOTrainer:
                 self.async_rollout_manager.sleep()
 
             # unpad
+            print("become unpad")
+            print(test_output_gen_batch_padded)
+            print("+"*100)
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
             
             self.req_scheduler.restore_order(
