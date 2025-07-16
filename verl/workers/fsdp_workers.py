@@ -860,7 +860,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 actual_mean = np.mean(actual_outlen)
                 actual_max = np.max(actual_outlen)
                 actual_min = np.min(actual_outlen)
-
+                #breakpoint()
                 print(f"[GENTIME] {rank=}, {timing_generate['generate_sequences']:.2f}s; Sum: predict_totallens={predict_tsum}, pre_outlens={pre_osum}, insum={insum} ; Total: {predict_tlongest=}, {predict_tshortest=}, {predict_tavg=}, {predict_tstd=}; In: {inlongest=}, {inshortest=}, inavg={inavg:.0f}, instd={instd:.0f}; ACTUAL: {actual_sum=}, {actual_mean=}, {actual_max=}, {actual_min=}")
             output = self.rollout_sharding_manager.postprocess_data(output)
 
