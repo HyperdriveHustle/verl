@@ -12,40 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections import defaultdict
-
-import torch
-
 from verl import DataProto
-from verl.utils.reward_score import default_compute_score
+from verl.utils.reward_score import _default_compute_score
+import torch
+from collections import defaultdict
+import json
 from verl.workers.reward_manager import register
 
-import os
-import json
 
-save_num_examine_path_dapo = os.environ.get("SAVE_NUM_EXAMINE_PATH_DAPO", "/afs/chatrl/users/hwq/log/verl/logs_sensecore/save_num_examine_dapo.jsonl")  # 允许默认路径
+@register("remote")
+class REMOTERewardManager:
+    """The reward manager.
+    """
 
-
-
-@register("dapo")
-class DAPORewardManager:
-    """The reward manager."""
-
-    def __init__(
-        self,
-        tokenizer,
-        num_examine,
-        compute_score=None,
-        reward_fn_key="data_source",
-        max_resp_len=None,
-        overlong_buffer_cfg=None,
-    ) -> None:
+    def __init__(self,
+                 tokenizer,
+                 num_examine,
+                 compute_score=None,
+                 reward_fn_key='data_source',
+                 max_resp_len=None,
+                 overlong_buffer_cfg=None,
+                 remote_reward_cfg=None) -> None:
         self.tokenizer = tokenizer
         self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
-        self.compute_score = compute_score or default_compute_score
+        self.compute_score = compute_score or _default_compute_score
         self.reward_fn_key = reward_fn_key
         self.overlong_buffer_cfg = overlong_buffer_cfg
+        self.remote_reward_cfg = remote_reward_cfg
         self.max_resp_len = max_resp_len
+
+
+        from verl.utils.reward_score.remote_reward import init_remote_reward
+        init_remote_reward(remote_reward_cfg or {})
 
         if self.overlong_buffer_cfg is not None:
             assert self.max_resp_len is not None, f"max_resp_len must be provided if {overlong_buffer_cfg=}, but got None"
@@ -54,13 +52,13 @@ class DAPORewardManager:
         """We will expand this function gradually based on the available datasets"""
 
         # If there is rm score, we directly return rm score. Otherwise, we compute via rm_score_fn
-        if "rm_scores" in data.batch.keys():
+        if 'rm_scores' in data.batch.keys():
             if return_dict:
-                return {"reward_tensor": data.batch["rm_scores"]}
+                return {"reward_tensor": data.batch['rm_scores']}
             else:
-                return data.batch["rm_scores"]
+                return data.batch['rm_scores']
 
-        reward_tensor = torch.zeros_like(data.batch["responses"], dtype=torch.float32)
+        reward_tensor = torch.zeros_like(data.batch['responses'], dtype=torch.float32)
         reward_extra_info = defaultdict(list)
 
         already_print_data_sources = {}
@@ -68,15 +66,15 @@ class DAPORewardManager:
         for i in range(len(data)):
             data_item = data[i]  # DataProtoItem
 
-            prompt_ids = data_item.batch["prompts"]
+            prompt_ids = data_item.batch['prompts']
 
             prompt_length = prompt_ids.shape[-1]
 
-            valid_prompt_length = data_item.batch["attention_mask"][:prompt_length].sum()
+            valid_prompt_length = data_item.batch['attention_mask'][:prompt_length].sum()
             valid_prompt_ids = prompt_ids[-valid_prompt_length:]
 
-            response_ids = data_item.batch["responses"]
-            valid_response_length = data_item.batch["attention_mask"][prompt_length:].sum()
+            response_ids = data_item.batch['responses']
+            valid_response_length = data_item.batch['attention_mask'][prompt_length:].sum()
             valid_response_ids = response_ids[:valid_response_length]
 
             # decode
@@ -84,20 +82,37 @@ class DAPORewardManager:
             response_str = self.tokenizer.decode(valid_response_ids, skip_special_tokens=True)
             eos_token = self.tokenizer.eos_token
             if response_str.endswith(eos_token):
-                response_str = response_str[: -len(eos_token)]
+                response_str = response_str[:-len(eos_token)]
 
-            ground_truth = data_item.non_tensor_batch["reward_model"]["ground_truth"]
+            ground_truth = data_item.non_tensor_batch['reward_model']['ground_truth']
 
             data_source = data_item.non_tensor_batch[self.reward_fn_key]
 
-            extra_info = data_item.non_tensor_batch.get("extra_info", None)
+            extra_info = data_item.non_tensor_batch.get('extra_info', None)
+            # print(f"data_item.non_tensor_batch.keys()--------------{data_item.non_tensor_batch.keys()}------")
+
+            # prompt = data_item.non_tensor_batch.get('prompt', None)
+            prompt = data_item.non_tensor_batch['prompt'][0]['content']
+
 
             result = self.compute_score(
                 data_source=data_source,
                 solution_str=response_str,
                 ground_truth=ground_truth,
-                extra_info=extra_info,
+                extra_info=prompt,
             )
+
+            # record = {
+            #     "prompt": prompt_str,
+            #     "response": response_str,
+            #     "ground_truth": ground_truth,
+            #     "data_source": data_source,
+            #     "extra_info": extra_info,
+            #     "result": result,
+            # }
+
+            # with open("/afs/chatrl/users/hwq/data/gpqa/test_result/eval_runs.jsonl", "a", encoding="utf-8") as f:
+            #     f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
             score: float
             if isinstance(result, dict):
@@ -127,7 +142,6 @@ class DAPORewardManager:
                 already_print_data_sources[data_source] = 0
 
             if already_print_data_sources[data_source] < self.num_examine:
-            # if already_print_data_sources[data_source] < 500:
                 already_print_data_sources[data_source] += 1
                 print("[prompt]", prompt_str)
                 print("[response]", response_str)
@@ -136,19 +150,7 @@ class DAPORewardManager:
                     for key, value in result.items():
                         print(f"[{key}]", value)
                 else:
-                    print("[score]", score)
-
-                    # 保存为 JSONL
-            output_item = {
-                "data_source": data_source,
-                "prompt": prompt_str,
-                "response": response_str,
-                "ground_truth": ground_truth,
-                "score": result
-            }
-            with open(save_num_examine_path_dapo, "a", encoding="utf-8") as fout:
-                fout.write(json.dumps(output_item, ensure_ascii=False) + "\n")
-
+                    print(f"[score]", score)
 
         if return_dict:
             return {
@@ -157,3 +159,4 @@ class DAPORewardManager:
             }
         else:
             return reward_tensor
+

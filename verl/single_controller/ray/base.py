@@ -96,6 +96,8 @@ class RayResourcePool(ResourcePool):
         self.use_gpu = use_gpu
         # print(f"in RayProcessDispatchConfiguration: name_prefix = {name_prefix}")
         self.name_prefix = get_random_string(length=6) if name_prefix is None else name_prefix
+        # self.name_prefix = "hwqprefix" # debug hwq
+
         self.pgs = None
         self.detached = detached
         self.accelerator_type = accelerator_type
@@ -263,6 +265,8 @@ class RayWorkerGroup(WorkerGroup):
         super().__init__(resource_pool=resource_pool, **kwargs)
         self.ray_cls_with_init = ray_cls_with_init
         self.name_prefix = get_random_string(length=6) if name_prefix is None else name_prefix
+        # self.name_prefix = "hwqprefix" # hwq debug
+
         self._ray_wait_register_center_timeout = ray_wait_register_center_timeout
         # Whether the WorkerGroup is a Colocate WorkerGroup created by FusedWorker.
         self.fused_worker_used = ray_cls_with_init.fused_worker_used

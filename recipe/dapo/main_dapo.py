@@ -1,4 +1,5 @@
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
+# Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,9 +37,14 @@ def run_ppo(config) -> None:
     if not ray.is_initialized():
         # this is for local ray cluster
         ray.init(
-            runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", 
+            # local_mode=True, # hwq debug
+            runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true",
             "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
             "TENSORBOARD_DIR":os.environ.get("TENSORBOARD_DIR")}},
+            # runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true",
+            #                           "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
+            #                           "TENSORBOARD_DIR": "/afs/chatrl/users/hwq/models/verl_rl_models/verl_dapo_math_grpo_remote_reward/Qwen2.5-0.5B-Instruct_dapo-even_token-max_1node_rollout16_bs32_minibatch32_lr1e-6_sp1_tp1_maxlen16384_all_dapo_trick_no_resume_judge_model_name_Qwen3-30B-A3B_2025-07-15_13-30-00"}},
+            # /afs/chatrl/users/hwq/models/verl_rl_models/verl_dapo_math_grpo_remote_reward/Qwen2.5-0.5B-Instruct_dapo-even_token-max_1node_rollout16_bs32_minibatch32_lr1e-6_sp1_tp1_maxlen16384_all_dapo_trick_no_resume_judge_model_name_Qwen3-30B-A3B_2025-07-15_13-30-00
             num_cpus=config.ray_init.num_cpus,
         )
 
@@ -47,6 +53,7 @@ def run_ppo(config) -> None:
         runner = TaskRunner.options(runtime_env={"nsight": nsight_options}).remote()
     else:
         runner = TaskRunner.remote()
+
     ray.get(runner.run.remote(config))
 
 
@@ -129,7 +136,24 @@ class TaskRunner:
             role_worker_mapping[Role.RefPolicy] = ray.remote(ActorRolloutRefWorker)
             mapping[Role.RefPolicy] = global_pool_id
 
+# <<<<<<< HEAD:recipe/dapo/main_dapo.py
         from verl.workers.reward_manager import get_reward_manager_cls
+# =======
+#         reward_manager_name = config.reward_model.get("reward_manager", "naive")
+#         if reward_manager_name == 'naive':
+#             from verl.workers.reward_manager import NaiveRewardManager
+#             reward_manager_cls = NaiveRewardManager
+#         elif reward_manager_name == 'prime':
+#             from verl.workers.reward_manager import PrimeRewardManager
+#             reward_manager_cls = PrimeRewardManager
+#         elif reward_manager_name == 'dapo':
+#             from verl.workers.reward_manager import DAPORewardManager
+#             reward_manager_cls = DAPORewardManager
+#         elif reward_manager_name == "remote":
+#             from verl.workers.reward_manager import REMOTERewardManager
+#             reward_manager_cls = REMOTERewardManager
+#         else:
+# >>>>>>> add_remote_reward:recipe/dapo/src/main_dapo.py
 
         # Note(haibin.lin): please make sure custom reward managers are imported and
         # registered via `verl.workers.reward_manager.register`
@@ -137,24 +161,48 @@ class TaskRunner:
         reward_manager_cls = get_reward_manager_cls(reward_manager_name)
 
         compute_score = get_custom_reward_fn(config)
-        reward_fn = reward_manager_cls(
+
+        reward_kwargs = dict(
             tokenizer=tokenizer,
             num_examine=0,
             compute_score=compute_score,
             reward_fn_key=config.data.reward_fn_key,
             max_resp_len=config.data.max_response_length,
-            overlong_buffer_cfg=config.reward_model.overlong_buffer,
+            overlong_buffer_cfg=config.reward_model.overlong_buffer
         )
 
-        # Note that we always use function-based RM for validation
-        val_reward_fn = reward_manager_cls(
+        val_reward_kwargs = dict(
             tokenizer=tokenizer,
             num_examine=1,
             compute_score=compute_score,
             reward_fn_key=config.data.reward_fn_key,
             max_resp_len=config.data.max_response_length,
-            overlong_buffer_cfg=config.reward_model.overlong_buffer,
+            overlong_buffer_cfg=config.reward_model.overlong_buffer
         )
+
+        if 'remote_reward_cfg' in reward_manager_cls.__init__.__code__.co_varnames:
+            reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
+            val_reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
+
+
+        reward_fn = reward_manager_cls(**reward_kwargs)
+        val_reward_fn = reward_manager_cls(**val_reward_kwargs)
+        # reward_fn = reward_manager_cls(tokenizer=tokenizer,
+        #                                num_examine=0,
+        #                                compute_score=compute_score,
+        #                                reward_fn_key=config.data.reward_fn_key,
+        #                                remote_reward_cfg=config.get("remote_reward"),
+        #                                max_resp_len=config.data.max_response_length,
+        #                                overlong_buffer_cfg=config.reward_model.overlong_buffer)
+
+        # Note that we always use function-based RM for validation
+        # val_reward_fn = reward_manager_cls(tokenizer=tokenizer,
+        #                                    num_examine=1,
+        #                                    compute_score=compute_score,
+        #                                    reward_fn_key=config.data.reward_fn_key,
+        #                                    remote_reward_cfg=config.get("remote_reward"),
+        #                                    max_resp_len=config.data.max_response_length,
+        #                                    overlong_buffer_cfg=config.reward_model.overlong_buffer)
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
         trainer = RayDAPOTrainer(

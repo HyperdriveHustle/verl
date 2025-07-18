@@ -14,7 +14,7 @@
 # from . import gsm8k, math, prime_math, prime_code
 
 from verl.utils.import_utils import deprecated
-
+import numpy as np
 
 def default_compute_score(data_source, solution_str, ground_truth, extra_info=None, sandbox_fusion_url=None, concurrent_semaphore=None, memory_limit_mb=None):
     """Compute the score for a given solution based on the data source.
@@ -32,9 +32,20 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
     Raises:
         NotImplementedError: If the reward function is not implemented for the given data source.
     """
-    if data_source == "openai/gsm8k":
-        from . import gsm8k
+    if isinstance(data_source, (list, tuple, np.ndarray)):
+        if all(isinstance(ds, str) and ds.startswith("math_judge") for ds in data_source):
+            from . import remote_reward_batch
+            return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
+        elif all(isinstance(ds, str) and (ds.startswith("dapo") or ds.startswith("train-math-numinamath")) for ds in data_source):
+            from . import math_dapo
+            # 批量调用 math_dapo
+            return [math_dapo.compute_score(s, g) for s, g in zip(solution_str, ground_truth)]
+        else:
+            from . import remote_reward_batch
+            return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
 
+    elif data_source == "openai/gsm8k":
+        from . import gsm8k
         res = gsm8k.compute_score(solution_str, ground_truth)
     elif data_source in ["lighteval/MATH", "DigitalLearningGmbH/MATH-lighteval"]:
         from . import math
@@ -47,18 +58,26 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
 
         # from . import math_verify
         # res = math_verify.compute_score(solution_str, ground_truth)
-    elif data_source == 'deepmath_103k' or data_source.startswith("math_verify"):
-        from . import math_verify
-        res = math_verify.compute_score(solution_str, ground_truth)
-    elif data_source == 'math_dapo' or data_source.startswith("aime") or data_source.startswith("dapo_"):
+    elif data_source in [
+            'train-math-numinamath1.5_aops_forum', 'DeepScaleR_no_system', 'dapo_aime2025_s32_no_system', 'dapo_aime2024_s32_no_system',
+            'train-math-numinamath1.5_aops_forum_int', 'train-math-numinamath1.5_aops_forum_total',
+            'train-math-numinamath1.5_olympiads_int', 'train-math-numinamath1.5_olympiads_total', 
+            'gpqa_diamond'
+    ] or data_source.startswith("aime") or data_source.startswith("dapo"):
         from . import math_dapo
         res = math_dapo.compute_score(solution_str, ground_truth)
-    elif data_source in [
-            'numina_aops_forum', 'numina_synthetic_math', 'numina_amc_aime', 'numina_synthetic_amc', 'numina_cn_k12',
-            'numina_olympiads'
-    ]:
-        from . import prime_math
-        res = prime_math.compute_score(solution_str, ground_truth)
+    elif data_source.startswith("math_judge"):
+        from . import math_dapo
+        res = math_dapo.compute_score(solution_str, ground_truth)
+        # from . import remote_reward_batch
+        #
+        # res = remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
+
+        # 调用judge model，
+        # r"\\boxed\s*{([^}]*)}"匹配response中的pred 在路径/afs/chatrl/users/hwq/code/verl-req-sched/verl/utils/reward_score/remote_reward/__init__.py
+        # qwen3默认配置nothinking模式，可在下面文件修改/afs/chatrl/users/hwq/code/verl-req-sched/verl/utils/reward_score/remote_reward/tools/api/base.py
+        # extra_body={"chat_template_kwargs": {"enable_thinking": False}}, # nothinking，改成True为thinking
+        # 有任何报错找胡文晴
     elif data_source in ['codecontests', 'apps', 'codeforces', 'taco']:
         from . import prime_code
         res = prime_code.compute_score(solution_str, ground_truth, continuous=True)
@@ -78,6 +97,8 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
         raise NotImplementedError(f"Reward function is not implemented for {data_source=}")
 
     if isinstance(res, dict):
+        return res
+    elif isinstance(res, (list, tuple)):
         return res
     elif isinstance(res, (int, float, bool)):
         return float(res)
