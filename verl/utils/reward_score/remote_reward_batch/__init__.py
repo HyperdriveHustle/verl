@@ -87,7 +87,7 @@ def save_to_jsonl(prompt, response):
     with open(SAVE_JUDGE_PATH, 'a', encoding='utf-8') as f:
         f.write(json.dumps(record, ensure_ascii=False) + '\n')
 
-def match_answer_content(processed_str, answer_pattern = r'<answer>(.*?)</answer>'):
+def match_answer_content(processed_str, answer_pattern = r"(?i)Answer\s*:\s*([^\n]+)"):
     matches = list(re.finditer(answer_pattern, processed_str, re.DOTALL))
     if not matches:
         # print("verify <answer> not matches, return None")
@@ -227,8 +227,8 @@ def compute_score(data_source, solution_str, ground_truth, extra_info):
     pred = match_answer_content(
         response_str,
         # dapo prompt
-        # answer_pattern=r"(?i)Answer\s*:\s*([^\n]+)"
-        answer_pattern = r"\\boxed\s*{([^}]*)}"
+        answer_pattern=r"(?i)Answer\s*:\s*([^\n]+)"
+        # answer_pattern = r"\\boxed\s*{([^}]*)}"
     )
     # 根据 box 里面的内容判断（如果有 boxed 的话）
     format_correct = -1.0
@@ -263,9 +263,10 @@ def compute_score_batched(data_sources, solution_strs, ground_truths, extra_info
     # 提前截断 response，并抽取 pred
     response_strs = [s[-300:] for s in solution_strs]
     preds = [
-        match_answer_content(resp, answer_pattern=r"\\boxed\s*{([^}]*)}")
+        match_answer_content(resp, answer_pattern=r"(?i)Answer\s*:\s*([^\n]+)")
         for resp in response_strs
     ]
+
 
     # 用 get_response_by_generate 并发地去询问 judge model（利用 batched_generate_single 包装的）
     responses = get_response_by_batch_generate(problems, preds, ground_truths)
@@ -286,10 +287,11 @@ def compute_score_batched(data_sources, solution_strs, ground_truths, extra_info
             reward = format_correct
         else:
             reward = answer_correct
+        acc = 1.0 if answer_correct == 1.0 else 0.0
 
         result = {
             "score": reward,
-            "acc": answer_correct,
+            "acc": acc,
             "pred": "" if pred is None else pred
         }
         results.append(result)

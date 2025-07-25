@@ -257,7 +257,12 @@ def compute_score(
     correct, pred = verify(solution_str, ground_truth, strict_box_verify, pause_tokens_index)
 
     reward = 1.0 if correct else -1.0
-    acc = correct
+    # acc = 1.0 if correct else 0.0
+    if reward == 1.0:
+        acc = 1.0
+    elif reward == -1.0:
+        acc = 0.0
+
 
     return {
         "score": reward,
