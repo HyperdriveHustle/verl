@@ -37,9 +37,11 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
             from . import remote_reward_batch
             return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
         elif all(isinstance(ds, str) and (ds.startswith("dapo") or ds.startswith("train-math-numinamath")) for ds in data_source):
-            from . import math_dapo
-            # 批量调用 math_dapo
-            return [math_dapo.compute_score(s, g) for s, g in zip(solution_str, ground_truth)]
+            # from . import math_dapo
+            # # 批量调用 math_dapo
+            # return [math_dapo.compute_score(s, g) for s, g in zip(solution_str, ground_truth)]
+            from . import remote_reward_batch
+            return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
         else:
             from . import remote_reward_batch
             return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)

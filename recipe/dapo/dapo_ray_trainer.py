@@ -453,10 +453,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                 num_gen_batches = 0
 
                 # TODO: make a canonical logger that supports various backend
-                print("-------------------------self.global_steps logger.log start---------------------------")
                 logger.log(data=metrics, step=self.global_steps)
-                print(self.global_steps)
-                print("-------------------------self.global_steps logger.log end---------------------------")
 
                 if do_profile:
                     self.actor_rollout_wg.stop_profile()
