@@ -16,7 +16,6 @@
 import re
 from typing import Optional
 
-
 def last_boxed_only_string(string: str) -> Optional[str]:
     """Extract the last LaTeX boxed expression from a string.
 
@@ -262,7 +261,6 @@ def compute_score(
         acc = 1.0
     elif reward == -1.0:
         acc = 0.0
-
 
     return {
         "score": reward,

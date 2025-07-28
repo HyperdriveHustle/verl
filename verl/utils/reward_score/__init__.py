@@ -37,11 +37,17 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
             from . import remote_reward_batch
             return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
         elif all(isinstance(ds, str) and (ds.startswith("dapo") or ds.startswith("train-math-numinamath")) for ds in data_source):
-            # from . import math_dapo
-            # # 批量调用 math_dapo
-            # return [math_dapo.compute_score(s, g) for s, g in zip(solution_str, ground_truth)]
-            from . import remote_reward_batch
-            return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
+            from . import math_verify
+            print("use math_verify")
+            # 批量调用 math_dapo
+            return [math_verify.compute_score(s, g) for s, g in zip(solution_str, ground_truth)]
+            # from . import remote_reward_batch
+            # return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
+        elif all(isinstance(ds, str) and (ds.startswith("boxed")) for ds in
+                 data_source):
+            from . import math_verify_boxed
+            # 批量调用 math_dapo
+            return [math_verify_boxed.compute_score(s, g) for s, g in zip(solution_str, ground_truth)]
         else:
             from . import remote_reward_batch
             return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
@@ -68,18 +74,6 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
     ] or data_source.startswith("aime") or data_source.startswith("dapo"):
         from . import math_dapo
         res = math_dapo.compute_score(solution_str, ground_truth)
-    elif data_source.startswith("math_judge"):
-        from . import math_dapo
-        res = math_dapo.compute_score(solution_str, ground_truth)
-        # from . import remote_reward_batch
-        #
-        # res = remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
-
-        # 调用judge model，
-        # r"\\boxed\s*{([^}]*)}"匹配response中的pred 在路径/afs/chatrl/users/hwq/code/verl-req-sched/verl/utils/reward_score/remote_reward/__init__.py
-        # qwen3默认配置nothinking模式，可在下面文件修改/afs/chatrl/users/hwq/code/verl-req-sched/verl/utils/reward_score/remote_reward/tools/api/base.py
-        # extra_body={"chat_template_kwargs": {"enable_thinking": False}}, # nothinking，改成True为thinking
-        # 有任何报错找胡文晴
     elif data_source in ['codecontests', 'apps', 'codeforces', 'taco']:
         from . import prime_code
         res = prime_code.compute_score(solution_str, ground_truth, continuous=True)

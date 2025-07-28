@@ -190,7 +190,6 @@ class RLHFDataset(Dataset):
         return len(self.dataframe)
 
     def _build_messages(self, example: dict):
-        # messages: list = example.pop(self.prompt_key)
         messages: list = example.get(self.prompt_key)
 
 
@@ -451,7 +450,6 @@ class RLHFDatasetFilter(RLHFDataset):
         # 输出结果：row_dict keys: dict_keys(['data_source', 'prompt', 'ability', 'reward_model', 'extra_info'])
         # print(f'[RLHFDatasetFilter] row_dict keys: {row_dict.keys()}')
 
-        # chat = row_dict.pop(self.prompt_key)
         chat = row_dict.get(self.prompt_key)
 
         # self.prompt_key='prompt' or message

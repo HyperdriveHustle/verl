@@ -25,11 +25,7 @@ from verl.workers.reward_manager import register
 import os
 import json
 
-save_num_examine_path_remote_batch = os.environ.get("SAVE_NUM_EXAMINE_PATH_REMOTE_BATCH", "/afs/chatrl/users/hwq/log/verl/logs_sensecore/save_num_examine_remote_batch.jsonl")  # 允许默认路径
-
-
-
-
+save_num_examine_path_remote_batch = os.environ.get("SAVE_NUM_EXAMINE_PATH_REMOTE_BATCH", "/afs/chatrl/users/hwq/log/verl/logs_sensecore/save_num_examine_remote_batch_test_val.jsonl")  # 允许默认路径
 
 
 

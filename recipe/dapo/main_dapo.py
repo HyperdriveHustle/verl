@@ -36,14 +36,10 @@ def run_ppo(config) -> None:
     if not ray.is_initialized():
         # this is for local ray cluster
         ray.init(
-            # local_mode=True, # hwq debug
+            # local_mode=True, # hwq ray debug
             runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true",
             "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
             "TENSORBOARD_DIR":os.environ.get("TENSORBOARD_DIR")}},
-            # runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true",
-            #                           "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
-            #                           "TENSORBOARD_DIR": "/afs/chatrl/users/hwq/models/verl_rl_models/verl_dapo_math_grpo_remote_reward/Qwen2.5-0.5B-Instruct_dapo-even_token-max_1node_rollout16_bs32_minibatch32_lr1e-6_sp1_tp1_maxlen16384_all_dapo_trick_no_resume_judge_model_name_Qwen3-30B-A3B_2025-07-15_13-30-00"}},
-            # /afs/chatrl/users/hwq/models/verl_rl_models/verl_dapo_math_grpo_remote_reward/Qwen2.5-0.5B-Instruct_dapo-even_token-max_1node_rollout16_bs32_minibatch32_lr1e-6_sp1_tp1_maxlen16384_all_dapo_trick_no_resume_judge_model_name_Qwen3-30B-A3B_2025-07-15_13-30-00
             num_cpus=config.ray_init.num_cpus,
         )
 
@@ -150,7 +146,7 @@ class TaskRunner:
             compute_score=compute_score,
             reward_fn_key=config.data.reward_fn_key,
             max_resp_len=config.data.max_response_length,
-            overlong_buffer_cfg=config.reward_model.overlong_buffer
+            overlong_buffer_cfg=config.reward_model.overlong_buffer,
         )
 
         val_reward_kwargs = dict(
@@ -159,7 +155,7 @@ class TaskRunner:
             compute_score=compute_score,
             reward_fn_key=config.data.reward_fn_key,
             max_resp_len=config.data.max_response_length,
-            overlong_buffer_cfg=config.reward_model.overlong_buffer
+            overlong_buffer_cfg=config.reward_model.overlong_buffer,
         )
 
         if 'remote_reward_cfg' in reward_manager_cls.__init__.__code__.co_varnames:

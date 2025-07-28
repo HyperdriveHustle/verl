@@ -23,7 +23,7 @@ from verl.workers.reward_manager import register
 import os
 import json
 
-save_num_examine_path_dapo = os.environ.get("SAVE_NUM_EXAMINE_PATH_DAPO", "/afs/chatrl/users/hwq/log/verl/logs_sensecore/save_num_examine_dapo.jsonl")  # 允许默认路径
+save_num_examine_path_dapo = os.environ.get("SAVE_NUM_EXAMINE_PATH_DAPO", "/afs/chatrl/users/hwq/log/verl/logs_sensecore/save_num_examine_dapo.jsonl")
 
 
 
