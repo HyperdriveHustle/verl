@@ -6,10 +6,9 @@ import openai
 from openai import AzureOpenAI
 
 
-from verl.utils.reward_score.remote_reward_batch.tools.base import Tool, GenerateTool
 
 
-class OpenAIClientTool(GenerateTool):
+class OpenAIClientTool:
     def __init__(self, name: str, api_key: str = None, api_type: str = None, api_version: str = None, base_url: str = None) -> None:
         self.name = name
         self.api_key = api_key

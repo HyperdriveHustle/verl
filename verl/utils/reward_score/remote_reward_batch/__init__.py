@@ -18,7 +18,7 @@ from time import sleep
 import requests
 import re
 from verl.utils.reward_score.math import last_boxed_only_string, remove_boxed
-from .tools.api.base import OpenAIClientTool
+from .api.base import OpenAIClientTool
 
 
 # BASE_URL = "http://127.0.0.1:6664/v1" # qwen25 32b instruct
