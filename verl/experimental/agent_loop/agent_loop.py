@@ -261,7 +261,6 @@ class AgentLoopWorker:
             top_p=config.top_p,
             repetition_penalty=1.0,
         )
-
         # override sampling params for validation
         if batch.meta_info.get("validate", False):
             sampling_params["top_p"] = config.val_kwargs.top_p
