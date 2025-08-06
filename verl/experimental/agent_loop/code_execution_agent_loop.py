@@ -38,7 +38,7 @@ class CodeExecutionAgentLoop(AgentLoopBase):
         cls.response_length = config.actor_rollout_ref.rollout.response_length
 
     @rollout_trace_op
-    async def run(self, messages: list[dict[str, Any]], sampling_params: dict[str, Any]) -> AgentLoopOutput:
+    async def run(self, messages: list[dict[str, Any]], sampling_params_w_test_code: dict[str, Any]) -> AgentLoopOutput:
         metrics = {}
         request_id = uuid4().hex
         prompt_ids = await self.loop.run_in_executor(
@@ -48,11 +48,13 @@ class CodeExecutionAgentLoop(AgentLoopBase):
             ),
         )
 
+        sampling_params = sampling_params_w_test_code["sampling_params"]
+        test_code = sampling_params_w_test_code["test_code"]
         with simple_timer("generate_sequence", metrics):
             response_ids = await self.server_manager.generate(
                 request_id=request_id, prompt_ids=prompt_ids, sampling_params=sampling_params
             )
-
+        #breakpoint()
         solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
         
         # 这个正则表达式会查找被三个反引号包裹的代码块，并可选地匹配 'python' 标识符
@@ -60,16 +62,17 @@ class CodeExecutionAgentLoop(AgentLoopBase):
         extracted_code = code_match.group(1).strip() if code_match else None
         
         reward = 0.0
-        
         if extracted_code and hasattr(self, 'reward_tool'):
+            extracted_code_w_test = extracted_code + "\n" + test_code
             with simple_timer("reward_calculation", metrics):
                 instance_id = None
                 try:
                     instance_id = await self.reward_tool.create()
                     # 假设奖励工具的 execute 方法接受一个包含 "code" 的字典
                     # 并且返回 (result_string, score, metrics)
-                    response, score, _ = await self.reward_tool.execute(instance_id, {"code": extracted_code})
-                    reward = score if score is not None else 0.0
+                    response, score, _ = await self.reward_tool.execute(instance_id, {"code": extracted_code_w_test})
+                    reward = 1.0 if score == "Success" else 0.0
+                    #breakpoint()
                 except Exception as e:
                     logger.error(f"Error during reward calculation: {e}")
                     reward = 0.0 # 出错时给予默认奖励
@@ -78,13 +81,14 @@ class CodeExecutionAgentLoop(AgentLoopBase):
                         await self.reward_tool.release(instance_id)
 
         # 6. 打包最终输出
+        #breakpoint()
         output = AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids[: self.response_length],
             # 因为所有内容都是LLM生成的，所以mask全是1
             response_mask=[1] * len(response_ids[: self.response_length]),
-            reward=reward,
             num_turns=2,  # 1个用户轮次, 1个助手轮次
             metrics=metrics,
+            reward=reward
         )
         return output

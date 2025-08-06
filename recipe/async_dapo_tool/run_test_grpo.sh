@@ -14,7 +14,7 @@ train_files="['$leetcode2k']"
 test_files="['$leetcode2k_test']"
 export TENSORBOARD_DIR=/nvfile-heatstorage/teleai-infra/wlw/workspace/${project_name}/${experiment_name}
 # tool
-tool_config_path=$DATA_ROOT/recipe/retool/sandbox_fusion_tool_config.yaml
+tool_config_path=$DATA_ROOT/recipe/async_dapo_tool/sandbox_fusion_tool_config.yaml
 
 # wandb
 project_name=wlw_retool
@@ -38,10 +38,10 @@ max_prompt_length=2048
 max_response_length=16384
 actor_lr=1e-6
 
-train_batch_size=512
-ppo_mini_batch_size=64
-n_resp_per_prompt=16
-n_resp_per_prompt_val=30
+train_batch_size=8
+ppo_mini_batch_size=8
+n_resp_per_prompt=8
+n_resp_per_prompt_val=8
 
 # ================= perfomance =================
 infer_tp=1 # vllm
@@ -93,7 +93,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.multi_turn.max_assistant_turns=$max_turns \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=$tool_config_path \
     actor_rollout_ref.rollout.multi_turn.format=hermes \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.9 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
     actor_rollout_ref.rollout.n=$n_resp_per_prompt \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.6 \
     actor_rollout_ref.rollout.val_kwargs.temperature=1.0 \
@@ -101,7 +101,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=4 \
+    trainer.n_gpus_per_node=1 \
     trainer.val_before_train=True \
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \

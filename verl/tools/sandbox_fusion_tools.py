@@ -175,14 +175,16 @@ class SandboxFusionTool(BaseTool):
         return result, None, None
 
     def execute_code(self, instance_id, code, timeout=30, language="python"):
+        #breakpoint()
         result_status, metadata = _process_single_case(
             0, None, None, self.sandbox_fusion_url, code, timeout, self.memory_limit_mb, language
         )
         # we should always expect this since we don't have correct answer
         if metadata["run_status"] == "Finished":
             actual_output = metadata["stdout"] + metadata["stderr"]
+            code_status = metadata["api_status"]
             logger.debug(f"actual_output from sandbox fusion: {actual_output},{instance_id}")
-            return actual_output
+            return actual_output, code_status
         else:
             return "no stdout here"
 

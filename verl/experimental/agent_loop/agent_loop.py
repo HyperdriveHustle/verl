@@ -13,11 +13,13 @@
 # limitations under the License.
 import asyncio
 import heapq
+import json
 import logging
 import os
 import re
 import random
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from typing import Any
 
 import hydra
@@ -125,7 +127,7 @@ class AgentLoopOutput(BaseModel):
     """Number of chat turns, including user, assistant, tool."""
     metrics: AgentLoopMetrics
     """Auxiliary performance metrics"""
-    reward: dict[str, Any] = {}
+    reward: float = 0.0
     """Reward for the agent loop, can be used for reinforcement learning."""
 
 
@@ -272,10 +274,13 @@ class AgentLoopWorker:
         # by default, we assume it's a single turn agent
         if "agent_name" not in batch.non_tensor_batch:
             batch.non_tensor_batch["agent_name"] = np.array(["code_execution_agent"] * len(batch), dtype=object)
-
+        #breakpoint()
         tasks = []
         agent_names = batch.non_tensor_batch["agent_name"]
         raw_prompts = batch.non_tensor_batch["raw_prompt"]
+        test_codes = [json.loads(node["ground_truth"])["functional"] for node in batch.non_tensor_batch["reward_model"]]
+        #wlw
+        
         if "index" in batch.non_tensor_batch:
             index = batch.non_tensor_batch["index"]
         else:
@@ -284,10 +289,11 @@ class AgentLoopWorker:
         trajectory_info = await get_trajectory_info(
             batch.meta_info.get("global_steps", -1), index, batch.meta_info.get("validate", False)
         )
-
-        for agent_name, messages, trajectory in zip(agent_names, raw_prompts, trajectory_info, strict=True):
+        #wlw
+        for agent_name, messages, trajectory, test_code in zip(agent_names, raw_prompts, trajectory_info, test_codes, strict=True):
+            sampling_params_w_test_code = {"sampling_params": sampling_params, "test_code": test_code}
             tasks.append(
-                asyncio.create_task(self._run_agent_loop(agent_name, messages.tolist(), sampling_params, trajectory))
+                asyncio.create_task(self._run_agent_loop(agent_name, messages.tolist(), sampling_params_w_test_code, trajectory))
             )
         outputs = await asyncio.gather(*tasks)
 
@@ -298,7 +304,7 @@ class AgentLoopWorker:
         self,
         agent_name: str,
         messages: list[dict[str, Any]],
-        sampling_params: dict[str, Any],
+        sampling_params_w_test_code: dict[str, Any], #wlw:{"sampling_params": sampling_params, "test_code": test_code}
         trajectory: dict[str, Any],
     ) -> AgentLoopOutput:
         with rollout_trace_attr(
@@ -319,7 +325,7 @@ class AgentLoopWorker:
                 server_manager=self.server_manager,
                 tokenizer=self.tokenizer,
             )
-            output = await agent_loop.run(messages, sampling_params)
+            output = await agent_loop.run(messages, sampling_params_w_test_code)
             return output
 
     def _postprocess(self, inputs: list[AgentLoopOutput]) -> DataProto:
@@ -351,7 +357,8 @@ class AgentLoopWorker:
             return_attention_mask=True,
         )
         response_ids, response_attention_mask = outputs["input_ids"], outputs["attention_mask"]
-
+        valid_response_lengths = [ len(input.response_ids) for input in inputs ]
+        print(f"[AgentLoop][DEBUG] max valid_response_lengths: {max(valid_response_lengths)}")
         # response_mask
         outputs = self.tokenizer.pad(
             [{"input_ids": input.response_mask} for input in inputs],
@@ -370,6 +377,13 @@ class AgentLoopWorker:
         attention_mask = torch.cat([prompt_attention_mask, response_attention_mask], dim=1)
         position_ids = (attention_mask.cumsum(dim=1) - 1) * attention_mask
 
+        #wlw: reward
+        reward_tensor = torch.zeros_like(response_ids, dtype=torch.float32)
+        reward_extra_info = defaultdict(list)
+        for i, input in enumerate(inputs):
+            reward_tensor[i, valid_response_lengths[i]-1] = input.reward
+            reward_extra_info["score"].append(input.reward)
+
         batch = TensorDict(
             {
                 "prompts": prompt_ids,  # [bsz, prompt_length]
@@ -378,13 +392,19 @@ class AgentLoopWorker:
                 "input_ids": input_ids,  # [bsz, prompt_length + response_length]
                 "attention_mask": attention_mask,  # [bsz, prompt_length + response_length]
                 "position_ids": position_ids,  # [bsz, prompt_length + response_length]
+                "token_level_scores": reward_tensor,
             },
             batch_size=len(input_ids),
         )
 
         num_turns = np.array([input.num_turns for input in inputs], dtype=np.int32)
         metrics = [input.metrics.model_dump() for input in inputs]
-        return DataProto(batch=batch, non_tensor_batch={"__num_turns__": num_turns}, meta_info={"metrics": metrics})
+        code_rewards = np.array([input.reward for input in inputs])
+        non_tensor_batch ={
+            "__num_turns__": num_turns,
+            "code_rewards":code_rewards
+        }
+        return DataProto(batch=batch, non_tensor_batch=non_tensor_batch, meta_info={"metrics": metrics})
 
 
 async def get_trajectory_info(step, index, validate):
