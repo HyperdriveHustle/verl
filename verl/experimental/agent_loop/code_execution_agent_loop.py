@@ -41,7 +41,6 @@ class CodeExecutionAgentLoop(AgentLoopBase):
     async def run(self, messages: list[dict[str, Any]], sampling_params: dict[str, Any]) -> AgentLoopOutput:
         metrics = {}
         request_id = uuid4().hex
-        
         prompt_ids = await self.loop.run_in_executor(
             None,
             lambda: self.tokenizer.apply_chat_template(
@@ -61,6 +60,7 @@ class CodeExecutionAgentLoop(AgentLoopBase):
         extracted_code = code_match.group(1).strip() if code_match else None
         
         reward = 0.0
+        
         if extracted_code and hasattr(self, 'reward_tool'):
             with simple_timer("reward_calculation", metrics):
                 instance_id = None

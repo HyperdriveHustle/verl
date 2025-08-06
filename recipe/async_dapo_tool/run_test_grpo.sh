@@ -3,21 +3,23 @@ set -x
 # ================= data/model/tool =================
 HDFS_ROOT=${HDFS_ROOT:-$PWD}
 DATA_ROOT=${DATA_ROOT:-$PWD}
+echo $HDFS_ROOT
+leetcode2k=/nvfile-heatstorage/teleai-infra/wlw/data/code-r1-3k-leetcode2k-train
+leetcode2k_test=/nvfile-heatstorage/teleai-infra/wlw/data/code-r1-3k-leetcode2k-test
+#for test:use the same
+aime_2025=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data
+model_path=/nvfile-heatstorage/chatrl/public/models/Qwen2.5-0.5B-Instruct
 
-dapo_math_17k=$DATA_ROOT/dataset/BytedTsinghua-SIA/DAPO-Math-17k
-aime_2024=$DATA_ROOT/dataset/Maxwell-Jia/AIME_2024
-aime_2025=$DATA_ROOT/dataset/yentinglin/aime_2025
-model_path=$HDFS_ROOT/checkpoint/multiturn-sft-qwen-2.5-32b-instruct/global_step_372
-
-train_files="['$dapo_math_17k']"
-test_files="['$aime_2025']"
-
+train_files="['$leetcode2k']"
+test_files="['$leetcode2k_test']"
+export TENSORBOARD_DIR=/nvfile-heatstorage/teleai-infra/wlw/workspace/${project_name}/${experiment_name}
 # tool
-tool_config_path=recipe/retool/sandbox_fusion_tool_config.yaml
+tool_config_path=$DATA_ROOT/recipe/retool/sandbox_fusion_tool_config.yaml
 
 # wandb
-project_name=wuxibin_retool
-experiment_name=qwen2.5-32b_dapo
+project_name=wlw_retool
+export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+experiment_name=Qwen25-7B-Instruct_${TIMESTAMP}
 default_local_dir=$DATA_ROOT/checkpoint/$experiment_name
 
 # ================= algorithm =================
@@ -42,13 +44,15 @@ n_resp_per_prompt=16
 n_resp_per_prompt_val=30
 
 # ================= perfomance =================
-infer_tp=4 # vllm
-train_sp=8 # train
+infer_tp=1 # vllm
+train_sp=1 # train
 offload=True
-
+#export VLLM_USE_V1=1
 actor_max_token_len_per_gpu=$(( (max_prompt_length + max_response_length) * 1 ))
 log_prob_max_token_len_per_gpu=$(( actor_max_token_len_per_gpu * 4 ))
 
+#python3 -m verl.trainer.main_ppo \
+#python3 -m recipe.async_dapo_tool.main_dapo \
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=$adv_estimator \
     algorithm.use_kl_in_reward=$use_kl_in_reward \
@@ -61,9 +65,9 @@ python3 -m verl.trainer.main_ppo \
     data.max_response_length=$max_response_length \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
-    data.custom_cls.path=recipe/async_dapo_tool/dapo_tool.py \
+    data.custom_cls.path=$HDFS_ROOT/recipe/async_dapo_tool/custom_unit.py \
     data.custom_cls.name=CustomRLHFDataset \
-    custom_reward_function.path=recipe/retool/retool.py \
+    custom_reward_function.path=$HDFS_ROOT/recipe/async_dapo_tool/custom_unit.py \
     custom_reward_function.name=compute_score \
     actor_rollout_ref.model.path=$model_path \
     actor_rollout_ref.model.use_remove_padding=True \
@@ -94,14 +98,14 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.6 \
     actor_rollout_ref.rollout.val_kwargs.temperature=1.0 \
     actor_rollout_ref.rollout.val_kwargs.n=$n_resp_per_prompt_val \
-    trainer.logger=['console','wandb'] \
+    trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=$ARNOLD_WORKER_GPU \
+    trainer.n_gpus_per_node=4 \
     trainer.val_before_train=True \
     trainer.log_val_generations=100 \
-    trainer.nnodes=$ARNOLD_WORKER_NUM \
+    trainer.nnodes=1 \
     trainer.save_freq=30 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=5 \
-    trainer.total_epochs=1 $@
+    trainer.total_epochs=1 $@ 2>&1 | tee /nvfile-heatstorage/teleai-infra/wlw/workspace/logs/logs_agent/$experiment_name.log

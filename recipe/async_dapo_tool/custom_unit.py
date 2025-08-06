@@ -68,8 +68,12 @@ class CustomRLHFDataset(RLHFDataset):
         dataframes = []
         for parquet_file in self.data_files:
             # read parquet files and cache
-            dataframe = datasets.load_dataset(parquet_file)["train"]
             data_source = "/".join(parquet_file.split("/")[-2:])
+            if "train" in data_source:
+                dataframe = datasets.load_dataset(parquet_file)["train"]
+            elif "test" in data_source:
+                dataframe = datasets.load_dataset(parquet_file)["test"]
+            print(dataframe)
             if "leetcode2k" in data_source:
                 dataframe = dataframe.map(self.map_fn2, num_proc=16)
             else:
