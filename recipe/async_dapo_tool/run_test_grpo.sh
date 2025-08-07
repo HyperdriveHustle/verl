@@ -8,11 +8,11 @@ leetcode2k=/nvfile-heatstorage/teleai-infra/wlw/data/code-r1-3k-leetcode2k-train
 leetcode2k_test=/nvfile-heatstorage/teleai-infra/wlw/data/code-r1-3k-leetcode2k-test
 #for test:use the same
 aime_2025=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data
+#model_path=/model/Qwen25-7B-Instruct
 model_path=/model/Qwen2.5-3B
 
 train_files="['$leetcode2k']"
 test_files="['$leetcode2k_test']"
-export TENSORBOARD_DIR=/nvfile-heatstorage/teleai-infra/wlw/workspace/${project_name}/${experiment_name}
 # tool
 tool_config_path=$DATA_ROOT/recipe/async_dapo_tool/sandbox_fusion_tool_config.yaml
 
@@ -35,10 +35,10 @@ clip_ratio_high=0.28
 
 max_turns=8
 max_prompt_length=2048
-max_response_length=16384
+max_response_length=4096
 actor_lr=1e-6
 
-train_batch_size=8
+train_batch_size=32
 ppo_mini_batch_size=8
 n_resp_per_prompt=16
 n_resp_per_prompt_val=1
@@ -50,7 +50,7 @@ offload=True
 #export VLLM_USE_V1=1
 actor_max_token_len_per_gpu=$(( (max_prompt_length + max_response_length) * 1 ))
 log_prob_max_token_len_per_gpu=$(( actor_max_token_len_per_gpu * 4 ))
-
+export TENSORBOARD_DIR=/nvfile-heatstorage/teleai-infra/wlw/workspace/${project_name}/${experiment_name}
 #python3 -m verl.trainer.main_ppo \
 #python3 -m recipe.async_dapo_tool.main_dapo \
 python3 -m verl.trainer.main_ppo \

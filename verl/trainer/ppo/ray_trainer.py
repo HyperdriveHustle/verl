@@ -666,7 +666,7 @@ class RayPPOTrainer:
                 non_tensor_batch_keys_to_pop.append("agent_name")
 
             #wlw
-                if "reward_model" in test_gen_batch.non_tensor_batch:
+                if "reward_model" in test_batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("reward_model")
 
             test_gen_batch = test_batch.pop(
@@ -700,7 +700,7 @@ class RayPPOTrainer:
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
 
             print("validation generation end")
-            breakpoint()
+            #breakpoint()
             # Store generated outputs
             output_ids = test_output_gen_batch.batch["responses"]
             output_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids]
@@ -713,8 +713,14 @@ class RayPPOTrainer:
             # if self.val_reward_fn is None:
             #     raise ValueError("val_reward_fn must be provided for validation.")
             # result = self.val_reward_fn(test_batch, return_dict=True)
-            rewards = test_batch.non_tensor_batch["code_rewards"]
-            scores = rewards.sum(-1).tolist()
+            # evaluate using reward_function
+            if "code_rewards" in test_batch.non_tensor_batch:
+                result = test_batch.non_tensor_batch["code_rewards"]
+            else:
+                if self.val_reward_fn is None:
+                    raise ValueError("val_reward_fn must be provided for validation.")
+                result = self.val_reward_fn(test_batch, return_dict=True)
+            scores = result.tolist()
             sample_scores.extend(scores)
 
             reward_extra_infos_dict["reward"].extend(scores)
@@ -724,10 +730,13 @@ class RayPPOTrainer:
             if "__num_turns__" in test_batch.non_tensor_batch:
                 sample_turns.append(test_batch.non_tensor_batch["__num_turns__"])
 
-            data_source_lst.append(test_batch.non_tensor_batch.get("data_source", ["unknown"] * rewards.shape[0]))
+            data_source_lst.append(test_batch.non_tensor_batch.get("data_source", ["unknown"] * result.shape[0]))
 
         self._maybe_log_val_generations(inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores)
 
+        pass_count = sum(1 for score in sample_scores if score > 0.5)
+        total_count = len(sample_scores)
+        pass_rate = pass_count / total_count if total_count > 0 else 0.0
         # dump generations
         val_data_dir = self.config.trainer.get("validation_data_dir", None)
         if val_data_dir:
@@ -742,32 +751,40 @@ class RayPPOTrainer:
         for key_info, lst in reward_extra_infos_dict.items():
             assert len(lst) == 0 or len(lst) == len(sample_scores), f"{key_info}: {len(lst)=}, {len(sample_scores)=}"
 
-        data_sources = np.concatenate(data_source_lst, axis=0)
+        #data_sources = np.concatenate(data_source_lst, axis=0)
 
-        data_src2var2metric2val = process_validation_metrics(data_sources, sample_inputs, reward_extra_infos_dict)
-        metric_dict = {}
-        for data_source, var2metric2val in data_src2var2metric2val.items():
-            core_var = "acc" if "acc" in var2metric2val else "reward"
-            for var_name, metric2val in var2metric2val.items():
-                n_max = max([int(name.split("@")[-1].split("/")[0]) for name in metric2val.keys()])
-                for metric_name, metric_val in metric2val.items():
-                    if (
-                        (var_name == core_var)
-                        and any(metric_name.startswith(pfx) for pfx in ["mean", "maj", "best"])
-                        and (f"@{n_max}" in metric_name)
-                    ):
-                        metric_sec = "val-core"
-                    else:
-                        metric_sec = "val-aux"
-                    pfx = f"{metric_sec}/{data_source}/{var_name}/{metric_name}"
-                    metric_dict[pfx] = metric_val
+        # data_src2var2metric2val = process_validation_metrics(data_sources, sample_inputs, reward_extra_infos_dict)
+        # metric_dict = {}
+        # for data_source, var2metric2val in data_src2var2metric2val.items():
+        #     core_var = "acc" if "acc" in var2metric2val else "reward"
+        #     for var_name, metric2val in var2metric2val.items():
+        #         n_max = max([int(name.split("@")[-1].split("/")[0]) for name in metric2val.keys()])
+        #         for metric_name, metric_val in metric2val.items():
+        #             if (
+        #                 (var_name == core_var)
+        #                 and any(metric_name.startswith(pfx) for pfx in ["mean", "maj", "best"])
+        #                 and (f"@{n_max}" in metric_name)
+        #             ):
+        #                 metric_sec = "val-core"
+        #             else:
+        #                 metric_sec = "val-aux"
+        #             pfx = f"{metric_sec}/{data_source}/{var_name}/{metric_name}"
+        #             metric_dict[pfx] = metric_val
 
-        if len(sample_turns) > 0:
-            sample_turns = np.concatenate(sample_turns)
-            metric_dict["val-aux/num_turns/min"] = sample_turns.min()
-            metric_dict["val-aux/num_turns/max"] = sample_turns.max()
-            metric_dict["val-aux/num_turns/mean"] = sample_turns.mean()
-
+        # if len(sample_turns) > 0:
+        #     sample_turns = np.concatenate(sample_turns)
+        #     metric_dict["val-aux/num_turns/min"] = sample_turns.min()
+        #     metric_dict["val-aux/num_turns/max"] = sample_turns.max()
+        #     metric_dict["val-aux/num_turns/mean"] = sample_turns.mean()
+        metric_dict = {
+            "val-core/code/pass@1": pass_rate,
+            "val-core/code/correct_count": pass_count,
+            "val-core/code/total_count": total_count,
+            "val-core/code/mean_score": np.mean(sample_scores) if sample_scores else 0.0,
+            "val-core/code/max_score": max(sample_scores) if sample_scores else 0.0,
+            "val-core/code/min_score": min(sample_scores) if sample_scores else 0.0,
+        }
+        print(metric_dict)
         return metric_dict
 
     def init_workers(self):

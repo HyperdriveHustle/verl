@@ -147,9 +147,8 @@ class CodeExecutionAgentLoop(AgentLoopBase):
                 instance_id = None
                 try:
                     instance_id = await self.reward_tool.create()
-                    # 假设奖励工具的 execute 方法接受一个包含 "code" 的字典
-                    # 并且返回 (result_string, score, metrics)
                     response, score, _ = await self.reward_tool.execute(instance_id, {"code": extracted_code_w_test})
+                    print(score)
                     reward = 1.0 if score == "Success" else 0.0
                     #breakpoint()
                 except Exception as e:

@@ -54,8 +54,13 @@ class CustomSandboxFusionTool(SandboxFusionTool):
             code = str(code)
 
         result = await self.execution_pool.execute.remote(self.execute_code, instance_id, code, timeout, language)
-        # sandbox has no score or metrics, use Nones
-        return result, None, None
+        if isinstance(result, tuple) and len(result) == 2:
+            actual_output, code_status = result
+            return actual_output, code_status, None
+        elif isinstance(result, str):
+            return result, "Failed", None
+        else:
+            return str(result), "Failed", None
 
 
 answer_format = """\nThe answer format must be: \\boxed{'The final answer goes here.'}"""
