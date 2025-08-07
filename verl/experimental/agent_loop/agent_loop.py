@@ -402,7 +402,8 @@ class AgentLoopWorker:
         code_rewards = np.array([input.reward for input in inputs])
         non_tensor_batch ={
             "__num_turns__": num_turns,
-            "code_rewards":code_rewards
+            "code_rewards":code_rewards,
+            "reward_extra_info": reward_extra_info
         }
         return DataProto(batch=batch, non_tensor_batch=non_tensor_batch, meta_info={"metrics": metrics})
 
