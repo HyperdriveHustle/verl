@@ -175,7 +175,7 @@ class SandboxFusionTool(BaseTool):
         return result, None, None
 
     def execute_code(self, instance_id, code, timeout=30, language="python"):
-        #breakpoint()
+        breakpoint()
         result_status, metadata = _process_single_case(
             0, None, None, self.sandbox_fusion_url, code, timeout, self.memory_limit_mb, language
         )

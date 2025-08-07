@@ -1165,7 +1165,6 @@ class RayPPOTrainer:
 
                     # compute global_valid tokens
                     batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
-                    breakpoint()
                     with marked_timer("reward", timing_raw, color="yellow"):
                         # compute reward model score
                         #wlw
@@ -1245,7 +1244,7 @@ class RayPPOTrainer:
                             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
                             config=self.config.algorithm,
                         )
-
+                    breakpoint()
                     # update critic
                     if self.use_critic:
                         with marked_timer("update_critic", timing_raw, color="pink"):

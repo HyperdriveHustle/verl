@@ -8,7 +8,7 @@ leetcode2k=/nvfile-heatstorage/teleai-infra/wlw/data/code-r1-3k-leetcode2k-train
 leetcode2k_test=/nvfile-heatstorage/teleai-infra/wlw/data/code-r1-3k-leetcode2k-test
 #for test:use the same
 aime_2025=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data
-model_path=/nvfile-heatstorage/chatrl/public/models/Qwen2.5-0.5B-Instruct
+model_path=/model/Qwen2.5-3B
 
 train_files="['$leetcode2k']"
 test_files="['$leetcode2k_test']"
@@ -40,8 +40,8 @@ actor_lr=1e-6
 
 train_batch_size=8
 ppo_mini_batch_size=8
-n_resp_per_prompt=8
-n_resp_per_prompt_val=8
+n_resp_per_prompt=16
+n_resp_per_prompt_val=1
 
 # ================= perfomance =================
 infer_tp=1 # vllm
@@ -101,7 +101,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=1 \
+    trainer.n_gpus_per_node=4 \
     trainer.val_before_train=True \
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \

@@ -289,7 +289,6 @@ if __name__ == '__main__':
     #    sys.exit(1)
 """
         current_generation_code = wrapper_code
-
     stdin = None if stdin_data is None else str(stdin_data)
     try:
         if concurrent_semaphore:

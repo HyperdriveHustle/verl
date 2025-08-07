@@ -50,7 +50,8 @@ def minimize_stdio(inputs, outputs, max_n_tests=8):
 SYSTEM_PROMPT = """You are a helpful programming assistant. \
 The user will ask you a question and you as the assistant solve it. \
 The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. \
-The reasoning process and answer are enclosed within <think>...</think> and <answer>...</answer> tags, respectively."""
+The reasoning process and answer are enclosed within <think>...</think> and <answer>...</answer> tags, respectively. \
+Your code should be excutable and always be with necessary python imports based on your code"""
 
 PY_IMPORTS = "import heapq\nfrom math import floor, gcd\nimport random\nimport sys\nfrom typing import *\nfrom functools import *\nimport collections\nfrom collections import *\nfrom itertools import *\nfrom heapq import *\nfrom bisect import *\nfrom string import *\nimport math\nimport datetime\ninf = float('inf')\n"
 
