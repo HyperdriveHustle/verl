@@ -20,6 +20,12 @@ from verl import DataProto
 from verl.utils.reward_score import default_compute_score
 from verl.workers.reward_manager import register
 
+import os
+import json
+
+save_num_examine_path_dapo = os.environ.get("SAVE_NUM_EXAMINE_PATH_DAPO", "/afs/chatrl/users/hwq/log/verl/logs_sensecore/save_num_examine_dapo.jsonl")
+
+
 
 @register("dapo")
 class DAPORewardManager:
@@ -121,6 +127,7 @@ class DAPORewardManager:
                 already_print_data_sources[data_source] = 0
 
             if already_print_data_sources[data_source] < self.num_examine:
+            # if already_print_data_sources[data_source] < 500:
                 already_print_data_sources[data_source] += 1
                 print("[prompt]", prompt_str)
                 print("[response]", response_str)
@@ -130,6 +137,18 @@ class DAPORewardManager:
                         print(f"[{key}]", value)
                 else:
                     print("[score]", score)
+
+                    # 保存为 JSONL
+            output_item = {
+                "data_source": data_source,
+                "prompt": prompt_str,
+                "response": response_str,
+                "ground_truth": ground_truth,
+                "score": result
+            }
+            with open(save_num_examine_path_dapo, "a", encoding="utf-8") as fout:
+                fout.write(json.dumps(output_item, ensure_ascii=False) + "\n")
+
 
         if return_dict:
             return {

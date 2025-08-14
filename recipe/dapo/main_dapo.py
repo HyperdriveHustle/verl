@@ -36,7 +36,8 @@ def run_ppo(config) -> None:
     if not ray.is_initialized():
         # this is for local ray cluster
         ray.init(
-            runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", 
+            # local_mode=True, # hwq ray debug
+            runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true",
             "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
             "TENSORBOARD_DIR":os.environ.get("TENSORBOARD_DIR")}},
             num_cpus=config.ray_init.num_cpus,
@@ -47,6 +48,7 @@ def run_ppo(config) -> None:
         runner = TaskRunner.options(runtime_env={"nsight": nsight_options}).remote()
     else:
         runner = TaskRunner.remote()
+
     ray.get(runner.run.remote(config))
 
 
@@ -137,7 +139,8 @@ class TaskRunner:
         reward_manager_cls = get_reward_manager_cls(reward_manager_name)
 
         compute_score = get_custom_reward_fn(config)
-        reward_fn = reward_manager_cls(
+
+        reward_kwargs = dict(
             tokenizer=tokenizer,
             num_examine=0,
             compute_score=compute_score,
@@ -146,8 +149,7 @@ class TaskRunner:
             overlong_buffer_cfg=config.reward_model.overlong_buffer,
         )
 
-        # Note that we always use function-based RM for validation
-        val_reward_fn = reward_manager_cls(
+        val_reward_kwargs = dict(
             tokenizer=tokenizer,
             num_examine=1,
             compute_score=compute_score,
@@ -155,6 +157,15 @@ class TaskRunner:
             max_resp_len=config.data.max_response_length,
             overlong_buffer_cfg=config.reward_model.overlong_buffer,
         )
+
+        if 'remote_reward_cfg' in reward_manager_cls.__init__.__code__.co_varnames:
+            reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
+            val_reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
+
+
+        reward_fn = reward_manager_cls(**reward_kwargs)
+        val_reward_fn = reward_manager_cls(**val_reward_kwargs)
+
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
         trainer = RayDAPOTrainer(
