@@ -171,12 +171,18 @@ class CodeExecutionAgentLoop(AgentLoopBase):
                     #print(meta_data["status"], score)
                     #breakpoint()
                     
-                    answer_reward = ANSWER_REWARD if score.lower() == "success" else -ANSWER_REWARD
-                    metrics["timeout"] = 1 if meta_data["status"] == "timeout" else 0
-                    timeout_reward = -0.2 if metrics["timeout"] == 1 else 0 #超时额外处罚
+                    #answer_reward = ANSWER_REWARD if score.lower() == "success" else -ANSWER_REWARD
+                    if meta_data["status"] == "timeout":
+                        metrics["timeout"] = 1
+                        answer_reward = -0.2
+                    else:
+                        match_test_pass_rate = re.search(r"Pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
+                        answer_reward = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 0.0
+
                 except Exception as e:
+                    breakpoint()
                     logger.error(f"Error during reward calculation: {e}")
-                    answer_reward = -ANSWER_REWARD # 出错时给予默认奖励
+                    answer_reward = 0.0 # 出错时给予默认奖励
                 finally:
                     if instance_id:
                         await self.reward_tool.release(instance_id)
@@ -187,6 +193,7 @@ class CodeExecutionAgentLoop(AgentLoopBase):
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward
         reward = answer_reward + format_reward + timeout_reward
+        #breakpoint()
         output = AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids[: self.response_length],

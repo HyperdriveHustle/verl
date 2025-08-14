@@ -4,8 +4,8 @@ set -x
 HDFS_ROOT=${HDFS_ROOT:-$PWD}
 DATA_ROOT=${DATA_ROOT:-$PWD}
 echo $HDFS_ROOT
-leetcode2k=/nvfile-heatstorage/teleai-infra/wlw/data/code-r1-3k-leetcode2k-train
-leetcode2k_test=/nvfile-heatstorage/teleai-infra/wlw/data/code-r1-3k-leetcode2k-test
+leetcode2k=/nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/data/code-r1-3k-leetcode2k-train
+leetcode2k_test=/nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/data/code-r1-3k-leetcode2k-test
 #for test:use the same
 aime_2025=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data
 model_path=/model/Qwen25-7B-Instruct
@@ -20,7 +20,7 @@ tool_config_path=$DATA_ROOT/recipe/async_dapo_tool/sandbox_fusion_tool_config.ya
 project_name=wlw_retool
 export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 experiment_name=Qwen25-7B-Instruct_${TIMESTAMP}
-default_local_dir=$DATA_ROOT/checkpoint/$experiment_name
+default_local_dir=/nvfile-heatstorage/ai_infra/ckpts/wuxn5/wanglongwen/code_agent_checkpoint/$experiment_name
 
 # ================= algorithm =================
 adv_estimator=grpo
@@ -105,7 +105,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.val_before_train=True \
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \
-    trainer.save_freq=40 \
+    trainer.save_freq=-1 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=5 \
-    trainer.total_epochs=3 $@ 2>&1 | tee /nvfile-heatstorage/teleai-infra/wlw/workspace/logs/logs_agent/$experiment_name.log
+    trainer.total_epochs=3 $@ 2>&1 | tee /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent/$experiment_name.log
