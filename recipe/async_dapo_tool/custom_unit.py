@@ -39,14 +39,14 @@ class CustomSandboxFusionTool(SandboxFusionTool):
             code = matches[0].strip()
 
         # NOTE: some script may not explicitly print result, we need to add a print statement to the end of the script
-        lines = code.split("\n")
-        for i, line in reversed(list(enumerate(lines))):
-            if line == "":
-                continue
-            if not lines[i].startswith("print"):
-                lines[i] = f"print({line})"
-            break
-        code = "\n".join(lines)
+        # lines = code.split("\n")
+        # for i, line in reversed(list(enumerate(lines))):
+        #     if line == "":
+        #         continue
+        #     if not lines[i].startswith("print"):
+        #         lines[i] = f"print({line})"
+        #     break
+        # code = "\n".join(lines)
 
         timeout = parameters.get("timeout", self.default_timeout)
         language = parameters.get("language", self.default_language)
@@ -54,13 +54,10 @@ class CustomSandboxFusionTool(SandboxFusionTool):
             code = str(code)
 
         result = await self.execution_pool.execute.remote(self.execute_code, instance_id, code, timeout, language)
-        if isinstance(result, tuple) and len(result) == 2:
-            actual_output, code_status = result
-            return actual_output, code_status, None
-        elif isinstance(result, str):
-            return result, "Failed", None
-        else:
-            return str(result), "Failed", None
+        #breakpoint()
+        actual_output, code_status, meta_data = result
+        return actual_output, code_status, meta_data
+
 
 
 answer_format = """\nThe answer format must be: \\boxed{'The final answer goes here.'}"""

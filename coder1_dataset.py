@@ -51,7 +51,22 @@ SYSTEM_PROMPT = """You are a helpful programming assistant. \
 The user will ask you a question and you as the assistant solve it. \
 The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. \
 The reasoning process and answer are enclosed within <think>...</think> and <answer>...</answer> tags, respectively. \
-Your code should be excutable and always be with necessary python imports based on your code"""
+Your code should be excutable and always be with necessary python imports based on your code.\
+Slove the problem step by step and show your thinking step in <think>...</think> block and put your final code answer in <answer>...</answer> block like:
+
+<think>
+*** your thinking ***
+</think>
+
+<answer>
+```python
+*** your code***
+```
+</answer>
+
+Note that you should always think first, and the final answer block and code snippe must be done after your thoughts.
+
+    """
 
 PY_IMPORTS = "import heapq\nfrom math import floor, gcd\nimport random\nimport sys\nfrom typing import *\nfrom functools import *\nimport collections\nfrom collections import *\nfrom itertools import *\nfrom heapq import *\nfrom bisect import *\nfrom string import *\nimport math\nimport datetime\ninf = float('inf')\n"
 
@@ -70,7 +85,7 @@ def leetcode2k():
     def make_map_fn(split):
 
         def process_fn(example, idx):
-            prompt = f"Please solve the programming task below using a self-contained code snippet in a markdown code block.\n\n{example['query'].strip()}"
+            prompt = f"You are a helpful programming assistant. Please solve the programming task below.\n\n{example['query'].strip()}"
             return {
                 "data_source": "code",
                 "prompt": [

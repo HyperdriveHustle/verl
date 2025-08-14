@@ -338,7 +338,7 @@ if __name__ == '__main__':
         "run_status": None,
     }
     result_status = -1  # Default error: API request error or unknown sandbox error
-
+    #breakpoint()
     if error_msg:
         metadata["status"] = "api_error"
         result_status = -1  # API request itself failed (includes timeout after retries)
@@ -362,7 +362,7 @@ if __name__ == '__main__':
             metadata["compile_stderr"] = compile_result.get("stderr")
 
         # Extract run information
-        if run_result:
+        if run_result: 
             metadata["run_status"] = run_result.get("status")
             metadata["stdout"] = run_result.get("stdout")
             metadata["stderr"] = run_result.get("stderr")  # stderr during runtime

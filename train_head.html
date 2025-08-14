@@ -30,7 +30,19 @@
       <td>Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.\nYou may assume that each input would have exactly one solution, and you may not use the same element twice.\nYou can return the answer in any order.\n \nExample 1:\n\nInput: nums = [2,7,11,15], target = 9\nOutput: [0,1]\nExplanation: Because nums[0] + nums[1] == 9, we return [0, 1].\n\nExample 2:\n\nInput: nums = [3,2,4], target = 6\nOutput: [1,2]\n\nExample 3:\n\nInput: nums = [3,3], target = 6\nOutput: [0,1]\n\n \nConstraints:\n\n2 &lt;= nums.length &lt;= 104\n-109 &lt;= nums[i] &lt;= 109\n-109 &lt;= target &lt;= 109\nOnly one valid answer exists.\n\n \nFollow-up: Can you come up with an algorithm that is less than O(n2) time complexity?</td>
       <td>class Solution:\n    def twoSum(self, nums: List[int], target: int) -&gt; List[int]:\n</td>
       <td>2015-08-07</td>
-      <td>[{'content': 'You are a helpful programming assistant. The user will ask you a question and you as the assistant solve it. The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. The reasoning process and answer are enclosed within &lt;think&gt;...&lt;/think&gt; and &lt;answer&gt;...&lt;/answer&gt; tags, respectively. Your code should be excutable and always be with necessary python imports based on your code', 'role': 'system'}, {'content': 'Please solve the programming task below using a self-contained code snippet in a markdown code block.
+      <td>[{'content': 'You are a helpful programming assistant. The user will ask you a question and you as the assistant solve it. The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. The reasoning process and answer are enclosed within &lt;think&gt;...&lt;/think&gt; and &lt;answer&gt;...&lt;/answer&gt; tags, respectively. Your code should be excutable and always be with necessary python imports based on your code.Slove the problem step by step and show your thinking step in &lt;think&gt;...&lt;/think&gt; block and put your final code answer in &lt;answer&gt;...&lt;/answer&gt; block like:
+
+&lt;think&gt;
+*** your thinking ***
+&lt;/think&gt;
+
+&lt;answer&gt;
+```python
+*** your code***
+```
+&lt;/answer&gt;
+
+    ', 'role': 'system'}, {'content': 'Please solve the programming task below using a self-contained code snippet in a markdown code block.
 
 You are an expert Python programmer. You will be given a question (problem specification) and will generate a correct Python program that matches the specification and passes all tests.
 
@@ -143,7 +155,19 @@ class Solution:
       <td>You are given two non-empty linked lists representing two non-negative integers. The digits are stored in reverse order, and each of their nodes contains a single digit. Add the two numbers and return the sum as a linked list.\nYou may assume the two numbers do not contain any leading zero, except the number 0 itself.\n \nExample 1:\n\n\nInput: l1 = [2,4,3], l2 = [5,6,4]\nOutput: [7,0,8]\nExplanation: 342 + 465 = 807.\n\nExample 2:\n\nInput: l1 = [0], l2 = [0]\nOutput: [0]\n\nExample 3:\n\nInput: l1 = [9,9,9,9,9,9,9], l2 = [9,9,9,9]\nOutput: [8,9,9,9,0,0,0,1]\n\n \nConstraints:\n\nThe number of nodes in each linked list is in the range [1, 100].\n0 &lt;= Node.val &lt;= 9\nIt is guaranteed that the list represents a number that does not have leading zeros.\n\n</td>
       <td># Definition for singly-linked list.\n# class ListNode:\n#     def __init__(self, val=0, next=None):\n#         self.val = val\n#         self.next = next\nclass Solution:\n    def addTwoNumbers(self, l1: Optional[ListNode], l2: Optional[ListNode]) -&gt; Optional[ListNode]:\n</td>
       <td>2015-08-07</td>
-      <td>[{'content': 'You are a helpful programming assistant. The user will ask you a question and you as the assistant solve it. The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. The reasoning process and answer are enclosed within &lt;think&gt;...&lt;/think&gt; and &lt;answer&gt;...&lt;/answer&gt; tags, respectively. Your code should be excutable and always be with necessary python imports based on your code', 'role': 'system'}, {'content': 'Please solve the programming task below using a self-contained code snippet in a markdown code block.
+      <td>[{'content': 'You are a helpful programming assistant. The user will ask you a question and you as the assistant solve it. The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. The reasoning process and answer are enclosed within &lt;think&gt;...&lt;/think&gt; and &lt;answer&gt;...&lt;/answer&gt; tags, respectively. Your code should be excutable and always be with necessary python imports based on your code.Slove the problem step by step and show your thinking step in &lt;think&gt;...&lt;/think&gt; block and put your final code answer in &lt;answer&gt;...&lt;/answer&gt; block like:
+
+&lt;think&gt;
+*** your thinking ***
+&lt;/think&gt;
+
+&lt;answer&gt;
+```python
+*** your code***
+```
+&lt;/answer&gt;
+
+    ', 'role': 'system'}, {'content': 'Please solve the programming task below using a self-contained code snippet in a markdown code block.
 
 You are an expert Python programmer. You will be given a question (problem specification) and will generate a correct Python program that matches the specification and passes all tests.
 
@@ -274,7 +298,19 @@ class Solution:
       <td>Given a string s, find the length of the longest substring without repeating characters.\n \nExample 1:\n\nInput: s = "abcabcbb"\nOutput: 3\nExplanation: The answer is "abc", with the length of 3.\n\nExample 2:\n\nInput: s = "bbbbb"\nOutput: 1\nExplanation: The answer is "b", with the length of 1.\n\nExample 3:\n\nInput: s = "pwwkew"\nOutput: 3\nExplanation: The answer is "wke", with the length of 3.\nNotice that the answer must be a substring, "pwke" is a subsequence and not a substring.\n\n \nConstraints:\n\n0 &lt;= s.length &lt;= 5 * 104\ns consists of English letters, digits, symbols and spaces.\n\n</td>
       <td>class Solution:\n    def lengthOfLongestSubstring(self, s: str) -&gt; int:</td>
       <td>2015-08-07</td>
-      <td>[{'content': 'You are a helpful programming assistant. The user will ask you a question and you as the assistant solve it. The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. The reasoning process and answer are enclosed within &lt;think&gt;...&lt;/think&gt; and &lt;answer&gt;...&lt;/answer&gt; tags, respectively. Your code should be excutable and always be with necessary python imports based on your code', 'role': 'system'}, {'content': 'Please solve the programming task below using a self-contained code snippet in a markdown code block.
+      <td>[{'content': 'You are a helpful programming assistant. The user will ask you a question and you as the assistant solve it. The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. The reasoning process and answer are enclosed within &lt;think&gt;...&lt;/think&gt; and &lt;answer&gt;...&lt;/answer&gt; tags, respectively. Your code should be excutable and always be with necessary python imports based on your code.Slove the problem step by step and show your thinking step in &lt;think&gt;...&lt;/think&gt; block and put your final code answer in &lt;answer&gt;...&lt;/answer&gt; block like:
+
+&lt;think&gt;
+*** your thinking ***
+&lt;/think&gt;
+
+&lt;answer&gt;
+```python
+*** your code***
+```
+&lt;/answer&gt;
+
+    ', 'role': 'system'}, {'content': 'Please solve the programming task below using a self-contained code snippet in a markdown code block.
 
 You are an expert Python programmer. You will be given a question (problem specification) and will generate a correct Python program that matches the specification and passes all tests.
 
@@ -385,7 +421,19 @@ class Solution:
       <td>Given two sorted arrays nums1 and nums2 of size m and n respectively, return the median of the two sorted arrays.\nThe overall run time complexity should be O(log (m+n)).\n \nExample 1:\n\nInput: nums1 = [1,3], nums2 = [2]\nOutput: 2.00000\nExplanation: merged array = [1,2,3] and median is 2.\n\nExample 2:\n\nInput: nums1 = [1,2], nums2 = [3,4]\nOutput: 2.50000\nExplanation: merged array = [1,2,3,4] and median is (2 + 3) / 2 = 2.5.\n\n \nConstraints:\n\nnums1.length == m\nnums2.length == n\n0 &lt;= m &lt;= 1000\n0 &lt;= n &lt;= 1000\n1 &lt;= m + n &lt;= 2000\n-106 &lt;= nums1[i], nums2[i] &lt;= 106\n\n</td>
       <td>class Solution:\n    def findMedianSortedArrays(self, nums1: List[int], nums2: List[int]) -&gt; float:\n</td>
       <td>2015-08-07</td>
-      <td>[{'content': 'You are a helpful programming assistant. The user will ask you a question and you as the assistant solve it. The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. The reasoning process and answer are enclosed within &lt;think&gt;...&lt;/think&gt; and &lt;answer&gt;...&lt;/answer&gt; tags, respectively. Your code should be excutable and always be with necessary python imports based on your code', 'role': 'system'}, {'content': 'Please solve the programming task below using a self-contained code snippet in a markdown code block.
+      <td>[{'content': 'You are a helpful programming assistant. The user will ask you a question and you as the assistant solve it. The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. The reasoning process and answer are enclosed within &lt;think&gt;...&lt;/think&gt; and &lt;answer&gt;...&lt;/answer&gt; tags, respectively. Your code should be excutable and always be with necessary python imports based on your code.Slove the problem step by step and show your thinking step in &lt;think&gt;...&lt;/think&gt; block and put your final code answer in &lt;answer&gt;...&lt;/answer&gt; block like:
+
+&lt;think&gt;
+*** your thinking ***
+&lt;/think&gt;
+
+&lt;answer&gt;
+```python
+*** your code***
+```
+&lt;/answer&gt;
+
+    ', 'role': 'system'}, {'content': 'Please solve the programming task below using a self-contained code snippet in a markdown code block.
 
 You are an expert Python programmer. You will be given a question (problem specification) and will generate a correct Python program that matches the specification and passes all tests.
 
@@ -501,7 +549,19 @@ class Solution:
       <td>Given a string s, return the longest palindromic substring in s.\n \nExample 1:\n\nInput: s = "babad"\nOutput: "bab"\nExplanation: "aba" is also a valid answer.\n\nExample 2:\n\nInput: s = "cbbd"\nOutput: "bb"\n\n \nConstraints:\n\n1 &lt;= s.length &lt;= 1000\ns consist of only digits and English letters.\n\n</td>
       <td>class Solution:\n    def longestPalindrome(self, s: str) -&gt; str:\n</td>
       <td>2015-08-07</td>
-      <td>[{'content': 'You are a helpful programming assistant. The user will ask you a question and you as the assistant solve it. The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. The reasoning process and answer are enclosed within &lt;think&gt;...&lt;/think&gt; and &lt;answer&gt;...&lt;/answer&gt; tags, respectively. Your code should be excutable and always be with necessary python imports based on your code', 'role': 'system'}, {'content': 'Please solve the programming task below using a self-contained code snippet in a markdown code block.
+      <td>[{'content': 'You are a helpful programming assistant. The user will ask you a question and you as the assistant solve it. The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. The reasoning process and answer are enclosed within &lt;think&gt;...&lt;/think&gt; and &lt;answer&gt;...&lt;/answer&gt; tags, respectively. Your code should be excutable and always be with necessary python imports based on your code.Slove the problem step by step and show your thinking step in &lt;think&gt;...&lt;/think&gt; block and put your final code answer in &lt;answer&gt;...&lt;/answer&gt; block like:
+
+&lt;think&gt;
+*** your thinking ***
+&lt;/think&gt;
+
+&lt;answer&gt;
+```python
+*** your code***
+```
+&lt;/answer&gt;
+
+    ', 'role': 'system'}, {'content': 'Please solve the programming task below using a self-contained code snippet in a markdown code block.
 
 You are an expert Python programmer. You will be given a question (problem specification) and will generate a correct Python program that matches the specification and passes all tests.
 

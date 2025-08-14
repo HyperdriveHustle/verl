@@ -8,8 +8,8 @@ leetcode2k=/nvfile-heatstorage/teleai-infra/wlw/data/code-r1-3k-leetcode2k-train
 leetcode2k_test=/nvfile-heatstorage/teleai-infra/wlw/data/code-r1-3k-leetcode2k-test
 #for test:use the same
 aime_2025=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data
-#model_path=/model/Qwen25-7B-Instruct
-model_path=/model/Qwen2.5-3B
+model_path=/model/Qwen25-7B-Instruct
+# model_path=/model/Qwen2.5-3B
 
 train_files="['$leetcode2k']"
 test_files="['$leetcode2k_test']"
@@ -39,7 +39,7 @@ max_response_length=4096
 actor_lr=1e-6
 
 train_batch_size=32
-ppo_mini_batch_size=8
+ppo_mini_batch_size=32
 n_resp_per_prompt=16
 n_resp_per_prompt_val=1
 
@@ -93,7 +93,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.multi_turn.max_assistant_turns=$max_turns \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=$tool_config_path \
     actor_rollout_ref.rollout.multi_turn.format=hermes \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
     actor_rollout_ref.rollout.n=$n_resp_per_prompt \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.6 \
     actor_rollout_ref.rollout.val_kwargs.temperature=1.0 \
@@ -105,7 +105,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.val_before_train=True \
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \
-    trainer.save_freq=30 \
+    trainer.save_freq=40 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=5 \
-    trainer.total_epochs=1 $@ 2>&1 | tee /nvfile-heatstorage/teleai-infra/wlw/workspace/logs/logs_agent/$experiment_name.log
+    trainer.total_epochs=3 $@ 2>&1 | tee /nvfile-heatstorage/teleai-infra/wlw/workspace/logs/logs_agent/$experiment_name.log

@@ -13,6 +13,9 @@ from verl.utils.rollout_trace import rollout_trace_op
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
+ANSWER_REWARD = 1.0
+FORMAT_REARD = 0.1
+
 PY_IMPORTS = """import heapq
 import itertools
 import random
@@ -116,6 +119,11 @@ class CodeExecutionAgentLoop(AgentLoopBase):
 
         cls.response_length = config.actor_rollout_ref.rollout.response_length
 
+        
+    def validate_response_structure(self, processed_str: str) -> bool:
+        pattern = re.compile(r'<think>.*</think>.*<answer>.*</answer>$', re.DOTALL)
+        return bool(pattern.match(processed_str.strip()))
+
     @rollout_trace_op
     async def run(self, messages: list[dict[str, Any]], sampling_params_w_test_code: dict[str, Any]) -> AgentLoopOutput:
         metrics = {}
@@ -136,36 +144,55 @@ class CodeExecutionAgentLoop(AgentLoopBase):
         #breakpoint()
         solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
         
+        format_check = self.validate_response_structure(solution_text)
         # 这个正则表达式会查找被三个反引号包裹的代码块，并可选地匹配 'python' 标识符
-        code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
+        code_pattern = re.compile(
+            r"<answer>.*?```(?:python\n)?(.*?)```.*?</answer>", 
+            re.DOTALL
+        )
+        code_match = code_pattern.search(solution_text)
+        if not code_match:
+            code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
         extracted_code = code_match.group(1).strip() if code_match else None
         
-        reward = 0.0
+        answer_reward = 0.0
+        timeout_reward = 0.0
+        format_reward = 0.0
+
+        format_reward = FORMAT_REARD if format_check else -FORMAT_REARD
+
         if extracted_code and hasattr(self, 'reward_tool'):
             extracted_code_w_test = PY_IMPORTS + extracted_code + "\n" + test_code
-            with simple_timer("reward_calculation", metrics):
+            with simple_timer("tool_calls", metrics):
                 instance_id = None
                 try:
                     instance_id = await self.reward_tool.create()
-                    response, score, _ = await self.reward_tool.execute(instance_id, {"code": extracted_code_w_test})
-                    print(score)
-                    reward = 1.0 if score == "Success" else 0.0
+                    response, score, meta_data = await self.reward_tool.execute(instance_id, {"code": extracted_code_w_test})
+                    #print(meta_data["status"], score)
                     #breakpoint()
+                    
+                    answer_reward = ANSWER_REWARD if score.lower() == "success" else -ANSWER_REWARD
+                    metrics["timeout"] = 1 if meta_data["status"] == "timeout" else 0
+                    timeout_reward = -0.2 if metrics["timeout"] == 1 else 0 #超时额外处罚
                 except Exception as e:
                     logger.error(f"Error during reward calculation: {e}")
-                    reward = 0.0 # 出错时给予默认奖励
+                    answer_reward = -ANSWER_REWARD # 出错时给予默认奖励
                 finally:
                     if instance_id:
                         await self.reward_tool.release(instance_id)
 
         # 6. 打包最终输出
-        #breakpoint()
+        #print(metrics)
+        metrics["answer_reward"] = answer_reward
+        metrics["format_reward"] = format_reward
+        metrics["timeout_reward"] = timeout_reward
+        reward = answer_reward + format_reward + timeout_reward
         output = AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids[: self.response_length],
             # 因为所有内容都是LLM生成的，所以mask全是1
             response_mask=[1] * len(response_ids[: self.response_length]),
-            num_turns=2,  # 1个用户轮次, 1个助手轮次
+            num_turns=1, 
             metrics=metrics,
             reward=reward
         )

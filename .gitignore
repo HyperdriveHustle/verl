@@ -125,4 +125,4 @@ log
 outputs
 .history
 
-/checkpoint
+checkpoint/
