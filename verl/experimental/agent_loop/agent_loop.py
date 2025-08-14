@@ -572,7 +572,7 @@ class AgentLoopManager:
         tool_reward["agent_loop/format_reward/mean"] = format_reward.mean()
 
         tool_reward["agent_loop/correct_count"] = sum(1 for ar in answer_reward if ar == 1.0)
-        tool_reward["agent_loop/pass_rate"] = tool_reward["agent_loop/correct_count"] / len(answer_reward)
+        tool_reward["agent_loop/pass@1"] = tool_reward["agent_loop/correct_count"] / len(answer_reward)
         return timing, tool_reward
 
     def wake_up(self):

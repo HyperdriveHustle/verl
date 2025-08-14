@@ -80,12 +80,39 @@ def leetcode2k():
     train_dataset = load_dataset("json",
                                 data_files="/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/LeetCodeDataset/LeetCodeDataset-train.jsonl")["train"]
     print("Before deduplication - Training set:", train_dataset)
-
     # add a row to each data item that represents a unique id
     def make_map_fn(split):
 
         def process_fn(example, idx):
             prompt = f"You are a helpful programming assistant. Please solve the programming task below.\n\n{example['query'].strip()}"
+            original_test_assertions = example['test'].strip()
+            all_lines = original_test_assertions.split('\n')
+            assert_lines = [line.strip() for line in all_lines if line.strip().startswith('assert')]
+            test_cases_list_str = repr(assert_lines)
+            new_check_function_template = f"""
+def check(candidate):
+    passed_count = 0
+    test_cases = {test_cases_list_str}
+    total_count = len(test_cases)
+    for test_case in test_cases:
+        try:
+            # `exec` will run the assert statement.
+            # `candidate` is available in this local scope.
+            exec(test_case)
+            passed_count += 1
+        except Exception as e:
+            # This catches AssertionError and any other runtime errors from the candidate code
+            pass # We just count it as a failure and continue
+
+    if total_count == 0:
+        pass_rate = 0.0
+    else:
+        pass_rate = passed_count / total_count
+
+    # This is the final output the sandbox will capture.
+    # It provides a float reward signal.
+    print(f"Pass rate: **{{pass_rate}}**")
+"""
             return {
                 "data_source": "code",
                 "prompt": [
@@ -103,7 +130,7 @@ def leetcode2k():
                     "style":
                         "rule",
                     "ground_truth":
-                        json.dumps({"functional": f"{example['test']}\n\ncheck({example['entry_point'].strip()})"}),
+                        json.dumps({"functional": f"{new_check_function_template}\n\ncheck({example['entry_point'].strip()})"}),
                 },
                 "extra_info": {
                     "split": split,
