@@ -33,14 +33,15 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
         NotImplementedError: If the reward function is not implemented for the given data source.
     """
     if isinstance(data_source, (list, tuple, np.ndarray)):
-        if all(isinstance(ds, str) and ds.startswith("math_judge") for ds in data_source):
+        if all(isinstance(ds, str) and (ds.startswith("math_judge") or ds.startswith("expert")) for ds in data_source):
             from . import remote_reward_batch
-            return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
+            return remote_reward_batch.compute_score_batched_from_response(data_source, solution_str, ground_truth, extra_info)
+            # return remote_reward_batch.compute_score_batched_from_response(data_source, solution_str, ground_truth, extra_info)
         elif all(isinstance(ds, str) and (ds.startswith("dapo") or ds.startswith("train-math-numinamath")) for ds in data_source):
-            from . import math_verify
-            print("use math_verify")
+            from . import math_dapo
+            print("use math_dapo")
             # 批量调用 math_dapo
-            return [math_verify.compute_score(s, g) for s, g in zip(solution_str, ground_truth)]
+            return [math_dapo.compute_score(s, g) for s, g in zip(solution_str, ground_truth)]
             # from . import remote_reward_batch
             # return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
         elif all(isinstance(ds, str) and (ds.startswith("boxed")) for ds in
