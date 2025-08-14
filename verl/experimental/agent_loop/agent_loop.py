@@ -112,7 +112,10 @@ class AgentLoopMetrics(BaseModel):
 
     generate_sequences: float = 0.0
     tool_calls: float = 0.0
-
+    timeout: int = 0
+    answer_reward: float = 0.0
+    format_reward: float = 0.0
+    timeout_reward: float = 0.0
 
 class AgentLoopOutput(BaseModel):
     """Agent loop output."""
@@ -398,6 +401,7 @@ class AgentLoopWorker:
         )
 
         num_turns = np.array([input.num_turns for input in inputs], dtype=np.int32)
+        breakpoint()
         metrics = [input.metrics.model_dump() for input in inputs]
         code_rewards = np.array([input.reward for input in inputs])
         non_tensor_batch ={
@@ -531,22 +535,29 @@ class AgentLoopManager:
 
         # calculate performance metrics
         metrics = [output.meta_info["metrics"] for output in outputs]  # List[List[Dict[str, str]]]
-        timing = self._performance_metrics(metrics, output)
+        timing, tool_reward = self._performance_metrics(metrics, output)
 
-        output.meta_info = {"timing": timing}
+        output.meta_info = {"timing": timing,
+                            "tool_reward": tool_reward}
         return output
 
     def _performance_metrics(self, metrics: list[list[dict[str, str]]], output: DataProto) -> dict[str, float]:
         timing = {}
+        tool_reward = {}
+
         t_generate_sequences = np.array([metric["generate_sequences"] for chunk in metrics for metric in chunk])
         t_tool_calls = np.array([metric["tool_calls"] for chunk in metrics for metric in chunk])
+        timeout = np.array([metric["timeout"] for chunk in metrics for metric in chunk])
+        answer_reward = np.array([metric["answer_reward"] for chunk in metrics for metric in chunk])
+        format_reward = np.array([metric["format_reward"] for chunk in metrics for metric in chunk])
+
         timing["agent_loop/generate_sequences/min"] = t_generate_sequences.min()
         timing["agent_loop/generate_sequences/max"] = t_generate_sequences.max()
         timing["agent_loop/generate_sequences/mean"] = t_generate_sequences.mean()
         timing["agent_loop/tool_calls/min"] = t_tool_calls.min()
         timing["agent_loop/tool_calls/max"] = t_tool_calls.max()
         timing["agent_loop/tool_calls/mean"] = t_tool_calls.mean()
-
+        timing["agent_loop/tool_calls/timeout"] = timeout.sum()
         # batch sequence generation is bounded by the slowest sample
         slowest = np.argmax(t_generate_sequences + t_tool_calls)
         attention_mask = output.batch["attention_mask"][slowest]
@@ -556,7 +567,13 @@ class AgentLoopManager:
         timing["agent_loop/slowest/prompt_length"] = attention_mask[:prompt_length].sum().item()
         timing["agent_loop/slowest/response_length"] = attention_mask[prompt_length:].sum().item()
 
-        return timing
+        tool_reward["agent_loop/answer_reward/mean"] = answer_reward.mean()
+        
+        tool_reward["agent_loop/format_reward/mean"] = format_reward.mean()
+
+        tool_reward["agent_loop/correct_count"] = sum(1 for ar in answer_reward if ar == 1.0)
+        tool_reward["agent_loop/pass_rate"] = tool_reward["agent_loop/correct_count"] / len(answer_reward)
+        return timing, tool_reward
 
     def wake_up(self):
         """Wake up all rollout server instances."""

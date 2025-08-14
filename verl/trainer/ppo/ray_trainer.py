@@ -704,6 +704,7 @@ class RayPPOTrainer:
             # Store generated outputs
             output_ids = test_output_gen_batch.batch["responses"]
             output_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids]
+
             sample_outputs.extend(output_texts)
 
             test_batch = test_batch.union(test_output_gen_batch)
@@ -734,7 +735,7 @@ class RayPPOTrainer:
 
         self._maybe_log_val_generations(inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores)
 
-        pass_count = sum(1 for score in sample_scores if score > 0.5)
+        pass_count = test_output_gen_batch.meta_info["tool_reward"]["agent_loop/correct_count"]
         total_count = len(sample_scores)
         pass_rate = pass_count / total_count if total_count > 0 else 0.0
         # dump generations
@@ -784,6 +785,8 @@ class RayPPOTrainer:
             "val-core/code/max_score": max(sample_scores) if sample_scores else 0.0,
             "val-core/code/min_score": min(sample_scores) if sample_scores else 0.0,
         }
+        metric_dict.update(test_output_gen_batch.meta_info["timing"])
+        metric_dict.update(test_output_gen_batch.meta_info["tool_reward"])
         print(metric_dict)
         return metric_dict
 
@@ -1140,6 +1143,9 @@ class RayPPOTrainer:
                             gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
                         else:
                             gen_batch_output = self.async_rollout_manager.generate_sequences(gen_batch)
+                            metrics.update(gen_batch_output.meta_info["tool_reward"])
+                            gen_batch_output.meta_info.pop("tool_reward", None)
+
                         timing_raw.update(gen_batch_output.meta_info["timing"])
                         gen_batch_output.meta_info.pop("timing", None)
 
