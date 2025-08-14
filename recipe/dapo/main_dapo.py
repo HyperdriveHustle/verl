@@ -36,10 +36,11 @@ def run_ppo(config) -> None:
     if not ray.is_initialized():
         # this is for local ray cluster
         ray.init(
-            # local_mode=True, # hwq ray debug
+            local_mode=True, # hwq ray debug
             runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true",
             "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
-            "TENSORBOARD_DIR":os.environ.get("TENSORBOARD_DIR")}},
+            "TENSORBOARD_DIR": "/afs/chatrl/users/hwq/log/expert/debug-expert.log"}},
+            # "TENSORBOARD_DIR":os.environ.get("TENSORBOARD_DIR")}},
             num_cpus=config.ray_init.num_cpus,
         )
 
@@ -142,7 +143,7 @@ class TaskRunner:
 
         reward_kwargs = dict(
             tokenizer=tokenizer,
-            num_examine=0,
+            num_examine=6,
             compute_score=compute_score,
             reward_fn_key=config.data.reward_fn_key,
             max_resp_len=config.data.max_response_length,
@@ -159,8 +160,15 @@ class TaskRunner:
         )
 
         if 'remote_reward_cfg' in reward_manager_cls.__init__.__code__.co_varnames:
-            reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
-            val_reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
+            # reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
+            remote_reward_dict = config.get("remote_reward")
+            data_dict = config.get("data")
+            prompt_key = data_dict.get("prompt_key")
+            prompt_key_dict = {"prompt_key": prompt_key}
+            reward_kwargs['remote_reward_cfg'] = {**remote_reward_dict, **prompt_key_dict}
+            val_reward_kwargs['remote_reward_cfg'] = {**remote_reward_dict, **prompt_key_dict}
+
+            # val_reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
 
 
         reward_fn = reward_manager_cls(**reward_kwargs)

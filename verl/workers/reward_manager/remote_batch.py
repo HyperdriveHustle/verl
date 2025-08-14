@@ -81,7 +81,10 @@ class REMOTEBatchRewardManager:
         ground_truths = [item.non_tensor_batch["reward_model"].get("ground_truth", None) for item in data]
         data_sources = data.non_tensor_batch[self.reward_fn_key]
         extras = data.non_tensor_batch.get("extra_info", [None] * len(data))
-        prompts_into_extras = data.non_tensor_batch.get("prompt", [None] * len(data))
+        # prompts_into_extras = data.non_tensor_batch.get("prompt", [None] * len(data))
+        prompt_key = self.remote_reward_cfg.get("prompt_key")
+        prompts_into_extras = data.non_tensor_batch.get(prompt_key, [None] * len(data))
+
 
         scores = self.compute_score(
             data_source=data_sources,
@@ -102,6 +105,8 @@ class REMOTEBatchRewardManager:
                 return data.batch["rm_scores"]
 
         reward_tensor = torch.zeros_like(data.batch["responses"], dtype=torch.float32)
+        accuracy_hwq_tensor = torch.zeros_like(data.batch["responses"], dtype=torch.float32)
+
         reward_extra_info = defaultdict(list)
 
         prompt_ids = data.batch["prompts"]
@@ -112,6 +117,7 @@ class REMOTEBatchRewardManager:
 
         scores = self.verify(data)
         rewards = []
+        accuracy_hwqs = []
         already_printed = {}
 
         for i in range(len(data)):
@@ -120,13 +126,16 @@ class REMOTEBatchRewardManager:
 
             if isinstance(score, dict):
                 reward = score["score"]
+                accuracy_hwq = score["acc"]
                 for key, value in score.items():
                     reward_extra_info[key].append(value)
             else:
                 reward = score
 
             rewards.append(reward)
+            accuracy_hwqs.append((accuracy_hwq))
             reward_tensor[i, length - 1] = reward
+            accuracy_hwq_tensor[i, length - 1] = accuracy_hwq
 
             data_source = data_sources[i]
             response_str = self.tokenizer.decode(data.batch["responses"][i][:length], skip_special_tokens=True)
@@ -157,7 +166,8 @@ class REMOTEBatchRewardManager:
 
         data.batch["acc"] = torch.tensor(rewards, dtype=torch.float32, device=prompt_ids.device)
 
+
         if return_dict:
-            return {"reward_tensor": reward_tensor, "reward_extra_info": reward_extra_info}
+            return {"reward_tensor": reward_tensor, "reward_extra_info": reward_extra_info, "accuracy_hwq_tensor": accuracy_hwq_tensor}
         else:
             return reward_tensor
