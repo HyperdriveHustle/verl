@@ -176,8 +176,9 @@ class CodeExecutionAgentLoop(AgentLoopBase):
                         metrics["timeout"] = 1
                         answer_reward = -0.2
                     else:
-                        match_test_pass_rate = re.search(r"Pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
-                        answer_reward = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 0.0
+                        # match_test_pass_rate = re.search(r"Pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
+                        # answer_reward = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 0.0
+                        answer_reward = ANSWER_REWARD if score.lower() == "success" else 0.0
 
                 except Exception as e:
                     breakpoint()
