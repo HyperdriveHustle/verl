@@ -2,6 +2,7 @@
 import logging
 import os
 import re
+import numpy as np
 from typing import Any
 from uuid import uuid4
 
@@ -109,16 +110,17 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         
         # 初始化用于奖励计算的工具
         tool_config_path = config.actor_rollout_ref.rollout.multi_turn.tool_config_path
+        cls.max_turns = config.actor_rollout_ref.rollout.multi_turn.max_user_turns
         tool_list = initialize_tools_from_config(tool_config_path) if tool_config_path else []
         cls.tools = {tool.name: tool for tool in tool_list}
         if not cls.tools:
             logger.warning("CodeExecutionAgentLoop initialized, but no reward tool was found in the config.")
         else:
-            cls.reward_tool = next(iter(cls.tools.values()))
-            print(f"Initialized reward tool: {cls.reward_tool.name}")
+            cls.code_tool = next(iter(cls.tools.values()))
+            print(f"Initialized reward tool: {cls.code_tool.name}")
 
         cls.response_length = config.actor_rollout_ref.rollout.response_length
-
+        cls.system_prompt = tokenizer.apply_chat_template([{}], add_generation_prompt=False, tokenize=True)
         
     def validate_response_structure(self, processed_str: str) -> bool:
         pattern = re.compile(r'<think>.*</think>.*<answer>.*</answer>$', re.DOTALL)
@@ -137,59 +139,80 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
 
         sampling_params = sampling_params_w_test_code["sampling_params"]
         test_code = sampling_params_w_test_code["test_code"]
-        with simple_timer("generate_sequence", metrics):
-            response_ids = await self.server_manager.generate(
-                request_id=request_id, prompt_ids=prompt_ids, sampling_params=sampling_params
-            )
-        #breakpoint()
-        solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
-        
-        format_check = self.validate_response_structure(solution_text)
-        # 这个正则表达式会查找被三个反引号包裹的代码块，并可选地匹配 'python' 标识符
-        code_pattern = re.compile(
-            r"<answer>.*?```(?:python\n)?(.*?)```.*?</answer>", 
-            re.DOTALL
-        )
-        code_match = code_pattern.search(solution_text)
-        if not code_match:
-            code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
-        extracted_code = code_match.group(1).strip() if code_match else None
+        response_mask = []
+        turns = 0
+        assistant_turns = 0
         
         answer_reward = 0.0
         timeout_reward = 0.0
         format_reward = 0.0
+        while turns < self.max_turns:
+            turns += 1
+            with simple_timer("generate_sequence", metrics):
+                response_ids = await self.server_manager.generate(
+                    request_id=request_id, prompt_ids=prompt_ids, sampling_params=sampling_params
+                )
+            prompt_ids += response_ids
+            response_mask += [1] * len(response_ids)
+            assistant_turns += 1
 
-        format_reward = FORMAT_REARD if format_check else -FORMAT_REARD
+            solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
+            format_check = self.validate_response_structure(solution_text)
+            code_pattern = re.compile(
+                r"<answer>.*?```(?:python\n)?(.*?)```.*?</answer>", 
+                re.DOTALL
+            )
+            code_match = code_pattern.search(solution_text)
+            if not code_match:
+                code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
+            extracted_code = code_match.group(1).strip() if code_match else None
+    
+            format_reward += FORMAT_REARD if format_check else -FORMAT_REARD
 
-        if extracted_code and hasattr(self, 'reward_tool'):
-            extracted_code_w_test = PY_IMPORTS + extracted_code + "\n" + test_code
-            with simple_timer("tool_calls", metrics):
-                instance_id = None
-                try:
-                    instance_id = await self.reward_tool.create()
-                    response, score, meta_data = await self.reward_tool.execute(instance_id, {"code": extracted_code_w_test})
-                    #print(meta_data["status"], score)
-                    #breakpoint()
-                    
-                    #answer_reward = ANSWER_REWARD if score.lower() == "success" else -ANSWER_REWARD
-                    if meta_data["status"] == "timeout":
-                        metrics["timeout"] = 1
-                        answer_reward = -0.2
-                    else:
-                        # match_test_pass_rate = re.search(r"Pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
-                        # answer_reward = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 0.0
-                        answer_reward = ANSWER_REWARD if score.lower() == "success" else 0.0
+            if extracted_code and hasattr(self, 'code_tool'):
+                extracted_code_w_test = PY_IMPORTS + extracted_code + "\n" + test_code
+                with simple_timer(f"tool_calls_turn_{turns}", metrics):
+                    instance_id = None
+                    try:
+                        instance_id = await self.code_tool.create()
+                        response, score, meta_data = await self.code_tool.execute(instance_id, {"code": extracted_code_w_test})
 
-                except Exception as e:
-                    breakpoint()
-                    logger.error(f"Error during reward calculation: {e}")
-                    answer_reward = 0.0 # 出错时给予默认奖励
-                finally:
-                    if instance_id:
-                        await self.reward_tool.release(instance_id)
+                        if meta_data["status"] == "timeout":
+                            metrics["timeout"] = 1
+                            error_message = "Code execution timeout, please reflect your answer and asnwer again to slove the problem based on the error message and your previous responses."
+                        else:
+                            if score.lower() == "success":
+                                answer_reward = ANSWER_REWARD
+                                break
+                            else:
+                                stdout = meta_data.get("stdout", "")
+                                stderr = meta_data.get("stderr", "")
+                                error_message = f"Code test failed.\n\nError message:\n{stdout}\n{stderr}\n\nPlease reflect your answer and asnwer again to slove the problem based on the error message and your previous responses."
+                    except Exception as e:
+                        breakpoint()
+                        logger.error(f"Error during reward calculation: {e}")
+                        answer_reward = 0.0
+                        break
+                    finally:
+                        if instance_id:
+                            await self.code_tool.release(instance_id)
+                if turns >= self.max_turns:
+                    break
+                tool_response_ids = await self.loop.run_in_executor(
+                    None,
+                    lambda messages=error_message: self.tokenizer.apply_chat_template(
+                        messages, add_generation_prompt=True, tokenize=True
+                    ),
+                )
+                tool_response_ids = tool_response_ids[len(self.system_prompt) :]
+                if len(response_mask) + len(tool_response_ids) >= self.response_length:
+                    break
+                prompt_ids += tool_response_ids
+            response_mask += [0] * len(tool_response_ids)
 
-        # 6. 打包最终输出
-        #print(metrics)
+
+        format_reward = np.clip(format_reward, -FORMAT_REARD, FORMAT_REARD)
+
         metrics["answer_reward"] = answer_reward
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward
