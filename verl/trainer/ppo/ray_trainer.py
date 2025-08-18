@@ -625,6 +625,7 @@ class RayPPOTrainer:
         self.validation_generations_logger.log(self.config.trainer.logger, samples, self.global_steps)
 
     def _validate(self):
+        print("***************start validating***************")
         data_source_lst = []
         reward_extra_infos_dict: dict[str, list] = defaultdict(list)
 

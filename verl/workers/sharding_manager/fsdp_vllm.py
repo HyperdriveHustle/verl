@@ -206,7 +206,8 @@ class FSDPVLLMShardingManager(BaseShardingManager):
                 params = self.module.state_dict()
             params = convert_weight_keys(params, getattr(self.module, "_fsdp_wrapped_module", self.module))
             log_gpu_memory_usage("After state_dict() in sharding manager memory", logger=logger)
-
+            if self.offload_param:
+                offload_fsdp_model_to_cpu(self.module)
             if self.rollout_config.free_cache_engine:
                 if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
                     self.inference_engine.wake_up(tags=["weights"])
@@ -217,8 +218,8 @@ class FSDPVLLMShardingManager(BaseShardingManager):
             self.update_params(params, peft_config=peft_config)
             log_gpu_memory_usage("After sync model weights in sharding manager", logger=logger)
             del params
-            if self.offload_param:
-                offload_fsdp_model_to_cpu(self.module)
+            # if self.offload_param:
+            #     offload_fsdp_model_to_cpu(self.module)
             get_torch_device().empty_cache()
 
             if (
