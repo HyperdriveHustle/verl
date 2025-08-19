@@ -25,6 +25,7 @@ import io
 import numpy as np
 import torch
 from tqdm import tqdm
+from datetime import datetime
 from contextlib import contextmanager
 from verl import DataProto
 from verl.trainer.ppo.core_algos import agg_loss
@@ -155,9 +156,10 @@ class RayDAPOTrainer(RayPPOTrainer):
         num_prompt_in_batch = 0
         num_gen_batches = 0
         for epoch in range(self.config.trainer.total_epochs):
+            print(f"Epoch {epoch} / {self.config.trainer.total_epochs}")
             for bs_idx, batch_dict in enumerate(self.train_dataloader):
-                #to verify restore_order
-                #original_prompts_for_verification = deepcopy(batch_dict['raw_prompt_ids'])
+                # to verify restore_order
+                # original_prompts_for_verification = deepcopy(batch_dict['raw_prompt_ids'])
                 self.req_scheduler.sched(batch_dict,
                                         self.actor_rollout_wg.world_size,
                                         self.config.actor_rollout_ref,
@@ -267,6 +269,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                         unpadded,
                     )
 
+                    print(f">> [REWARD START] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                     with marked_timer("reward", timing_raw, "yellow"):
                         # compute scores. Support both model and function-based.
                         # We first compute the scores using reward model. Then, we call reward_fn to combine
@@ -277,6 +280,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                             new_batch = new_batch.union(reward_tensor)
 
                         # we combine with rule-based rm
+                        print(f">> [REWARD GOING] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, rule-based reward_fn start.")
                         reward_extra_infos_dict: dict[str, list]
                         try:
                             reward_result = self.reward_fn(new_batch, return_dict=True)
@@ -288,6 +292,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                             reward_extra_infos_dict = {}
 
                         new_batch.batch["token_level_scores"] = reward_tensor
+                        print(f">> [REWARD GOING] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, rule-based reward_fn finished.")
 
                         if reward_extra_infos_dict:
                             new_batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
@@ -299,6 +304,8 @@ class RayDAPOTrainer(RayPPOTrainer):
                         else:
                             new_batch.batch["token_level_rewards"] = new_batch.batch["token_level_scores"]
 
+                    print(f">> [REWARD END] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    
                     if not self.config.algorithm.filter_groups.enable:
                         batch = new_batch
                     else:  # NOTE: When prompts after filtering is less than train batch size,
@@ -319,6 +326,10 @@ class RayDAPOTrainer(RayPPOTrainer):
                         for prompt_uid, metric_vals in prompt_uid2metric_vals.items():
                             prompt_uid2metric_std[prompt_uid] = np.std(metric_vals)
 
+                        # 输出当前 batch 的 metric_val 分布
+                        metric_val_avg = np.mean(list(prompt_uid2metric_vals.values()), axis=0)
+                        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, Current batch {metric_name} distribution: {metric_val_avg}")
+
                         if self.config.algorithm.filter_groups.filter_score_high is not None \
                                 and self.config.algorithm.filter_groups.filter_score_low is not None:
                             print(f"apply filter_groups: {self.config.algorithm.filter_groups.filter_score_low=}, {self.config.algorithm.filter_groups.filter_score_high=}")
@@ -327,6 +338,14 @@ class RayDAPOTrainer(RayPPOTrainer):
                                 if np.mean(metric_val) >= self.config.algorithm.filter_groups.filter_score_low \
                                     and np.mean(metric_val) <= self.config.algorithm.filter_groups.filter_score_high
                             ]
+                            # 计算 kept_prompt_uids 的 avg acc
+                            kept_prompt_avg = np.mean([np.mean(prompt_uid2metric_vals[uid]) for uid in kept_prompt_uids])
+                            print(f"Current kept prompts = {len(kept_prompt_uids)}, avg {metric_name}: {kept_prompt_avg}")
+                            # 分别计算没保留下来的 prompt 的 低于 filter_score_low 和 高于 filter_score_high 的比例
+                            not_kept_prompt_uids = [uid for uid in prompt_uid2metric_vals.keys() if uid not in kept_prompt_uids]
+                            not_kept_low = [uid for uid in not_kept_prompt_uids if np.mean(prompt_uid2metric_vals[uid]) < self.config.algorithm.filter_groups.filter_score_low]
+                            not_kept_high = [uid for uid in not_kept_prompt_uids if np.mean(prompt_uid2metric_vals[uid]) > self.config.algorithm.filter_groups.filter_score_high]
+                            print(f"Not kept prompts = {len(not_kept_prompt_uids)}, low: {len(not_kept_low)}, high: {len(not_kept_high)}")
                         else:
                             # 原始逻辑，去掉方差为 0 的
                             print(f"apply filter_groups by std > 0")

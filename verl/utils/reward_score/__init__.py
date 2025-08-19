@@ -14,7 +14,7 @@
 # from . import gsm8k, math, prime_math, prime_code
 
 from verl.utils.import_utils import deprecated
-
+import numpy as np
 
 def default_compute_score(data_source, solution_str, ground_truth, extra_info=None, sandbox_fusion_url=None, concurrent_semaphore=None, memory_limit_mb=None):
     """Compute the score for a given solution based on the data source.
@@ -32,9 +32,29 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
     Raises:
         NotImplementedError: If the reward function is not implemented for the given data source.
     """
-    if data_source == "openai/gsm8k":
-        from . import gsm8k
+    if isinstance(data_source, (list, tuple, np.ndarray)):
+        if all(isinstance(ds, str) and (ds.startswith("math_judge") or ds.startswith("expert")) for ds in data_source):
+            from . import remote_reward_batch
+            return remote_reward_batch.compute_score_batched_from_response(data_source, solution_str, ground_truth, extra_info)
+            # return remote_reward_batch.compute_score_batched_from_response(data_source, solution_str, ground_truth, extra_info)
+        elif all(isinstance(ds, str) and (ds.startswith("dapo") or ds.startswith("train-math-numinamath")) for ds in data_source):
+            from . import math_dapo
+            print("use math_dapo")
+            # 批量调用 math_dapo
+            return [math_dapo.compute_score(s, g) for s, g in zip(solution_str, ground_truth)]
+            # from . import remote_reward_batch
+            # return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
+        elif all(isinstance(ds, str) and (ds.startswith("boxed")) for ds in
+                 data_source):
+            from . import math_verify_boxed
+            # 批量调用 math_dapo
+            return [math_verify_boxed.compute_score(s, g) for s, g in zip(solution_str, ground_truth)]
+        else:
+            from . import remote_reward_batch
+            return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
 
+    elif data_source == "openai/gsm8k":
+        from . import gsm8k
         res = gsm8k.compute_score(solution_str, ground_truth)
     elif data_source in ["lighteval/MATH", "DigitalLearningGmbH/MATH-lighteval"]:
         from . import math
@@ -53,12 +73,6 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
     elif data_source == 'math_dapo' or data_source.startswith("aime") or data_source.startswith("dapo_"):
         from . import math_dapo
         res = math_dapo.compute_score(solution_str, ground_truth)
-    elif data_source in [
-            'numina_aops_forum', 'numina_synthetic_math', 'numina_amc_aime', 'numina_synthetic_amc', 'numina_cn_k12',
-            'numina_olympiads'
-    ]:
-        from . import prime_math
-        res = prime_math.compute_score(solution_str, ground_truth)
     elif data_source in ['codecontests', 'apps', 'codeforces', 'taco']:
         from . import prime_code
         res = prime_code.compute_score(solution_str, ground_truth, continuous=True)
@@ -78,6 +92,8 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
         raise NotImplementedError(f"Reward function is not implemented for {data_source=}")
 
     if isinstance(res, dict):
+        return res
+    elif isinstance(res, (list, tuple)):
         return res
     elif isinstance(res, (int, float, bool)):
         return float(res)

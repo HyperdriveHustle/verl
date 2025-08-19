@@ -856,6 +856,12 @@ reward_model:
     # The ranks that will be profiled. null or [0,1,...]
     ranks: null
 
+remote_reward:
+  base_url: "http://127.0.0.1:6664/v1"
+  api_key: "EMPTY"
+  model_name: "Qwen2.5-32B-Instruct"
+  save_judge_path: "/afs/chatrl/users/hwq/code/verl-remote-reward/examples_sensecore/grpo_remote_reward/output_test_para.jsonl"
+
 # custom reward function definition
 custom_reward_function:
 

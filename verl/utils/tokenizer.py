@@ -14,6 +14,86 @@
 """Utils for tokenization."""
 
 import warnings
+import os
+import sys
+
+
+def _clear_telechat_cache_safe():
+    """Safely clean up telechat-related transformers caches to avoid race conditions."""
+    print(">>>>>> _clear_telechat_cache_safe >>>>>> ")
+    import shutil
+    import glob
+    
+    cache_patterns = [
+        "/root/.cache/huggingface/modules/transformers_modules/checkpoint-*",
+        os.path.expanduser("~/.cache/huggingface/modules/transformers_modules/checkpoint-*"),
+    ]
+    
+    cleared = False
+    for pattern in cache_patterns:
+        for path in glob.glob(pattern):
+            # Check whether this checkpoint directory contains telechat files
+            telechat_file = os.path.join(path, "tokenization_telechat3.py")
+            if os.path.exists(telechat_file):
+                try:
+                    shutil.rmtree(path)
+                    print(f"[VERL] Clean up the telechat cache directory: {path}")
+                    cleared = True
+                except Exception as e:
+                    print(f"[VERL] Clean up failed: {path} ({e})")
+
+    # Clean up imported telechat modules
+    modules_to_remove = [m for m in sys.modules.keys() if 'telechat' in m.lower()]
+    for module_name in modules_to_remove:
+        try:
+            del sys.modules[module_name]
+            print(f"[VERL] Clean up module: {module_name}")
+        except:
+            pass
+    
+    if not cleared:
+        print("[VERL] No telechat cache found to clean up")
+
+    # Force refresh importlib cache
+    import importlib
+    importlib.invalidate_caches()
+
+
+def _ensure_fresh_telechat_load(name_or_path, **kwargs):
+    """Ensure a fresh loading of the telechat tokenizer to avoid caching issues."""
+    from transformers import AutoTokenizer
+    
+    max_retries = 2
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                print(f"[VERL] Retrying load (attempt {attempt+1})...")
+                # Clean up before retrying
+                _clear_telechat_cache_safe()
+
+            # Load tokenizer
+            tokenizer = AutoTokenizer.from_pretrained(name_or_path, **kwargs)
+            print(f"[VERL] telechat tokenizer loaded successfully (attempt {attempt+1})")
+            return tokenizer
+            
+        except FileNotFoundError as e:
+            last_error = e
+            print(f"[VERL] Load failed on attempt {attempt+1}: {e}")
+            if attempt < max_retries - 1:
+                print("[VERL] Cleaning cache and retrying...")
+                continue
+            else:
+                print("[VERL] All retries failed")
+                break
+        except Exception as e:
+            # Other types of errors, do not retry
+            print(f"[VERL] Load failed (non-retryable error): {e}")
+            raise
+    
+    raise last_error
+
 
 __all__ = ["hf_tokenizer", "hf_processor"]
 
@@ -55,7 +135,16 @@ def hf_tokenizer(name_or_path, correct_pad_token=True, correct_gemma2=True, **kw
         warnings.warn("Found gemma-2-2b-it tokenizer. Set eos_token and eos_token_id to <end_of_turn> and 107.", stacklevel=1)
         kwargs["eos_token"] = "<end_of_turn>"
         kwargs["eos_token_id"] = 107
-    tokenizer = AutoTokenizer.from_pretrained(name_or_path, **kwargs)
+    if "telechat" in name_or_path:
+        # Clean telechat cache before loading, and use a retry mechanism to ensure successful loading
+        _clear_telechat_cache_safe()
+        print(f"> Loading telechat tokenizer from {name_or_path} with kwargs: {kwargs}")
+        
+        # Use a dedicated telechat loading function with retry logic
+        tokenizer = _ensure_fresh_telechat_load(name_or_path, **kwargs)
+    else:
+        print(f"> Loading Tokenizer from {name_or_path} with kwargs: {kwargs}")
+        tokenizer = AutoTokenizer.from_pretrained(name_or_path, **kwargs)
     if correct_pad_token:
         set_pad_token_id(tokenizer)
     return tokenizer
@@ -73,6 +162,13 @@ def hf_processor(name_or_path, **kwargs):
     from transformers import AutoProcessor
 
     try:
+        # if "telechat" in name_or_path:
+        #     # kwargs["trust_remote_code"] = True
+        #     print(f"> Loading processor from {name_or_path}...")
+        #     processor = AutoProcessor.from_pretrained(name_or_path, trust_remote_code=True, **kwargs)
+        # else:
+        #     processor = AutoProcessor.from_pretrained(name_or_path, **kwargs)
+        print(f"> Loading processor from {name_or_path} with kwargs: {kwargs}")
         processor = AutoProcessor.from_pretrained(name_or_path, **kwargs)
     except Exception as e:
         processor = None
