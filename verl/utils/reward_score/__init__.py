@@ -47,7 +47,7 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
 
         # from . import math_verify
         # res = math_verify.compute_score(solution_str, ground_truth)
-    elif data_source == 'deepmath_103k' or data_source.startswith("math_verify"):
+    elif data_source == 'deepmath_103k' or data_source.startswith("math_verify") or data_source.startswith("distill_r1"):
         from . import math_verify
         res = math_verify.compute_score(solution_str, ground_truth)
     elif data_source == 'math_dapo' or data_source.startswith("aime") or data_source.startswith("dapo_"):

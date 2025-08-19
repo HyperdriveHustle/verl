@@ -83,6 +83,12 @@ def compute_score(model_output: str, ground_truth: str) -> bool:
         # dapo prompt
         answer_pattern=r"(?i)Answer\s*:\s*([^\n]+)"
     )
+    if extracted_ans is None:
+        extracted_ans = match_answer_content(
+            response_str,
+            # dapo prompt
+            answer_pattern=r'\\boxed\{(.*?)\}'
+        )
     # 根据 box 里面的内容判断（如果有 boxed 的话）
     format_correct= -1.0
     answer_correct = -1.0
