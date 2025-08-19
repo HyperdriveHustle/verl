@@ -81,7 +81,10 @@ class REMOTEBatchRewardManager:
         ground_truths = [item.non_tensor_batch["reward_model"].get("ground_truth", None) for item in data]
         data_sources = data.non_tensor_batch[self.reward_fn_key]
         extras = data.non_tensor_batch.get("extra_info", [None] * len(data))
-        prompts_into_extras = data.non_tensor_batch.get("prompt", [None] * len(data))
+        # prompts_into_extras = data.non_tensor_batch.get("messages", [None] * len(data))
+        # prompts_into_extras = data.non_tensor_batch.get("prompt", [None] * len(data))
+        prompt_key = self.remote_reward_cfg.get("prompt_key")
+        prompts_into_extras = data.non_tensor_batch.get(prompt_key, [None] * len(data))
 
         scores = self.compute_score(
             data_source=data_sources,

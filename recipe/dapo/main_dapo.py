@@ -33,6 +33,7 @@ def main(config):
 
 
 def run_ppo(config) -> None:
+    print(f"> config = {config}")
     if not ray.is_initialized():
         # this is for local ray cluster
         ray.init(
@@ -41,6 +42,7 @@ def run_ppo(config) -> None:
             "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
             "TENSORBOARD_DIR":os.environ.get("TENSORBOARD_DIR")}},
             num_cpus=config.ray_init.num_cpus,
+            logging_level='debug'
         )
 
     if OmegaConf.select(config.trainer, "profile_steps") is not None and len(OmegaConf.select(config.trainer, "profile_steps")) > 0:
@@ -73,8 +75,8 @@ class TaskRunner:
         # instantiate tokenizer
         from verl.utils import hf_processor, hf_tokenizer
 
-        tokenizer = hf_tokenizer(local_path)
-        processor = hf_processor(local_path, use_fast=True)  # used for multimodal LLM, could be none
+        tokenizer = hf_tokenizer(local_path,trust_remote_code=config.data.get("trust_remote_code", False))
+        processor = hf_processor(local_path, use_fast=True, trust_remote_code=config.actor_rollout_ref.model.get("trust_remote_code", False))  # used for multimodal LLM, could be none
 
         # define worker classes
         if config.actor_rollout_ref.actor.strategy == "fsdp":
@@ -159,8 +161,14 @@ class TaskRunner:
         )
 
         if 'remote_reward_cfg' in reward_manager_cls.__init__.__code__.co_varnames:
-            reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
-            val_reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
+            # reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
+            # val_reward_kwargs['remote_reward_cfg'] = config.get("remote_reward")
+            remote_reward_dict = config.get("remote_reward")
+            data_dict = config.get("data")
+            prompt_key = data_dict.get("prompt_key")
+            prompt_key_dict = {"prompt_key": prompt_key}
+            reward_kwargs['remote_reward_cfg'] = {**remote_reward_dict, **prompt_key_dict}
+            val_reward_kwargs['remote_reward_cfg'] = {**remote_reward_dict, **prompt_key_dict}
 
 
         reward_fn = reward_manager_cls(**reward_kwargs)

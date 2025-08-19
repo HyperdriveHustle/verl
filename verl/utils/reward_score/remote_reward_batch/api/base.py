@@ -96,6 +96,8 @@ class OpenAIClientTool:
     
 
     def batch_generate(self, batch_messages, **kwargs) -> List[List[str]]:
+        from datetime import datetime
+        print(f">>> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, batch_generate start...")
         assert 'model_name' in kwargs, 'model_name is required'
         workers = kwargs.get('workers', 5)
         
@@ -153,4 +155,5 @@ class OpenAIClientTool:
                                         "response_index": response_index,
                                         "responses": [None]}  # In case of an exception, store None at the correct index
         # print(f"> api return responses = {responses}")
+        print(f">>> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, batch_generate end !!!")
         return responses

@@ -148,7 +148,7 @@ def save_to_jsonl(prompt, response):
         "prompt": prompt,
         "response": response
     }
-    print(record)
+    #print(record)
     with open(SAVE_JUDGE_PATH, 'a', encoding='utf-8') as f:
         f.write(json.dumps(record, ensure_ascii=False) + '\n')
 
@@ -263,9 +263,9 @@ def get_response_by_batch_generate_from_response(problems, preds, ground_truths)
     batch_messages = []
     prompts = []
 
+    # print(f"> [debug] problems = {problems}")
     for idx, (problem, pred, ground_truth) in enumerate(zip(problems, preds, ground_truths)):
-        # print("problem")
-        # print(problem[0].get("content"))
+        # (f"> [debug] problem[0] = {problem[0]}")
         prompt = PROMPT_TEMPLATE_FROM_RESPONSE.format(
             problem=problem[0].get("content"),
             pred=pred,
@@ -283,7 +283,7 @@ def get_response_by_batch_generate_from_response(problems, preds, ground_truths)
         "temperature": 0.0,
         "top_p": 1.0,
         "max_tokens": 500,
-        "workers": 32
+        "workers": 64
         # "chat_template_kwargs": {"enable_thinking": False} # nothinking for qwen3 by hwq 0702
     }
     try:
@@ -389,11 +389,11 @@ def compute_score_batched(data_sources, solution_strs, ground_truths, extra_info
     problems = extra_infos
     # 提前截断 response，并抽取 pred
     response_strs = [s[-300:] for s in solution_strs]
-    preds = [
-        match_answer_content(resp, answer_pattern=r"(?i)Answer\s*:\s*([^\n]+)")
-        for resp in response_strs
-    ]
-
+    # preds = [
+    #     match_answer_content(resp, answer_pattern=r"(?i)Answer\s*:\s*([^\n]+)")
+    #     for resp in response_strs
+    # ]
+    preds = response_strs
 
     # 用 get_response_by_generate 并发地去询问 judge model（利用 batched_generate_single 包装的）
     responses = get_response_by_batch_generate(problems, preds, ground_truths)
