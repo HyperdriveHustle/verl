@@ -91,6 +91,21 @@ data:
     # The name of the dataset class within the specified file.
     name: null
 
+  dynamic_filter:
+    enable: false
+    keep_empty_all: true
+    init_mode: directly # directly disable only_last
+    init_file: null
+    easy_thresh: 1.0
+    hard_thresh: 0.0
+    easy_keep_ratio: null
+    hard_keep_ratio: null
+    empty_keep_ratio: null
+    ref_epoch: -1
+    strategy_version: null
+    agg: null # None min max mean weighted-mean
+    weight: null
+
 req_scheduler:
   seq_dir: null
   log_dir: null

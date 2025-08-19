@@ -24,6 +24,7 @@ import uuid
 import heapq
 import sys
 import io
+import pandas as pd
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -64,7 +65,7 @@ from verl.utils.metric import (
 from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance, karmarkar_karp
 from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
-
+from verl.trainer.data_prefilter import DataPrefilter
 WorkerType = Type[Worker]
 
 
@@ -498,10 +499,23 @@ class ReqScheduler:
         print(f"[ReqScheduler] sched, {world_size=}, {config=}")
         # get OUT len
         pre_outlens = []
+        not_found_cnt = 0
+        all_non_none_lens = []
         for raw_prompt_ids in batch_dict['raw_prompt_ids']:
             outlen = self.lookup_table(raw_prompt_ids)
             pre_outlens.append(outlen)
-
+            if outlen is None:
+                not_found_cnt += 1
+            else:
+                all_non_none_lens.append(outlen)
+        if not_found_cnt < len(batch_dict['raw_prompt_ids']) / 2:
+            print("[ReqScheduler] fill None prompt len before")
+            print(pre_outlens)
+            mean_len = int(sum(all_non_none_lens) / len(all_non_none_lens))
+            pre_outlens = [mean_len if i is None else i for i in pre_outlens]
+            print("[ReqScheduler] fill None prompt len after")
+            print(pre_outlens)
+            
         # sched
         tp_size = config.rollout.tensor_model_parallel_size
         assert world_size % tp_size == 0, f'world_size {world_size} must be divisible by tp_size {tp_size}'
@@ -676,6 +690,37 @@ class RayPPOTrainer:
         self.ray_worker_group_cls = ray_worker_group_cls
         self.device_name = device_name
         self.validation_generations_logger = ValidationGenerationsLogger()
+
+        init_history_acc_trace = None
+        self.enable_dynamic_data_prefilter = False
+        self.data_prefilter = None
+        self.intermediate_data_acc = None
+        if hasattr(self.config.data, "dynamic_filter") and self.config.data.dynamic_filter.get("enable", False):
+            # init for epoch 0 filter
+            self.enable_dynamic_data_prefilter = True
+            dynamic_filter_init_file = self.config.data.dynamic_filter.get("init_file", None)
+            if dynamic_filter_init_file:
+                for _file in dynamic_filter_init_file:
+                    if not os.path.exists(_file):
+                        print("Dynamic filter init file {} does not exist, skip loading.".format(_file))
+                        continue
+                    if init_history_acc_trace is None:
+                        init_history_acc_trace = defaultdict(list)
+                    init_history_acc_trace.update(json.load(open(_file)))
+                print("Loading initial {} history accuracy trace from {}".format(len(init_history_acc_trace), config.data.dynamic_filter.init_file))
+            
+            self.data_prefilter = DataPrefilter(
+                reference_epoch=self.config.data.dynamic_filter.get("ref_epoch", None),
+                easy_acc_thresh=self.config.data.dynamic_filter.get("easy_thresh", None),
+                hard_acc_thresh=self.config.data.dynamic_filter.get("hard_thresh", None),
+                easy_keep_ratio=self.config.data.dynamic_filter.get("easy_keep_ratio", None),
+                hard_keep_ratio=self.config.data.dynamic_filter.get("hard_keep_ratio", None),
+                empty_keep_ratio=self.config.data.dynamic_filter.get("empty_keep_ratio", None),
+                keep_empty_all=self.config.data.dynamic_filter.get("keep_empty_all", True),
+                agg=self.config.data.dynamic_filter.get("agg", None),
+                strategy_version=self.config.data.dynamic_filter.get("strategy_version", None),
+                init_history_acc_trace=init_history_acc_trace,
+            )
 
         # if ref_in_actor is True, the reference policy will be actor without lora applied
         self.ref_in_actor = config.actor_rollout_ref.model.get("lora_rank", 0) > 0
@@ -1198,6 +1243,14 @@ class RayPPOTrainer:
         dataloader_state_dict = self.train_dataloader.state_dict()
         torch.save(dataloader_state_dict, dataloader_local_path)
 
+        dataprefilter_local_path = os.path.join(local_global_step_folder, 'data_prefilter.pt')
+        if self.data_prefilter is not None:
+            print("[dynamic filter] save dynamic data_prefilter")
+            self.data_prefilter.save(dataprefilter_local_path)
+
+        dataprefilter_local_path = os.path.join(local_global_step_folder, 'current_epoch_data_acc.pt')
+        if self.intermediate_data_acc is not None:
+            torch.save(self.intermediate_data_acc, dataprefilter_local_path)
         # latest checkpointed iteration tracker (for atomic usage)
         local_latest_checkpointed_iteration = os.path.join(self.config.trainer.default_local_dir, "latest_checkpointed_iteration.txt")
         with open(local_latest_checkpointed_iteration, "w") as f:
@@ -1254,6 +1307,17 @@ class RayPPOTrainer:
         else:
             print(f"Warning: No dataloader state found at {dataloader_local_path}, will start from scratch")
 
+        dataprefilter_local_path = os.path.join(global_step_folder, 'data_prefilter.pt')
+        print(f"[dynamic filter] dataprefilter_local_path: {dataprefilter_local_path}")
+        if os.path.exists(dataprefilter_local_path):
+            if self.config.dynamic_filter.init_mode == "disable":
+                print("[dynamic filter] Has data_prefilter data but not allowed to init, skip")
+            else:
+                init_mode = self.config.dynamic_filter.init_mode
+                print(f"[dynamic filter] Loading data prefilter from resume checkpoint, init mode: {init_mode}")
+                self.data_prefilter.load(os.path.join(global_step_folder, 'data_prefilter.pt'), init_mode)
+                
+
     def _balance_batch(self, batch: DataProto, metrics, logging_prefix="global_seqlen"):
         """Reorder the data on single controller such that each dp rank gets similar total tokens"""
         attention_mask = batch.batch["attention_mask"]
@@ -1299,6 +1363,12 @@ class RayPPOTrainer:
             logger.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get("val_only", False):
                 return
+        
+        self.intermediate_data_acc = defaultdict(list)
+        intermediate_data_correct_num = defaultdict(list)
+        skip_data_log_list = []
+        
+        gen_batch_prompt_size = self.config.data.get("gen_batch_size", self.config.data.train_batch_size)
 
         # add tqdm
         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
@@ -1306,9 +1376,57 @@ class RayPPOTrainer:
         # we start from step 1
         self.global_steps += 1
         last_val_metrics = None
+        
+        batch = None
+        num_prompt_in_batch = 0
 
         for epoch in range(self.config.trainer.total_epochs):
+            print(f"Epoch start {epoch}")
+            if self.enable_dynamic_data_prefilter: acc_batch_dict = None
+            real_step = 0
+            if self.data_prefilter is not None:
+                self.data_prefilter.epoch_init(current_epoch=epoch)
             for bs_idx, batch_dict in enumerate(self.train_dataloader):
+                # print(batch_dict)
+                # open("/afs/chatrl/users/lyy/experiments/debug/debug_250711142004/batch_dict.json", 'w').write(json.dumps(batch_dict, ensure_ascii=False, indent=4))
+                if self.enable_dynamic_data_prefilter:
+                    # print(f"Dynamic Filtering: epoch {epoch}, len(batch): {len(new_batch)}")
+                    print(f"Dynamic Filtering for epoch {epoch}, real_step {real_step}")
+                    filtered_batch, skip_log = self.data_prefilter.filter_examples_easy_dict(epoch, batch_dict, return_log=True)
+
+                    # 合并 acc_batch_dict 和 filtered_batch
+                    merged_batch = {}
+                    if acc_batch_dict is None:
+                        merged_batch = deepcopy(filtered_batch)
+                    else:
+                        for key in filtered_batch:
+                            if isinstance(filtered_batch[key], torch.Tensor):
+                                merged_batch[key] = torch.cat([acc_batch_dict[key], filtered_batch[key]], dim=0)
+                            elif isinstance(filtered_batch[key], np.ndarray):
+                                merged_batch[key] = np.concatenate([acc_batch_dict[key], filtered_batch[key]], axis=0)
+                            else:
+                                raise ValueError(f"Unsupported type in data {type(filtered_batch[key])}") 
+                                # acc_batch_dict[key] + filtered_batch[key]
+                    
+                    first_key = list(merged_batch.keys())[0]
+                    total_len = len(merged_batch[first_key])
+                    print("all_len: {}, gen_bsz: {}, acc_len: {}".format(total_len, gen_batch_prompt_size, max(total_len - gen_batch_prompt_size, 0)))
+                    if total_len == gen_batch_prompt_size:
+                        batch_dict = dict(merged_batch)
+                        acc_batch_dict = None
+                    elif total_len > gen_batch_prompt_size:
+                        final_batch = {}
+                        leftover_batch = {}
+                        for key, value in merged_batch.items():
+                            final_batch[key] = value[:gen_batch_prompt_size]
+                            leftover_batch[key] = value[gen_batch_prompt_size:]
+                        batch_dict = dict(final_batch)
+                        acc_batch_dict = dict(leftover_batch)
+                    else:
+                        acc_batch_dict = dict(merged_batch)
+                        continue
+                    skip_data_log_list.append([epoch, skip_log])
+
                 #to verify restore_order
                 self.req_scheduler.sched(batch_dict,
                     self.actor_rollout_wg.world_size,
@@ -1327,26 +1445,27 @@ class RayPPOTrainer:
 
                 metrics = {}
                 timing_raw = {}
-                batch: DataProto = DataProto.from_single_dict(batch_dict)
+                new_batch: DataProto = DataProto.from_single_dict(batch_dict)
+                    
 
                 # pop those keys for generation
                 batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
                 non_tensor_batch_keys_to_pop = ["raw_prompt_ids"]
-                if "multi_modal_data" in batch.non_tensor_batch:
+                if "multi_modal_data" in new_batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("multi_modal_data")
-                if "raw_prompt" in batch.non_tensor_batch:
+                if "raw_prompt" in new_batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("raw_prompt")
-                if "tools_kwargs" in batch.non_tensor_batch:
+                if "tools_kwargs" in new_batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("tools_kwargs")
-                if "interaction_kwargs" in batch.non_tensor_batch:
+                if "interaction_kwargs" in new_batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("interaction_kwargs")
-                if "reqs_idx" in batch.non_tensor_batch:
+                if "reqs_idx" in new_batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("reqs_idx")
-                if "pre_outlens" in batch.non_tensor_batch:
+                if "pre_outlens" in new_batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("pre_outlens")
 
                 print(f"> {non_tensor_batch_keys_to_pop=}")
-                gen_batch = batch.pop(
+                gen_batch = new_batch.pop(
                     batch_keys=batch_keys_to_pop,
                     non_tensor_batch_keys=non_tensor_batch_keys_to_pop,
                 )
@@ -1356,7 +1475,7 @@ class RayPPOTrainer:
                 idx = gen_batch.batch['input_ids']  # (bs, prompt_length)
                 reqs_idx = gen_batch.non_tensor_batch['reqs_idx']
                 raw_prompt_ids = gen_batch.non_tensor_batch['raw_prompt_ids'] # (bs, varlen)
-                batch.non_tensor_batch['raw_prompt_ids'] = raw_prompt_ids
+                new_batch.non_tensor_batch['raw_prompt_ids'] = raw_prompt_ids
                 print(
                     f'[BATCH INPUT]: {idx.shape}, {gen_batch.non_tensor_batch.keys()=}, raw_prompt_ids = {type(raw_prompt_ids)}'
                 )
@@ -1379,13 +1498,13 @@ class RayPPOTrainer:
                             gen_baseline_batch.meta_info["do_sample"] = False
                             gen_baseline_output = self.actor_rollout_wg.generate_sequences(gen_baseline_batch)
 
-                            batch = batch.union(gen_baseline_output)
-                            reward_baseline_tensor = self.reward_fn(batch)
+                            new_batch = new_batch.union(gen_baseline_output)
+                            reward_baseline_tensor = self.reward_fn(new_batch)
                             reward_baseline_tensor = reward_baseline_tensor.sum(dim=-1)
 
-                            batch.pop(batch_keys=list(gen_baseline_output.batch.keys()))
+                            new_batch.pop(batch_keys=list(gen_baseline_output.batch.keys()))
 
-                            batch.batch["reward_baselines"] = reward_baseline_tensor
+                            new_batch.batch["reward_baselines"] = reward_baseline_tensor
 
                             del gen_baseline_batch, gen_baseline_output
 
@@ -1394,16 +1513,16 @@ class RayPPOTrainer:
                         reqs_idx,
                         self.config.actor_rollout_ref.rollout.n,
                     )
-                    batch.non_tensor_batch["uid"] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object)
+                    new_batch.non_tensor_batch["uid"] = np.array([str(uuid.uuid4()) for _ in range(len(new_batch.batch))], dtype=object)
                     # repeat to align with repeated responses in rollout
-                    batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
-                    batch = batch.union(gen_batch_output)
+                    new_batch = new_batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
+                    new_batch = new_batch.union(gen_batch_output)
                     #####################################
                     # data examine2 (union-ed)
-                    seq = batch.batch['input_ids']
-                    response = batch.batch['responses']
-                    raw_prompt_ids = batch.non_tensor_batch['raw_prompt_ids']
-                    print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape} {len(batch)} {batch.batch.keys()} {batch.non_tensor_batch.keys()}')
+                    seq = new_batch.batch['input_ids']
+                    response = new_batch.batch['responses']
+                    raw_prompt_ids = new_batch.non_tensor_batch['raw_prompt_ids']
+                    print(f'[BATCH OUTPUT]: {seq.shape}, {response.shape} {len(new_batch)} {new_batch.batch.keys()} {new_batch.non_tensor_batch.keys()}')
                     
                     pad_ids = self.actor_rollout_wg.get_tokenizer_pad_id()
                     model = self.config.actor_rollout_ref.model.path.split('/')[-1]
@@ -1421,47 +1540,47 @@ class RayPPOTrainer:
                         unpadded,
                     )
 
-                    batch.batch["response_mask"] = compute_response_mask(batch)
+                    new_batch.batch["response_mask"] = compute_response_mask(new_batch)
                     # Balance the number of valid tokens across DP ranks.
                     # NOTE: This usually changes the order of data in the `batch`,
                     # which won't affect the advantage calculation (since it's based on uid),
                     # but might affect the loss calculation (due to the change of mini-batching).
                     # TODO: Decouple the DP balancing and mini-batching.
                     if self.config.trainer.balance_batch:
-                        self._balance_batch(batch, metrics=metrics)
+                        self._balance_batch(new_batch, metrics=metrics)
 
                     # compute global_valid tokens
-                    batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
+                    new_batch.meta_info["global_token_num"] = torch.sum(new_batch.batch["attention_mask"], dim=-1).tolist()
 
                     with marked_timer("reward", timing_raw, color="yellow"):
                         # compute reward model score
                         if self.use_rm:
-                            reward_tensor = self.rm_wg.compute_rm_score(batch)
-                            batch = batch.union(reward_tensor)
+                            reward_tensor = self.rm_wg.compute_rm_score(new_batch)
+                            new_batch = new_batch.union(reward_tensor)
 
                         if self.config.reward_model.launch_reward_fn_async:
-                            future_reward = compute_reward_async.remote(batch, self.config, self.tokenizer)
+                            future_reward = compute_reward_async.remote(new_batch, self.config, self.tokenizer)
                         else:
-                            reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
+                            reward_tensor, reward_extra_infos_dict = compute_reward(new_batch, self.reward_fn)
 
                     # recompute old_log_probs
                     with marked_timer("old_log_prob", timing_raw, color="blue"):
-                        old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
+                        old_log_prob = self.actor_rollout_wg.compute_log_prob(new_batch)
                         entropys = old_log_prob.batch["entropys"]
-                        response_masks = batch.batch["response_mask"]
+                        response_masks = new_batch.batch["response_mask"]
                         loss_agg_mode = self.config.actor_rollout_ref.actor.loss_agg_mode
                         entropy_agg = agg_loss(loss_mat=entropys, loss_mask=response_masks, loss_agg_mode=loss_agg_mode)
                         old_log_prob_metrics = {"actor/entropy": entropy_agg.detach().item()}
                         metrics.update(old_log_prob_metrics)
                         old_log_prob.batch.pop("entropys")
-                        batch = batch.union(old_log_prob)
+                        new_batch = new_batch.union(old_log_prob)
 
-                        if "rollout_log_probs" in batch.batch.keys():
+                        if "rollout_log_probs" in new_batch.batch.keys():
                             # TODO: we may want to add diff of probs too.
-                            rollout_old_log_probs = batch.batch["rollout_log_probs"]
-                            actor_old_log_probs = batch.batch["old_log_probs"]
-                            attention_mask = batch.batch["attention_mask"]
-                            responses = batch.batch["responses"]
+                            rollout_old_log_probs = new_batch.batch["rollout_log_probs"]
+                            actor_old_log_probs = new_batch.batch["old_log_probs"]
+                            attention_mask = new_batch.batch["attention_mask"]
+                            responses = new_batch.batch["responses"]
                             response_length = responses.size(1)
                             response_mask = attention_mask[:, -response_length:]
 
@@ -1484,40 +1603,41 @@ class RayPPOTrainer:
                         # compute reference log_prob
                         with marked_timer("ref", timing_raw, color="olive"):
                             if not self.ref_in_actor:
-                                ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
+                                ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(new_batch)
                             else:
-                                ref_log_prob = self.actor_rollout_wg.compute_ref_log_prob(batch)
-                            batch = batch.union(ref_log_prob)
+                                ref_log_prob = self.actor_rollout_wg.compute_ref_log_prob(new_batch)
+                            new_batch = new_batch.union(ref_log_prob)
 
                     # compute values
                     if self.use_critic:
                         with marked_timer("values", timing_raw, color="cyan"):
-                            values = self.critic_wg.compute_values(batch)
-                            batch = batch.union(values)
+                            values = self.critic_wg.compute_values(new_batch)
+                            new_batch = new_batch.union(values)
+
 
                     with marked_timer("adv", timing_raw, color="brown"):
                         # we combine with rule-based rm
                         reward_extra_infos_dict: dict[str, list]
                         if self.config.reward_model.launch_reward_fn_async:
                             reward_tensor, reward_extra_infos_dict = ray.get(future_reward)
-                        batch.batch["token_level_scores"] = reward_tensor
+                        new_batch.batch["token_level_scores"] = reward_tensor
 
                         if reward_extra_infos_dict:
-                            batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
+                            new_batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
 
                         # compute rewards. apply_kl_penalty if available
                         if self.config.algorithm.use_kl_in_reward:
-                            batch, kl_metrics = apply_kl_penalty(batch, kl_ctrl=self.kl_ctrl_in_reward, kl_penalty=self.config.algorithm.kl_penalty)
+                            new_batch, kl_metrics = apply_kl_penalty(new_batch, kl_ctrl=self.kl_ctrl_in_reward, kl_penalty=self.config.algorithm.kl_penalty)
                             metrics.update(kl_metrics)
                         else:
-                            batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+                            new_batch.batch["token_level_rewards"] = new_batch.batch["token_level_scores"]
 
                         # compute advantages, executed on the driver process
 
                         norm_adv_by_std_in_grpo = self.config.algorithm.get("norm_adv_by_std_in_grpo", True)  # GRPO adv normalization factor
 
-                        batch = compute_advantage(
-                            batch,
+                        new_batch = compute_advantage(
+                            new_batch,
                             adv_estimator=self.config.algorithm.adv_estimator,
                             gamma=self.config.algorithm.gamma,
                             lam=self.config.algorithm.lam,
@@ -1526,6 +1646,82 @@ class RayPPOTrainer:
                             multi_turn=self.config.actor_rollout_ref.rollout.multi_turn.enable,
                             config=self.config.algorithm,
                         )
+
+                    # start = time.time()
+                    df = pd.DataFrame(new_batch.non_tensor_batch)
+                    df['data_id'] = df['data_source'] + '_' + df['index'].astype(str)
+                    # print("all unique data_id:", df['data_id'].unique())
+                    # correct_num_info = tuple(df.groupby('data_id')['score'].apply(lambda x: (x == 1).sum()).to_dict().items())
+                    # avg_score_info = tuple(df.groupby('data_id')['score'].mean().to_dict().items())
+                    # idx2correct_num = df[df['score'] == 1].groupby('index').size().to_dict()
+                    # idx2avg_score = df.groupby('index')['score'].mean().to_dict()
+                    
+                    avg_score_info = tuple(df.groupby('data_id')['acc'].mean().to_dict().items())
+                    idx2correct_num = df[df['acc'] == 1].groupby('index').size().to_dict()
+                    idx2avg_score = df.groupby('index')['acc'].mean().to_dict()
+                    
+                    intermediate_data_correct_num.update(idx2correct_num)
+                    self.intermediate_data_acc.update(idx2avg_score)
+                    # print(f'data save cost time: {(time.time() - start) * 1000:.1f} ms')
+                    # TODO log self.config.actor_rollout_ref.rollout.n 后续支持动态调整
+                    if self.data_prefilter is not None:
+                        self.data_prefilter.update(epoch, avg_score_info)
+                    # print(f'len(self.data_prefilter): {len(self.data_prefilter)}')
+                    
+                    if hasattr(self.config.algorithm, "filter_groups") and self.config.algorithm.filter_groups.get("enable", False):
+                        # Collect the sequence reward for each trajectory
+                        metric_name = 'acc'
+                        prompt_uid2metric_vals = defaultdict(list)
+                        for uid, metric_val in zip(new_batch.non_tensor_batch['uid'],
+                                                    new_batch.non_tensor_batch[metric_name]):
+                            prompt_uid2metric_vals[uid].append(metric_val)
+
+                        prompt_uid2metric_std = {}
+                        for prompt_uid, metric_vals in prompt_uid2metric_vals.items():
+                            prompt_uid2metric_std[prompt_uid] = np.std(metric_vals)
+
+                        print(f"apply filter_groups by std > 0")
+                        kept_prompt_uids = [
+                            uid for uid, std in prompt_uid2metric_std.items()
+                            if std > 0 or len(prompt_uid2metric_vals[uid]) == 1
+                        ]
+                        num_prompt_in_batch += len(kept_prompt_uids)
+                        metrics['actor/keep_prompt_num'] = len(kept_prompt_uids)
+
+                        kept_traj_idxs = []
+                        for idx, traj_from_prompt_uid in enumerate(new_batch.non_tensor_batch['uid']):
+                            if traj_from_prompt_uid in kept_prompt_uids:
+                                kept_traj_idxs.append(idx)
+
+                        new_batch = new_batch[kept_traj_idxs]
+                        if batch is None:
+                            batch = new_batch
+                        else:
+                            batch = DataProto.concat([batch, new_batch])
+
+                        prompt_bsz = self.config.data.train_batch_size
+                        metrics['actor/step_over_bsz'] = num_prompt_in_batch - prompt_bsz
+                        if num_prompt_in_batch < prompt_bsz:
+                            print(f'{num_prompt_in_batch=} < {prompt_bsz=}. Keep generating...')
+                            continue
+                        else:
+                            # Align the batch
+                            all_uids = set()
+                            for uid in batch.non_tensor_batch['uid']:
+                                all_uids.add(uid)
+                            select_uids = list(all_uids)[:prompt_bsz]
+                            kept_traj_idxs = []
+                            for idx, traj_from_prompt_uid in enumerate(batch.non_tensor_batch['uid']):
+                                if traj_from_prompt_uid in select_uids:
+                                    kept_traj_idxs.append(idx)
+                            batch = batch[kept_traj_idxs]
+                            # print("all filter uid")
+                            # print(batch.non_tensor_batch['uid'])
+                            # traj_bsz = self.config.data.train_batch_size * self.config.actor_rollout_ref.rollout.n
+                            # batch = batch[:traj_bsz]
+                            # TODO taro 验证是否切的同一条prompt
+                    else:
+                        batch = new_batch
 
                     # update critic
                     if self.use_critic:
@@ -1585,10 +1781,14 @@ class RayPPOTrainer:
                 n_gpus = self.resource_pool_manager.get_n_gpus()
                 metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
 
+                batch = None
+                num_prompt_in_batch = 0
+
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
 
                 progress_bar.update(1)
+                real_step += 1
                 self.global_steps += 1
 
                 if do_profile:
@@ -1603,4 +1803,20 @@ class RayPPOTrainer:
                 if is_last_step:
                     pprint(f"Final validation metrics: {last_val_metrics}")
                     progress_bar.close()
+                    if hasattr(self.config.trainer, 'intermediate_save_dir') and self.config.trainer.intermediate_save_dir:
+                        # print(self.config.trainer.intermediate_save_dir)
+                        if not os.path.exists(self.config.trainer.intermediate_save_dir):
+                            os.makedirs(self.config.trainer.intermediate_save_dir)
+                        print(f'Saving intermediate reward info to {self.config.trainer.intermediate_save_dir}')
+                        torch.save(self.intermediate_data_acc, f'{self.config.trainer.intermediate_save_dir}/epoch{epoch}_data_acc.pt')
+                        torch.save(skip_data_log_list, f'{self.config.trainer.intermediate_save_dir}/epoch{epoch}_skip_log_list.pt')
                     return
+            
+            print(f'Epoch done {epoch}! {real_step} steps.')
+            if hasattr(self.config.trainer, 'intermediate_save_dir') and self.config.trainer.intermediate_save_dir:
+                # print(self.config.trainer.intermediate_save_dir)
+                if not os.path.exists(self.config.trainer.intermediate_save_dir):
+                    os.makedirs(self.config.trainer.intermediate_save_dir)
+                print(f'Saving intermediate reward info to {self.config.trainer.intermediate_save_dir}')
+                torch.save(self.intermediate_data_acc, f'{self.config.trainer.intermediate_save_dir}/epoch{epoch}_data_acc.pt')
+                torch.save(skip_data_log_list, f'{self.config.trainer.intermediate_save_dir}/epoch{epoch}_skip_log_list.pt')

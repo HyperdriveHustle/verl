@@ -442,6 +442,16 @@ class DataProto:
 
         return type(self)(batch=sub_batch, non_tensor_batch=non_tensor_batch, meta_info=sub_meta_info)
 
+    def select_by_index(self, indices) -> 'DataProto':
+        sub_batch = self.batch[indices]
+        sub_non_tensor_batch = {
+            key: np.array(val)[indices] if not isinstance(val, np.ndarray) else val[indices]
+            for key, val in self.non_tensor_batch.items()
+        }
+        # sub_non_tensor_batch = {
+        #     key: val[indices] for key, val in self.non_tensor_batch.items()}
+        return DataProto(batch=sub_batch, non_tensor_batch=sub_non_tensor_batch, meta_info=self.meta_info)
+    
     def select_idxs(self, idxs):
         """
         Select specific indices from the DataProto.
