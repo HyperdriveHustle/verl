@@ -403,7 +403,7 @@ class AgentLoopWorker:
         )
 
         num_turns = np.array([input.num_turns for input in inputs], dtype=np.int32)
-        breakpoint()
+        #breakpoint()
         metrics = [input.metrics.model_dump() for input in inputs]
         code_rewards = np.array([input.reward for input in inputs])
         non_tensor_batch ={

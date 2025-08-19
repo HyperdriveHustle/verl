@@ -35,7 +35,7 @@ clip_ratio_high=0.28
 
 max_turns=8
 max_prompt_length=2048
-max_response_length=4096
+max_response_length=8192
 actor_lr=1e-6
 
 train_batch_size=32
@@ -44,7 +44,7 @@ n_resp_per_prompt=16
 n_resp_per_prompt_val=1
 
 # ================= perfomance =================
-infer_tp=4 # vllm
+infer_tp=1 # vllm
 train_sp=1 # train
 offload=True
 #export VLLM_USE_V1=1
@@ -92,20 +92,19 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.multi_turn.max_assistant_turns=$max_turns \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=$tool_config_path \
     actor_rollout_ref.rollout.multi_turn.format=hermes \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
     actor_rollout_ref.rollout.n=$n_resp_per_prompt \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.6 \
     actor_rollout_ref.rollout.val_kwargs.temperature=1.0 \
     actor_rollout_ref.rollout.val_kwargs.n=$n_resp_per_prompt_val \
-    actor_rollout_ref.rollout.multi_turn.max_user_turns=5\
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=4 \
+    trainer.n_gpus_per_node=8 \
     trainer.val_before_train=True \
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \
-    trainer.save_freq=-1 \
+    trainer.save_freq=50 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=5 \
-    trainer.total_epochs=3 $@ 2>&1 | tee /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent_multi_turn/$experiment_name.log
+    trainer.total_epochs=10 $@ 2>&1 | tee /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent_multi_turn/$experiment_name.log

@@ -2,12 +2,12 @@ tools:
   - class_name: "recipe.async_dapo_tool.custom_unit.CustomSandboxFusionTool"
     config:
       sandbox_fusion_url: "http://10.127.16.170:28893/run"
-      num_workers: 128
+      num_workers: 256
       enable_global_rate_limit: true
-      rate_limit: 128
-      default_timeout: 60
+      rate_limit: 256
+      default_timeout: 30
       default_language: "python"
-      memory_limit_mb: 5120
+      memory_limit_mb: 1024
       type: native
 
     tool_schema:

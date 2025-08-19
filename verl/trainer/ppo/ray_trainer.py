@@ -782,12 +782,14 @@ class RayPPOTrainer:
             "val-core/code/pass@1": pass_rate,
             "val-core/code/correct_count": pass_count,
             "val-core/code/total_count": total_count,
-            "val-core/code/mean_score": np.mean(sample_scores) if sample_scores else 0.0,
+            "val-core/code/mean_reward": np.mean(sample_scores) if sample_scores else 0.0,
             "val-core/code/max_score": max(sample_scores) if sample_scores else 0.0,
             "val-core/code/min_score": min(sample_scores) if sample_scores else 0.0,
+            "val-core/code/mean_answer_reward": test_output_gen_batch.meta_info["tool_reward"]["agent_loop/answer_reward/mean"],
+            "val-core/code/mean_format_reward": test_output_gen_batch.meta_info["tool_reward"]["agent_loop/format_reward/mean"],
         }
-        metric_dict.update(test_output_gen_batch.meta_info["timing"])
-        metric_dict.update(test_output_gen_batch.meta_info["tool_reward"])
+        #metric_dict.update(test_output_gen_batch.meta_info["timing"])
+        #metric_dict.update(test_output_gen_batch.meta_info["tool_reward"])
         print(metric_dict)
         return metric_dict
 

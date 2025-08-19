@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from verl.experimental.agent_loop.agent_loop import AgentLoopBase, AgentLoopOutput, register
+from verl.experimental.agent_loop.tool_parser import FunctionCall, ToolParser
 from verl.tools.utils.tool_registry import initialize_tools_from_config
 from verl.utils.profiler import simple_timer
 from verl.utils.rollout_trace import rollout_trace_op
@@ -120,6 +121,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             print(f"Initialized reward tool: {cls.code_tool.name}")
 
         cls.response_length = config.actor_rollout_ref.rollout.response_length
+        cls.tool_parser = ToolParser.get_tool_parser(config.actor_rollout_ref.rollout.multi_turn.format, cls.tokenizer)
         cls.system_prompt = tokenizer.apply_chat_template([{}], add_generation_prompt=False, tokenize=True)
         
     def validate_response_structure(self, processed_str: str) -> bool:
@@ -154,10 +156,12 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 response_ids = await self.server_manager.generate(
                     request_id=request_id, prompt_ids=prompt_ids, sampling_params=sampling_params
                 )
+            if turns > 1:
+                breakpoint()
             prompt_ids += response_ids
             response_mask += [1] * len(response_ids)
             assistant_turns += 1
-
+            prompt_text = self.tokenizer.decode(prompt_ids, skip_special_tokens=False)
             solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
             format_check = self.validate_response_structure(solution_text)
             code_pattern = re.compile(
@@ -168,12 +172,12 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             if not code_match:
                 code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
             extracted_code = code_match.group(1).strip() if code_match else None
-    
+            error_message = ""
             format_reward += FORMAT_REARD if format_check else -FORMAT_REARD
-
+            
             if extracted_code and hasattr(self, 'code_tool'):
                 extracted_code_w_test = PY_IMPORTS + extracted_code + "\n" + test_code
-                with simple_timer(f"tool_calls_turn_{turns}", metrics):
+                with simple_timer(f"tool_calls", metrics):
                     instance_id = None
                     try:
                         instance_id = await self.code_tool.create()
@@ -201,13 +205,23 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                             await self.code_tool.release(instance_id)
                 if turns >= cur_max_turns:
                     break
+                tool_messages = []
+                tool_messages.append({
+                    "role": "tool",
+                    "content": error_message,
+                })
                 tool_response_ids = await self.loop.run_in_executor(
                     None,
-                    lambda messages=error_message: self.tokenizer.apply_chat_template(
+                    lambda messages=tool_messages: self.tokenizer.apply_chat_template(
                         messages, add_generation_prompt=True, tokenize=True
                     ),
                 )
+
+                breakpoint()
+                tool_response_text = self.tokenizer.decode(tool_response_ids, skip_special_tokens=False)
                 tool_response_ids = tool_response_ids[len(self.system_prompt) :]
+                tool_response_text = self.tokenizer.decode(tool_response_ids, skip_special_tokens=False)
+                
                 if len(response_mask) + len(tool_response_ids) >= self.response_length:
                     break
                 prompt_ids += tool_response_ids
@@ -215,8 +229,8 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             else:
                 break
             
-
-        breakpoint()
+        if not is_validate:
+            breakpoint()
         response_ids = prompt_ids[-len(response_mask) :]
         prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
         format_reward = np.clip(format_reward, -FORMAT_REARD, FORMAT_REARD)
