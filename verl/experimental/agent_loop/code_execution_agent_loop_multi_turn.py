@@ -146,7 +146,9 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         answer_reward = 0.0
         timeout_reward = 0.0
         format_reward = 0.0
-        while turns < self.max_turns:
+        is_validate = sampling_params_w_test_code["validate"]
+        cur_max_turns = 1 if is_validate else self.max_turns
+        while turns < cur_max_turns:
             turns += 1
             with simple_timer("generate_sequence", metrics):
                 response_ids = await self.server_manager.generate(
@@ -176,13 +178,14 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                     try:
                         instance_id = await self.code_tool.create()
                         response, score, meta_data = await self.code_tool.execute(instance_id, {"code": extracted_code_w_test})
-
+                        #breakpoint()
                         if meta_data["status"] == "timeout":
                             metrics["timeout"] = 1
                             error_message = "Code execution timeout, please reflect your answer and asnwer again to slove the problem based on the error message and your previous responses."
                         else:
                             if score.lower() == "success":
                                 answer_reward = ANSWER_REWARD
+                                metrics["success_at_turn"] = turns
                                 break
                             else:
                                 stdout = meta_data.get("stdout", "")
@@ -196,7 +199,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                     finally:
                         if instance_id:
                             await self.code_tool.release(instance_id)
-                if turns >= self.max_turns:
+                if turns >= cur_max_turns:
                     break
                 tool_response_ids = await self.loop.run_in_executor(
                     None,
@@ -208,22 +211,26 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 if len(response_mask) + len(tool_response_ids) >= self.response_length:
                     break
                 prompt_ids += tool_response_ids
-            response_mask += [0] * len(tool_response_ids)
+                response_mask += [0] * len(tool_response_ids)
+            else:
+                break
+            
 
-
+        breakpoint()
+        response_ids = prompt_ids[-len(response_mask) :]
+        prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
         format_reward = np.clip(format_reward, -FORMAT_REARD, FORMAT_REARD)
 
         metrics["answer_reward"] = answer_reward
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward
         reward = answer_reward + format_reward + timeout_reward
-        #breakpoint()
+
         output = AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids[: self.response_length],
-            # 因为所有内容都是LLM生成的，所以mask全是1
-            response_mask=[1] * len(response_ids[: self.response_length]),
-            num_turns=1, 
+            response_mask=response_mask[: self.response_length],
+            num_turns=turns, 
             metrics=metrics,
             reward=reward
         )

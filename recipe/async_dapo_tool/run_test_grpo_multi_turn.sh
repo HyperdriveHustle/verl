@@ -17,9 +17,9 @@ test_files="['$leetcode2k_test']"
 tool_config_path=$DATA_ROOT/recipe/async_dapo_tool/sandbox_fusion_tool_config.yaml
 
 # wandb
-project_name=wlw_retool
+project_name=wlw_multi_turn
 export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-experiment_name=Qwen25-7B-Instruct_${TIMESTAMP}
+experiment_name=${project_name}_Qwen25-7B-Instruct_${TIMESTAMP}
 default_local_dir=/nvfile-heatstorage/ai_infra/ckpts/wuxn5/wanglongwen/code_agent_checkpoint/$experiment_name
 
 # ================= algorithm =================
@@ -65,9 +65,8 @@ python3 -m verl.trainer.main_ppo \
     data.max_response_length=$max_response_length \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
-    data.custom_cls.path=$HDFS_ROOT/recipe/async_dapo_tool/custom_unit.py \
+    data.custom_cls.path=$HDFS_ROOT/recipe/async_dapo_tool/custom_unit_multi_turn.py \
     data.custom_cls.name=CustomRLHFDataset \
-    custom_reward_function.path=$HDFS_ROOT/recipe/async_dapo_tool/custom_unit.py \
     custom_reward_function.name=compute_score \
     actor_rollout_ref.model.path=$model_path \
     actor_rollout_ref.model.use_remove_padding=True \
@@ -98,6 +97,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.6 \
     actor_rollout_ref.rollout.val_kwargs.temperature=1.0 \
     actor_rollout_ref.rollout.val_kwargs.n=$n_resp_per_prompt_val \
+    actor_rollout_ref.rollout.multi_turn.max_user_turns=5\
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
@@ -108,4 +108,4 @@ python3 -m verl.trainer.main_ppo \
     trainer.save_freq=-1 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=5 \
-    trainer.total_epochs=3 $@ 2>&1 | tee /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent/$experiment_name.log
+    trainer.total_epochs=3 $@ 2>&1 | tee /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent_multi_turn/$experiment_name.log
