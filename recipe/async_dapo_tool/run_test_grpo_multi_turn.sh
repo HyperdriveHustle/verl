@@ -33,7 +33,7 @@ kl_loss_coef=0.0
 clip_ratio_low=0.2
 clip_ratio_high=0.28
 
-max_turns=8
+max_turns=4
 max_prompt_length=2048
 max_response_length=8192
 actor_lr=1e-6
@@ -100,7 +100,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=8 \
+    trainer.n_gpus_per_node=4 \
     trainer.val_before_train=True \
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \

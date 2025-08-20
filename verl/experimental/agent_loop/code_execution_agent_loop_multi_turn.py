@@ -17,6 +17,8 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 ANSWER_REWARD = 1.0
 FORMAT_REARD = 0.1
+REWARD_DECAY_FACTOR = 0.5
+TIMEOUTDECAY = -0.2
 
 PY_IMPORTS = """import heapq
 import itertools
@@ -144,10 +146,8 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         response_mask = []
         turns = 0
         assistant_turns = 0
-        
-        answer_reward = 0.0
-        timeout_reward = 0.0
-        format_reward = 0.0
+
+        format_ok_turns = 0
         is_validate = sampling_params_w_test_code["validate"]
         cur_max_turns = 1 if is_validate else self.max_turns
         while turns < cur_max_turns:
@@ -173,13 +173,14 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
             extracted_code = code_match.group(1).strip() if code_match else None
             error_message = ""
-            format_reward += FORMAT_REARD if format_check else -FORMAT_REARD
+            format_ok_turns += 1
             
             if extracted_code and hasattr(self, 'code_tool'):
                 extracted_code_w_test = PY_IMPORTS + extracted_code + "\n" + test_code
                 with simple_timer(f"tool_calls", metrics):
                     instance_id = None
                     try:
+                        
                         instance_id = await self.code_tool.create()
                         response, score, meta_data = await self.code_tool.execute(instance_id, {"code": extracted_code_w_test})
                         #breakpoint()
@@ -188,7 +189,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                             error_message = "Code execution timeout, please reflect your answer and asnwer again to slove the problem based on the error message and your previous responses."
                         else:
                             if score.lower() == "success":
-                                answer_reward = ANSWER_REWARD
+                                answer_reward = ANSWER_REWARD * (REWARD_DECAY_FACTOR ** (turns - 1))
                                 metrics["success_at_turn"] = turns
                                 break
                             else:
@@ -198,11 +199,12 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                     except Exception as e:
                         breakpoint()
                         logger.error(f"Error during reward calculation: {e}")
-                        answer_reward = 0.0
+                        answer_reward = -0.2
                         break
                     finally:
                         if instance_id:
                             await self.code_tool.release(instance_id)
+                
                 if turns >= cur_max_turns:
                     break
                 tool_messages = []
@@ -210,30 +212,31 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                     "role": "tool",
                     "content": error_message,
                 })
+                breakpoint()
                 tool_response_ids = await self.loop.run_in_executor(
                     None,
                     lambda messages=tool_messages: self.tokenizer.apply_chat_template(
                         messages, add_generation_prompt=True, tokenize=True
                     ),
                 )
-
                 breakpoint()
-                tool_response_text = self.tokenizer.decode(tool_response_ids, skip_special_tokens=False)
                 tool_response_ids = tool_response_ids[len(self.system_prompt) :]
-                tool_response_text = self.tokenizer.decode(tool_response_ids, skip_special_tokens=False)
+
                 
                 if len(response_mask) + len(tool_response_ids) >= self.response_length:
                     break
                 prompt_ids += tool_response_ids
                 response_mask += [0] * len(tool_response_ids)
             else:
+                answer_reward = -0.4
                 break
             
         if not is_validate:
             breakpoint()
         response_ids = prompt_ids[-len(response_mask) :]
         prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
-        format_reward = np.clip(format_reward, -FORMAT_REARD, FORMAT_REARD)
+        format_reward = FORMAT_REARD 
+        timeout_reward = metrics["timeout"] * TIMEOUTDECAY
 
         metrics["answer_reward"] = answer_reward
         metrics["format_reward"] = format_reward
