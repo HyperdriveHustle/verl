@@ -290,6 +290,7 @@ if __name__ == '__main__':
 """
         current_generation_code = wrapper_code
     stdin = None if stdin_data is None else str(stdin_data)
+    start = time.perf_counter()
     try:
         if concurrent_semaphore:
             # logger.debug(f"Case {case_index + 1}: Attempting to acquire semaphore.")
@@ -319,7 +320,10 @@ if __name__ == '__main__':
         error_msg = f"API Request Exception during check_correctness for case {case_index + 1}: {e}"
         logger.error(f"Case {case_index + 1}: {error_msg}")
         traceback.print_exc()
-
+    end = time.perf_counter()
+    duration = end - start
+    if duration > 100:
+        breakpoint()
     metadata = {
         "case_index": case_index,
         "input": stdin,

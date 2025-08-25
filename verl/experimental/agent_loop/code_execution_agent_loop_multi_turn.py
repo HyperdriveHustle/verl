@@ -147,6 +147,10 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         turns = 0
         assistant_turns = 0
 
+        answer_reward = 0.0
+        format_reward = 0.0
+        timeout_reward = 0.0 
+
         format_ok_turns = 0
         is_validate = sampling_params_w_test_code["validate"]
         cur_max_turns = 1 if is_validate else self.max_turns
@@ -161,9 +165,9 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             prompt_ids += response_ids
             response_mask += [1] * len(response_ids)
             assistant_turns += 1
-            prompt_text = self.tokenizer.decode(prompt_ids, skip_special_tokens=False)
             solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
             format_check = self.validate_response_structure(solution_text)
+            format_ok_turns += 1 if format_check else 0
             code_pattern = re.compile(
                 r"<answer>.*?```(?:python\n)?(.*?)```.*?</answer>", 
                 re.DOTALL
@@ -173,10 +177,9 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
             extracted_code = code_match.group(1).strip() if code_match else None
             error_message = ""
-            format_ok_turns += 1
             
             if extracted_code and hasattr(self, 'code_tool'):
-                extracted_code_w_test = PY_IMPORTS + extracted_code + "\n" + test_code
+                extracted_code_w_test = extracted_code + "\n" + test_code
                 with simple_timer(f"tool_calls", metrics):
                     instance_id = None
                     try:
@@ -186,7 +189,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                         #breakpoint()
                         if meta_data["status"] == "timeout":
                             metrics["timeout"] = 1
-                            error_message = "Code execution timeout, please reflect your answer and asnwer again to slove the problem based on the error message and your previous responses."
+                            error_message = "Code execution timeout, please reflect your answer and answer again to slove the problem based on the error message and your previous responses."
                         else:
                             if score.lower() == "success":
                                 answer_reward = ANSWER_REWARD * (REWARD_DECAY_FACTOR ** (turns - 1))
@@ -204,7 +207,6 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                     finally:
                         if instance_id:
                             await self.code_tool.release(instance_id)
-                
                 if turns >= cur_max_turns:
                     break
                 tool_messages = []
@@ -212,14 +214,12 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                     "role": "tool",
                     "content": error_message,
                 })
-                breakpoint()
                 tool_response_ids = await self.loop.run_in_executor(
                     None,
                     lambda messages=tool_messages: self.tokenizer.apply_chat_template(
                         messages, add_generation_prompt=True, tokenize=True
                     ),
                 )
-                breakpoint()
                 tool_response_ids = tool_response_ids[len(self.system_prompt) :]
 
                 
@@ -228,16 +228,15 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 prompt_ids += tool_response_ids
                 response_mask += [0] * len(tool_response_ids)
             else:
-                answer_reward = -0.4
+                answer_reward = -0.2
                 break
-            
-        if not is_validate:
-            breakpoint()
+        # if not is_validate:
+        #     breakpoint()
+        #breakpoint()
         response_ids = prompt_ids[-len(response_mask) :]
         prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
-        format_reward = FORMAT_REARD 
-        timeout_reward = metrics["timeout"] * TIMEOUTDECAY
-
+        format_reward = FORMAT_REARD * (format_ok_turns / turns)
+        #timeout_reward = metrics["timeout"] * TIMEOUTDECAY
         metrics["answer_reward"] = answer_reward
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward

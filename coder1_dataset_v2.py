@@ -65,7 +65,7 @@ Slove the problem step by step and show your thinking step in <think>...</think>
 </answer>
 
 Note that you should always think first, and the final answer block and code snippe must be done after your thoughts.
-
+Note that you should provide only the raw function code. No examples, and no test cases.
     """
 
 PY_IMPORTS = "import heapq\nfrom math import floor, gcd\nimport random\nimport sys\nfrom typing import *\nfrom functools import *\nimport collections\nfrom collections import *\nfrom itertools import *\nfrom heapq import *\nfrom bisect import *\nfrom string import *\nimport math\nimport datetime\ninf = float('inf')\n"

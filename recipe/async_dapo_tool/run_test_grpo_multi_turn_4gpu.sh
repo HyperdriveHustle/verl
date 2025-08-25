@@ -37,7 +37,7 @@ clip_ratio_high=0.28
 
 max_turns=4
 max_prompt_length=2048
-max_response_length=8192
+max_response_length=10240
 actor_lr=1e-6
 
 train_batch_size=32
@@ -102,7 +102,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=8 \
+    trainer.n_gpus_per_node=4 \
     trainer.val_before_train=True \
     trainer.val_only=False\
     trainer.log_val_generations=100 \
@@ -110,4 +110,4 @@ python3 -m verl.trainer.main_ppo \
     trainer.save_freq=50 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=5 \
-    trainer.total_epochs=10 $@ 2>&1 | tee -a /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent_multi_turn/$experiment_name.log
+    trainer.total_epochs=10 #$@ 2>&1 | tee -a /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent_multi_turn/$experiment_name.log
