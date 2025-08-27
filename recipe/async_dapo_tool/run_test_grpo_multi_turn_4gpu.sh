@@ -8,7 +8,7 @@ leetcode2k=/nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/data/code-r1-
 leetcode2k_test=/nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/data/code-r1-3k-leetcode2k-test
 #for test:use the same
 aime_2025=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data
-model_path=/model/Qwen25-7B-Instruct
+model_path=/model/Qwen2.5-7B-Instruct
 # model_path=/model/Qwen2.5-3B
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$leetcode2k']"
@@ -37,7 +37,7 @@ clip_ratio_high=0.28
 
 max_turns=4
 max_prompt_length=2048
-max_response_length=10240
+max_response_length=8192
 actor_lr=1e-6
 
 train_batch_size=32

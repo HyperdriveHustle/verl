@@ -19,87 +19,9 @@ ANSWER_REWARD = 1.0
 FORMAT_REARD = 0.1
 REWARD_DECAY_FACTOR = 0.5
 TIMEOUTDECAY = -0.2
+MAX_TURN_LEN = 4096
 
-PY_IMPORTS = """import heapq
-import itertools
-import random
-import functools
-import collections
-import string
-import math
-import datetime
 
-from typing import *
-from functools import *
-from collections import *
-from itertools import *
-from heapq import *
-from bisect import *
-from string import *
-from operator import *
-from math import *
-
-inf = float('inf')
-
-class ListNode:
-    def __init__(self, val=0, next=None):
-        self.val = val
-        self.next = next
-
-def list_node(values: list):
-    if not values:
-        return None
-    head = ListNode(values[0])
-    p = head
-    for val in values[1:]:
-        node = ListNode(val)
-        p.next = node
-        p = node
-    return head
-
-def is_same_list(p1, p2):
-    if p1 is None and p2 is None:
-        return True
-    if not p1 or not p2:
-        return False
-    return p1.val == p2.val and is_same_list(p1.next, p2.next)
-
-class TreeNode:
-    def __init__(self, val=0, left=None, right=None):
-        self.val = val
-        self.left = left
-        self.right = right
-
-def tree_node(values: list):
-    if not values:
-        return None
-    root = TreeNode(values[0])
-    i = 1
-    queue = deque()
-    queue.append(root)
-    while queue:
-        node = queue.popleft()
-        if i < len(values) and values[i] is not None:
-            node.left = TreeNode(values[i])
-            queue.append(node.left)
-            i += 1
-        if i < len(values) and values[i] is not None:
-            node.right = TreeNode(values[i])
-            queue.append(node.right)
-            i += 1
-    return root
-
-def is_same_tree(p, q):
-    if not p and not q:
-        return True
-    elif not p or not q:
-        return False
-    elif p.val != q.val:
-        return False
-    else:
-        return is_same_tree(p.left, q.left) and is_same_tree(p.right, q.right)
-
-"""
 @register("code_execution_agent_multi_turn")
 class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
     @classmethod
@@ -137,7 +59,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         prompt_ids = await self.loop.run_in_executor(
             None,
             lambda: self.tokenizer.apply_chat_template(
-                messages, add_generation_prompt=True, tokenize=True
+                messages, add_generation_prompt=True, tokenize=True, enable_thinking=False
             ),
         )
 
@@ -150,7 +72,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         answer_reward = 0.0
         format_reward = 0.0
         timeout_reward = 0.0 
-
+        reward_decay = 0.0
         format_ok_turns = 0
         is_validate = sampling_params_w_test_code["validate"]
         cur_max_turns = 1 if is_validate else self.max_turns
@@ -160,8 +82,13 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 response_ids = await self.server_manager.generate(
                     request_id=request_id, prompt_ids=prompt_ids, sampling_params=sampling_params
                 )
-            if turns > 1:
-                breakpoint()
+            # if len(response_ids) > MAX_TURN_LEN:
+            #     breakpoint()
+            #     response_ids = response_ids[:MAX_TURN_LEN]
+            #     reward_decay -= -0.1
+            #     print("max_turn_len_exceed")
+            
+            
             prompt_ids += response_ids
             response_mask += [1] * len(response_ids)
             assistant_turns += 1
@@ -228,6 +155,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 prompt_ids += tool_response_ids
                 response_mask += [0] * len(tool_response_ids)
             else:
+                print("**************No code extracted**************")
                 answer_reward = -0.2
                 break
         # if not is_validate:
@@ -240,7 +168,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         metrics["answer_reward"] = answer_reward
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward
-        reward = answer_reward + format_reward + timeout_reward
+        reward = answer_reward + format_reward + timeout_reward + reward_decay
 
         output = AgentLoopOutput(
             prompt_ids=prompt_ids,

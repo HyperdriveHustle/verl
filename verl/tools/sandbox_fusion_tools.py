@@ -17,6 +17,7 @@ import os
 import threading
 from contextlib import ExitStack
 from enum import Enum
+from time import perf_counter
 from typing import Any, Callable, Optional, TypeVar
 from uuid import uuid4
 
@@ -74,6 +75,8 @@ class ExecutionWorker:
         return True
 
     def execute(self, fn: Callable[..., T], *fn_args, **fn_kwargs) -> T:
+        if not self.rate_limit_worker:
+            return fn(*fn_args, **fn_kwargs)
         with ExitStack() as stack:
             stack.callback(self.rate_limit_worker.release.remote)
             ray.get(self.rate_limit_worker.acquire.remote())
@@ -176,9 +179,14 @@ class SandboxFusionTool(BaseTool):
 
     def execute_code(self, instance_id, code, timeout=30, language="python"):
         #breakpoint()
+        start = perf_counter()
         result_status, metadata = _process_single_case(
             0, None, None, self.sandbox_fusion_url, code, timeout, self.memory_limit_mb, language
         )
+        end = perf_counter()
+        duration = end - start
+        if duration > 200:
+            breakpoint()
         # we should always expect this since we don't have correct answer
         if metadata["run_status"] == "Finished":
             actual_output = metadata["stdout"] + metadata["stderr"]

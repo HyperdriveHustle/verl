@@ -22,6 +22,8 @@ export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 experiment_name=${project_name}_Qwen25-7B-Instruct_${TIMESTAMP}
 #experiment_name=wlw_multi_turn_Qwen25-7B-Instruct_2025-08-20_18-21-26
 # experiment_name=${project_name}_Qwen25-7B-Instruct_2025-08-20_18-21-26_650step_8k
+#experiment_name=wlw_multi_turn_Qwen25-7B-Instruct_2025-08-26_18-43-30
+#experiment_name=/model/Qwen3-4B-Instruct-2507
 default_local_dir=/nvfile-heatstorage/ai_infra/ckpts/wuxn5/wanglongwen/code_agent_checkpoint/$experiment_name
 
 # ================= algorithm =================
@@ -96,8 +98,9 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.multi_turn.format=hermes \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
     actor_rollout_ref.rollout.n=$n_resp_per_prompt \
-    actor_rollout_ref.rollout.val_kwargs.top_p=0.6 \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0 \
+    actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
+    actor_rollout_ref.rollout.val_kwargs.top_k=20 \
     actor_rollout_ref.rollout.val_kwargs.n=$n_resp_per_prompt_val \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
@@ -110,4 +113,4 @@ python3 -m verl.trainer.main_ppo \
     trainer.save_freq=50 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=5 \
-    trainer.total_epochs=10 $@ 2>&1 | tee -a /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent_multi_turn/$experiment_name.log
+    trainer.total_epochs=15 $@ 2>&1 | tee -a /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent_multi_turn/$experiment_name.log

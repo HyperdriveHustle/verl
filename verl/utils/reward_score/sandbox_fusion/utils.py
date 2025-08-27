@@ -27,6 +27,87 @@ DEFAULT_TIMEOUT = 10  # Default compile and run timeout
 MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1
 API_TIMEOUT = 10
+CALL_LOCALLY = False  # Whether to call local sandbox or remote API
+PY_IMPORTS = """import heapq
+import itertools
+import random
+import functools
+import collections
+import string
+import math
+import datetime
+
+from typing import *
+from functools import *
+from collections import *
+from itertools import *
+from heapq import *
+from bisect import *
+from string import *
+from operator import *
+from math import *
+
+inf = float('inf')
+
+class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+
+def list_node(values: list):
+    if not values:
+        return None
+    head = ListNode(values[0])
+    p = head
+    for val in values[1:]:
+        node = ListNode(val)
+        p.next = node
+        p = node
+    return head
+
+def is_same_list(p1, p2):
+    if p1 is None and p2 is None:
+        return True
+    if not p1 or not p2:
+        return False
+    return p1.val == p2.val and is_same_list(p1.next, p2.next)
+
+class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def tree_node(values: list):
+    if not values:
+        return None
+    root = TreeNode(values[0])
+    i = 1
+    queue = deque()
+    queue.append(root)
+    while queue:
+        node = queue.popleft()
+        if i < len(values) and values[i] is not None:
+            node.left = TreeNode(values[i])
+            queue.append(node.left)
+            i += 1
+        if i < len(values) and values[i] is not None:
+            node.right = TreeNode(values[i])
+            queue.append(node.right)
+            i += 1
+    return root
+
+def is_same_tree(p, q):
+    if not p and not q:
+        return True
+    elif not p or not q:
+        return False
+    elif p.val != q.val:
+        return False
+    else:
+        return is_same_tree(p.left, q.left) and is_same_tree(p.right, q.right)
+
+"""
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +144,129 @@ SUPPORTED_LANGUAGES = [
     "racket",
 ]
 
+def call_local_sandbox_api(
+    code: str,
+    stdin: Optional[str],
+    compile_timeout: int,
+    run_timeout: int,
+    memory_limit_mb: int,
+    language: str = "python",
+) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    import time
 
+    request_id = str(uuid.uuid4())
+    log_prefix = f"[Request ID: {request_id}] "
+
+    if language not in SUPPORTED_LANGUAGES:
+        error_msg = f"{log_prefix}Unsupported language: {language}"
+        logger.error(error_msg)
+        return None, error_msg
+    
+    try:
+        # 创建临时工作目录
+        with tempfile.TemporaryDirectory(prefix="verl_fj_", dir="/firejail_code/verl") as workdir:
+            full_code = PY_IMPORTS + code
+            
+            script_path = os.path.join(workdir, "main.py")
+            
+            result = {
+                "status": "unknown",
+                "run_status": "unknown", 
+                "run_result": None
+            }
+            
+            logger.info(f"{log_prefix}Writing code to {script_path}")
+            with open(script_path, "w", encoding="utf-8") as f:
+                f.write(full_code)
+
+            cmd = [
+                "firejail",
+                f"--private={workdir}",              # 独立的工作目录
+                f"--rlimit-as={memory_limit_mb}m",  # 内存限制
+                "--rlimit-fsize=2m",                # 文件大小限制
+                "--rlimit-nproc=32",
+                "--rlimit-nofile=32",
+                "--seccomp",                        # 启用 seccomp 安全过滤器
+                "--quiet",                          # 静默模式
+                f"--timeout=00:00:{run_timeout}",   # 超时设置
+                f"--whitelist={workdir}",           # 白名单工作目录
+                language,                           # 语言（实际上是 python）
+                "main.py",                          # 要执行的脚本
+            ]
+
+            logger.info(f"{log_prefix}Executing with firejail: {' '.join(cmd)}")
+            
+            # 执行代码
+            run_result = {}
+            start_time = time.monotonic()
+            env = os.environ.copy()
+            #env["OPENBLAS_NUM_THREADS"] = "1"
+            if "PYTHONPATH" in env:
+                del env["PYTHONPATH"] # avoid importing wrong stuff
+            try:
+                proc = subprocess.run(
+                    cmd, 
+                    cwd=workdir, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE,
+                    timeout=run_timeout, 
+                    env=env,
+                    input=stdin.encode() if stdin else None,
+                    check=False
+                )
+                duration = time.monotonic() - start_time
+                #print(duration)
+
+                run_result["stdout"] = proc.stdout.decode().strip()
+                run_result["stderr"] = proc.stderr.decode().strip()
+                run_result["return_code"] = proc.returncode
+                run_result["execution_time"] = duration
+                breakpoint()
+                if proc.returncode == 0:
+                    result["status"] = "Success"
+                    run_result["status"] = "Finished"
+                else:
+                    result["status"] = "Failed"
+                    run_result["status"] = "Finished"
+
+                result["run_result"] = run_result
+                
+                logger.info(f"{log_prefix}Local sandbox execution completed successfully")
+                return result, None
+            except subprocess.TimeoutExpired:
+                duration = time.monotonic() - start_time
+                logger.warning(f"{log_prefix}Process timed out after {duration:.2f}s")
+                
+                result["status"] = "Failed"
+                run_result["status"] = "TimeLimitExceeded"
+                run_result["stderr"] = "TimeLimitExceeded"
+                run_result["execution_time"] = duration
+                run_result["stdout"] = ""
+                run_result["return_code"] = -1
+                result["run_result"] = run_result
+                
+                return result, None
+
+    except Exception as e:
+        error_msg = f"{log_prefix}Unexpected error during local sandbox execution: {e}"
+        logger.error(error_msg)
+        result = {
+            "status": "Failed",
+            "run_status": "Error",
+            "run_result": {
+                "status": "Error",
+                "stderr": f"An unexpected internal error occurred: {e}",
+                "stdout": "",
+                "return_code": -1,
+                "execution_time": 0
+            }
+        }
+        return result, None
+    
 def call_sandbox_api(
     sandbox_fusion_url: str,
     code: str,
@@ -291,11 +494,33 @@ if __name__ == '__main__':
         current_generation_code = wrapper_code
     stdin = None if stdin_data is None else str(stdin_data)
     start = time.perf_counter()
-    try:
-        if concurrent_semaphore:
-            # logger.debug(f"Case {case_index + 1}: Attempting to acquire semaphore.")
-            with concurrent_semaphore:
-                # logger.debug(f"Case {case_index + 1}: Semaphore acquired. Calling API.")
+    if CALL_LOCALLY:
+        api_response, error_msg = call_local_sandbox_api(
+            code=current_generation_code,
+            stdin=stdin,
+            compile_timeout=timeout,
+            run_timeout=timeout,
+            memory_limit_mb=memory_limit_mb,
+            language=language,
+        )
+        breakpoint()
+    else:
+        try:
+            if concurrent_semaphore:
+                # logger.debug(f"Case {case_index + 1}: Attempting to acquire semaphore.")
+                with concurrent_semaphore:
+                    # logger.debug(f"Case {case_index + 1}: Semaphore acquired. Calling API.")
+                    api_response, error_msg = call_sandbox_api(
+                        sandbox_fusion_url=sandbox_fusion_url,
+                        code=current_generation_code,
+                        stdin=stdin,
+                        compile_timeout=timeout,
+                        run_timeout=timeout,
+                        memory_limit_mb=memory_limit_mb,
+                        language=language,
+                    )
+                # logger.debug(f"Case {case_index + 1}: Semaphore released.")
+            else:
                 api_response, error_msg = call_sandbox_api(
                     sandbox_fusion_url=sandbox_fusion_url,
                     code=current_generation_code,
@@ -305,25 +530,13 @@ if __name__ == '__main__':
                     memory_limit_mb=memory_limit_mb,
                     language=language,
                 )
-            # logger.debug(f"Case {case_index + 1}: Semaphore released.")
-        else:
-            api_response, error_msg = call_sandbox_api(
-                sandbox_fusion_url=sandbox_fusion_url,
-                code=current_generation_code,
-                stdin=stdin,
-                compile_timeout=timeout,
-                run_timeout=timeout,
-                memory_limit_mb=memory_limit_mb,
-                language=language,
-            )
-    except Exception as e:
-        error_msg = f"API Request Exception during check_correctness for case {case_index + 1}: {e}"
-        logger.error(f"Case {case_index + 1}: {error_msg}")
-        traceback.print_exc()
+        except Exception as e:
+            error_msg = f"API Request Exception during check_correctness for case {case_index + 1}: {e}"
+            logger.error(f"Case {case_index + 1}: {error_msg}")
+            traceback.print_exc()
     end = time.perf_counter()
     duration = end - start
-    if duration > 100:
-        breakpoint()
+    
     metadata = {
         "case_index": case_index,
         "input": stdin,

@@ -47,26 +47,34 @@ def minimize_stdio(inputs, outputs, max_n_tests=8):
     return list(sorted_stdin[:max_n_tests]), list(sorted_stdout[:max_n_tests])
 
 
-SYSTEM_PROMPT = """You are a helpful programming assistant. \
+SYSTEM_PROMPT = """You are an expert Python programming assistant who provides clean, production-ready code. \
 The user will ask you a question and you as the assistant solve it. \
-The assistant first thinks how to solve the task through reasoning and then provides the user with the final answer. \
-The reasoning process and answer are enclosed within <think>...</think> and <answer>...</answer> tags, respectively. \
-Your code should be excutable and always be with necessary python imports based on your code.\
-Slove the problem step by step and show your thinking step in <think>...</think> block and put your final code answer in <answer>...</answer> block like:
 
+Follow these steps to respond:
+1.  **Think**: First, reason about the problem step-by-step inside a <think>...</think> block.
+2.  **Answer**: After thinking, provide your final code inside an <answer>...</answer> block.
+
+**OUTPUT RULES**:
+1.  The code must be a complete, executable Python solution with all necessary imports.
+2.  The code within the <answer> block **MUST NOT** contain any function calls for testing, `print()` statements for demonstration, or an `if __name__ == '__main__':` block.
+3.  Your response should **ONLY** include the function or class definition. Do not provide any usage examples or test cases, as the user will handle testing separately.
+
+Here is an answer example:
 <think>
-*** your thinking ***
+your step-by-step thinking
 </think>
 
 <answer>
 ```python
-*** your code***
+code snippet
 ```
 </answer>
 
 Note that you should always think first, and the final answer block and code snippe must be done after your thoughts.
-Note that you should provide only the raw function code. No examples, and no test cases.
-    """
+**CRITICAL INSTRUCTION**: Your final code in the <answer> block must **ONLY** contain the core logic, such as functions or classes, required for the solution. **DO NOT** include any example usage, test cases, `if __name__ == '__main__':` blocks, or print statements for testing. The user already has their own test cases.
+
+Now, solve the following user request.
+"""
 
 PY_IMPORTS = "import heapq\nfrom math import floor, gcd\nimport random\nimport sys\nfrom typing import *\nfrom functools import *\nimport collections\nfrom collections import *\nfrom itertools import *\nfrom heapq import *\nfrom bisect import *\nfrom string import *\nimport math\nimport datetime\ninf = float('inf')\n"
 

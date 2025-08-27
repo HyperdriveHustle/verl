@@ -14,7 +14,7 @@
 import logging
 import re
 from typing import Any
-
+from time import perf_counter
 import datasets
 
 from verl.tools.base_tool import OpenAIFunctionToolSchema
@@ -33,10 +33,7 @@ class CustomSandboxFusionTool(SandboxFusionTool):
 
     @rollout_trace_op
     async def execute(self, instance_id: str, parameters: dict[str, Any], **kwargs) -> tuple[str, float, dict]:
-        code = parameters["code"]
-        matches = self.code_pattern.findall(code)
-        if matches:
-            code = matches[0].strip()
+        code = parameters["code"].strip()
 
         # NOTE: some script may not explicitly print result, we need to add a print statement to the end of the script
         # lines = code.split("\n")
@@ -52,9 +49,10 @@ class CustomSandboxFusionTool(SandboxFusionTool):
         language = parameters.get("language", self.default_language)
         if not isinstance(code, str):
             code = str(code)
-
+        start = perf_counter()
         result = await self.execution_pool.execute.remote(self.execute_code, instance_id, code, timeout, language)
-        #breakpoint()
+        end = perf_counter()
+        breakpoint()
         actual_output, code_status, meta_data = result
         return actual_output, code_status, meta_data
 
