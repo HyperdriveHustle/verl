@@ -97,14 +97,17 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
             format_check = self.validate_response_structure(solution_text)
             format_ok_turns += 1 if format_check else 0
-            code_pattern = re.compile(
-                r"<answer>.*?```(?:python\n)?(.*?)```.*?</answer>", 
-                re.DOTALL
-            )
-            code_match = code_pattern.search(solution_text)
-            if not code_match:
-                code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
-            extracted_code = code_match.group(1).strip() if code_match else None
+            code_pattern =  re.compile(r"```(?:python\n)?(.*?)```", re.DOTALL)
+            first_code_match = code_pattern.search(solution_text)
+            extracted_code = None
+            if first_code_match:
+                extracted_code = first_code_match.group(1).strip()
+            #     match_start_index, match_end_index = first_code_match.span()
+            #     answer_start_pos = solution_text.rfind('<answer>', 0, match_start_index)
+            #     if answer_start_pos != -1:
+            #         answer_end_pos = solution_text.find('</answer>', match_end_index)
+            #         if answer_end_pos != -1:
+            #             is_in_answer_tag = True
             error_message = ""
             end=perf_counter()
             logger.warning(f"preprocess **** Time taken: {end-start:.4f}s")
