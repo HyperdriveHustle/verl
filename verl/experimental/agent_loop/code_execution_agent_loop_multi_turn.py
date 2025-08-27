@@ -5,7 +5,7 @@ import re
 import numpy as np
 from typing import Any
 from uuid import uuid4
-
+from time import perf_counter
 from verl.experimental.agent_loop.agent_loop import AgentLoopBase, AgentLoopOutput, register
 from verl.experimental.agent_loop.tool_parser import FunctionCall, ToolParser
 from verl.tools.utils.tool_registry import initialize_tools_from_config
@@ -54,6 +54,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
 
     @rollout_trace_op
     async def run(self, messages: list[dict[str, Any]], sampling_params_w_test_code: dict[str, Any]) -> AgentLoopOutput:
+        logger.warning("**************agent run start**************")
         metrics = {}
         request_id = uuid4().hex
         prompt_ids = await self.loop.run_in_executor(
@@ -82,13 +83,14 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 response_ids = await self.server_manager.generate(
                     request_id=request_id, prompt_ids=prompt_ids, sampling_params=sampling_params
                 )
+            logger.warning(f"generate_sequence **** Time taken: {metrics['generate_sequence']:.4f}s")
             # if len(response_ids) > MAX_TURN_LEN:
             #     breakpoint()
             #     response_ids = response_ids[:MAX_TURN_LEN]
             #     reward_decay -= -0.1
             #     print("max_turn_len_exceed")
             
-            
+            start=perf_counter()
             prompt_ids += response_ids
             response_mask += [1] * len(response_ids)
             assistant_turns += 1
@@ -104,15 +106,23 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
             extracted_code = code_match.group(1).strip() if code_match else None
             error_message = ""
-            
+            end=perf_counter()
+            logger.warning(f"preprocess **** Time taken: {end-start:.4f}s")
             if extracted_code and hasattr(self, 'code_tool'):
                 extracted_code_w_test = extracted_code + "\n" + test_code
                 with simple_timer(f"tool_calls", metrics):
                     instance_id = None
                     try:
-                        
+                        start = perf_counter()
                         instance_id = await self.code_tool.create()
+                        end = perf_counter()
+                        logger.warning(f"await self.code_tool.create() **** Time taken: {end - start:.4f}s")
+
+                        start = perf_counter()
                         response, score, meta_data = await self.code_tool.execute(instance_id, {"code": extracted_code_w_test})
+                        end = perf_counter()
+                        logger.warning(f"await self.code_tool.execute **** Time taken: {end - start:.4f}s")
+
                         #breakpoint()
                         if meta_data["status"] == "timeout":
                             metrics["timeout"] = 1
@@ -155,12 +165,13 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 prompt_ids += tool_response_ids
                 response_mask += [0] * len(tool_response_ids)
             else:
-                print("**************No code extracted**************")
+                logger.warning("**************No code extracted**************")
                 answer_reward = -0.2
                 break
         # if not is_validate:
         #     breakpoint()
         #breakpoint()
+        logger.warning("multi_turn_over")
         response_ids = prompt_ids[-len(response_mask) :]
         prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
         format_reward = FORMAT_REARD * (format_ok_turns / turns)
