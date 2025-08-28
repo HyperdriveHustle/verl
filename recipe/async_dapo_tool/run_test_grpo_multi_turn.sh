@@ -8,7 +8,7 @@ leetcode2k=/nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/data/code-r1-
 leetcode2k_test=/nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/data/code-r1-3k-leetcode2k-test
 #for test:use the same
 aime_2025=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data
-model_path=/model/Qwen25-7B-Instruct
+model_path=/model/Qwen2.5-7B-Instruct
 # model_path=/model/Qwen2.5-3B
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$leetcode2k']"
@@ -38,8 +38,8 @@ clip_ratio_low=0.2
 clip_ratio_high=0.28
 
 max_turns=4
-max_prompt_length=2048
-max_response_length=8192
+max_prompt_length=4029
+max_response_length=10240
 actor_lr=1e-6
 
 train_batch_size=32
@@ -90,6 +90,9 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=$log_prob_max_token_len_per_gpu \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.mode=async \
+    actor_rollout_ref.rollout.temperature=0.7 \
+    actor_rollout_ref.rollout.top_k=20 \
+    actor_rollout_ref.rollout.top_p=0.8 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=$infer_tp \
     actor_rollout_ref.rollout.multi_turn.enable=True \
     actor_rollout_ref.rollout.multi_turn.max_user_turns=$max_turns \

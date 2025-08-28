@@ -117,6 +117,7 @@ class AgentLoopMetrics(BaseModel):
     answer_reward: float = 0.0
     format_reward: float = 0.0
     timeout_reward: float = 0.0
+    No_code_extracted_count:int=0
 
 class AgentLoopOutput(BaseModel):
     """Agent loop output."""
@@ -570,7 +571,7 @@ class AgentLoopManager:
         answer_reward = np.array([metric["answer_reward"] for chunk in metrics for metric in chunk])
         format_reward = np.array([metric["format_reward"] for chunk in metrics for metric in chunk])
         success_at_turn = np.array([metric["success_at_turn"] for chunk in metrics for metric in chunk])
-
+        No_code_extracted_count = np.array([metric["No_code_extracted_count"] for chunk in metrics for metric in chunk])
 
         timing["agent_loop/generate_sequences/min"] = t_generate_sequences.min()
         timing["agent_loop/generate_sequences/max"] = t_generate_sequences.max()
@@ -593,7 +594,7 @@ class AgentLoopManager:
         tool_reward["agent_loop/format_reward/mean"] = format_reward.mean()
 
         tool_reward["agent_loop/correct_count"] = np.sum(success_at_turn > 0).item()
-
+        tool_reward["agent_loop/No_code_extracted_count"] = No_code_extracted_count.sum()
         successful_turns = success_at_turn[success_at_turn > 0]
         tool_reward["agent_loop/success_at_turn/mean"] = successful_turns.mean().item() if len(successful_turns) > 0 else 0.0
         

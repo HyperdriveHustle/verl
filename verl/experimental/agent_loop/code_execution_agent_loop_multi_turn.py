@@ -54,13 +54,13 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
 
     @rollout_trace_op
     async def run(self, messages: list[dict[str, Any]], sampling_params_w_test_code: dict[str, Any]) -> AgentLoopOutput:
-        logger.warning("**************agent run start**************")
+        #logger.warning("**************agent run start**************")
         metrics = {}
         request_id = uuid4().hex
         prompt_ids = await self.loop.run_in_executor(
             None,
             lambda: self.tokenizer.apply_chat_template(
-                messages, add_generation_prompt=True, tokenize=True, enable_thinking=False
+                messages, add_generation_prompt=True, tokenize=True, enable_thinking=True
             ),
         )
 
@@ -83,20 +83,20 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 response_ids = await self.server_manager.generate(
                     request_id=request_id, prompt_ids=prompt_ids, sampling_params=sampling_params
                 )
-            logger.warning(f"generate_sequence **** Time taken: {metrics['generate_sequence']:.4f}s")
             # if len(response_ids) > MAX_TURN_LEN:
             #     breakpoint()
             #     response_ids = response_ids[:MAX_TURN_LEN]
             #     reward_decay -= -0.1
             #     print("max_turn_len_exceed")
             
-            start=perf_counter()
             prompt_ids += response_ids
             response_mask += [1] * len(response_ids)
             assistant_turns += 1
             solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
+
             format_check = self.validate_response_structure(solution_text)
             format_ok_turns += 1 if format_check else 0
+
             code_pattern =  re.compile(r"```(?:python\n)?(.*?)```", re.DOTALL)
             first_code_match = code_pattern.search(solution_text)
             extracted_code = None
@@ -109,27 +109,33 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             #         if answer_end_pos != -1:
             #             is_in_answer_tag = True
             error_message = ""
-            end=perf_counter()
-            logger.warning(f"preprocess **** Time taken: {end-start:.4f}s")
             if extracted_code and hasattr(self, 'code_tool'):
                 extracted_code_w_test = extracted_code + "\n" + test_code
                 with simple_timer(f"tool_calls", metrics):
                     instance_id = None
                     try:
-                        start = perf_counter()
                         instance_id = await self.code_tool.create()
-                        end = perf_counter()
-                        logger.warning(f"await self.code_tool.create() **** Time taken: {end - start:.4f}s")
 
-                        start = perf_counter()
                         response, score, meta_data = await self.code_tool.execute(instance_id, {"code": extracted_code_w_test})
-                        end = perf_counter()
-                        logger.warning(f"await self.code_tool.execute **** Time taken: {end - start:.4f}s")
-
                         #breakpoint()
                         if meta_data["status"] == "timeout":
                             metrics["timeout"] = 1
-                            error_message = "Code execution timeout, please reflect your answer and answer again to slove the problem based on the error message and your previous responses."
+                            error_message = f"""
+### Instruction
+Your previously generated code resulted in a 'timeout'. This usually means the code is too slow or has an infinite loop. Analyze your code for potential performance issues and provide a more efficient, corrected version.
+
+### Previous Code
+```python
+{extracted_code}
+```
+
+### Your Task
+1. Potential Root Cause: What is the likely reason for the timeout? (e.g., "The code uses a nested loop leading to O(n^2) complexity which is too slow for the given constraints," or "I forgot a termination condition in the while loop.")
+
+2. Optimization Plan: How will you improve the code's efficiency or fix the loop?
+
+3. Corrected Code: Provide the complete, corrected and optimized Python code inside a markdown block.
+"""
                         else:
                             if score.lower() == "success":
                                 answer_reward = ANSWER_REWARD * (REWARD_DECAY_FACTOR ** (turns - 1))
@@ -138,7 +144,26 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                             else:
                                 stdout = meta_data.get("stdout", "")
                                 stderr = meta_data.get("stderr", "")
-                                error_message = f"Code test failed.\n\nError message:\n{stdout}\n{stderr}\n\nPlease reflect your answer and asnwer again to slove the problem based on the error message and your previous responses."
+                                c = error_message = f"""
+### Instruction
+Your previously generated code failed to pass the tests. Analyze the error, formulate a correction plan, and provide the updated code.
+
+### Previous Code
+```python
+{extracted_code}
+```
+
+### Test Output (stdout & stderr)
+{stdout}
+{stderr}
+
+### Your Task
+1. Root Cause Analysis: Briefly explain why the previous code failed based on the test output.
+
+2. Correction Plan: Describe the step-by-step changes you will make to fix the issue.
+
+3. Corrected Code: Provide the complete, corrected Python code inside a markdown block.
+"""
                     except Exception as e:
                         breakpoint()
                         logger.error(f"Error during reward calculation: {e}")
@@ -168,13 +193,13 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 prompt_ids += tool_response_ids
                 response_mask += [0] * len(tool_response_ids)
             else:
-                logger.warning("**************No code extracted**************")
+                #logger.warning("**************No code extracted**************")
+                metrics["No_code_extracted_count"] = 1
                 answer_reward = -0.2
                 break
         # if not is_validate:
         #     breakpoint()
         #breakpoint()
-        logger.warning("multi_turn_over")
         response_ids = prompt_ids[-len(response_mask) :]
         prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
         format_reward = FORMAT_REARD * (format_ok_turns / turns)
