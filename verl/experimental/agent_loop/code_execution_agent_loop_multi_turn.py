@@ -17,7 +17,7 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 ANSWER_REWARD = 1.0
 FORMAT_REARD = 0.1
-REWARD_DECAY_FACTOR = 0.5
+REWARD_DECAY_FACTOR = 0.7
 TIMEOUTDECAY = -0.2
 MAX_TURN_LEN = 4096
 
@@ -52,6 +52,25 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         pattern = re.compile(r'<think>.*</think>.*<answer>.*</answer>$', re.DOTALL)
         return bool(pattern.match(processed_str.strip()))
 
+    def extract_code_from_answer_efficiently(self, solution_text: str) -> str | None:
+        answer_tag_start = solution_text.find('<answer>')
+        if answer_tag_start == -1:
+            return None
+
+        answer_tag_end = solution_text.find('</answer>', answer_tag_start)
+        if answer_tag_end == -1:
+            return None
+
+        content_start_index = answer_tag_start + len('<answer>')
+        answer_content = solution_text[content_start_index:answer_tag_end]
+        code_block_start = solution_text.find('```', content_start_index, answer_tag_end)
+        code_pattern = re.compile(r"```python(.*?)```", re.DOTALL)
+        match = code_pattern.search(answer_content)
+        if match:
+            return match.group(1).strip()
+        else:
+            return None
+    
     @rollout_trace_op
     async def run(self, messages: list[dict[str, Any]], sampling_params_w_test_code: dict[str, Any]) -> AgentLoopOutput:
         #logger.warning("**************agent run start**************")
@@ -97,19 +116,10 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             format_check = self.validate_response_structure(solution_text)
             format_ok_turns += 1 if format_check else 0
 
-            code_pattern =  re.compile(r"```(?:python\n)?(.*?)```", re.DOTALL)
-            first_code_match = code_pattern.search(solution_text)
-            extracted_code = None
-            if first_code_match:
-                extracted_code = first_code_match.group(1).strip()
-            #     match_start_index, match_end_index = first_code_match.span()
-            #     answer_start_pos = solution_text.rfind('<answer>', 0, match_start_index)
-            #     if answer_start_pos != -1:
-            #         answer_end_pos = solution_text.find('</answer>', match_end_index)
-            #         if answer_end_pos != -1:
-            #             is_in_answer_tag = True
+            extracted_code=self.extract_code_from_answer_efficiently(solution_text)
             error_message = ""
             if extracted_code and hasattr(self, 'code_tool'):
+                
                 extracted_code_w_test = extracted_code + "\n" + test_code
                 with simple_timer(f"tool_calls", metrics):
                     instance_id = None
@@ -122,19 +132,12 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                             metrics["timeout"] = 1
                             error_message = f"""
 ### Instruction
-Your previously generated code resulted in a 'timeout'. This usually means the code is too slow or has an infinite loop. Analyze your code for potential performance issues and provide a more efficient, corrected version.
+Code execution timeout, please reflect your answer and answer again to slove the problem based on the error message and your previous responses.
 
 ### Previous Code
 ```python
 {extracted_code}
 ```
-
-### Your Task
-1. Potential Root Cause: What is the likely reason for the timeout? (e.g., "The code uses a nested loop leading to O(n^2) complexity which is too slow for the given constraints," or "I forgot a termination condition in the while loop.")
-
-2. Optimization Plan: How will you improve the code's efficiency or fix the loop?
-
-3. Corrected Code: Provide the complete, corrected and optimized Python code inside a markdown block.
 """
                         else:
                             if score.lower() == "success":
@@ -146,23 +149,16 @@ Your previously generated code resulted in a 'timeout'. This usually means the c
                                 stderr = meta_data.get("stderr", "")
                                 c = error_message = f"""
 ### Instruction
-Your previously generated code failed to pass the tests. Analyze the error, formulate a correction plan, and provide the updated code.
+Code test failed.\n\nPlease reflect your answer and asnwer again to slove the problem.
 
 ### Previous Code
 ```python
 {extracted_code}
 ```
 
-### Test Output (stdout & stderr)
+### ERROR
 {stdout}
 {stderr}
-
-### Your Task
-1. Root Cause Analysis: Briefly explain why the previous code failed based on the test output.
-
-2. Correction Plan: Describe the step-by-step changes you will make to fix the issue.
-
-3. Corrected Code: Provide the complete, corrected Python code inside a markdown block.
 """
                     except Exception as e:
                         breakpoint()
@@ -193,16 +189,16 @@ Your previously generated code failed to pass the tests. Analyze the error, form
                 prompt_ids += tool_response_ids
                 response_mask += [0] * len(tool_response_ids)
             else:
-                #logger.warning("**************No code extracted**************")
                 metrics["No_code_extracted_count"] = 1
                 answer_reward = -0.2
+                breakpoint()
                 break
-        # if not is_validate:
-        #     breakpoint()
-        #breakpoint()
+
+
         response_ids = prompt_ids[-len(response_mask) :]
         prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
-        format_reward = FORMAT_REARD * (format_ok_turns / turns)
+        format_reward = FORMAT_REARD * format_ok_turns if format_ok_turns else -0.2
+
         #timeout_reward = metrics["timeout"] * TIMEOUTDECAY
         metrics["answer_reward"] = answer_reward
         metrics["format_reward"] = format_reward

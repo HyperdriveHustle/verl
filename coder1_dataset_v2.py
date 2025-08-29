@@ -56,22 +56,9 @@ Follow these steps to respond:
 
 **OUTPUT RULES**:
 1.  The code must be a complete, executable Python solution with all necessary imports.
-2.  The code within the <answer> block **MUST NOT** contain any function calls for testing, `print()` statements for demonstration, or an `if __name__ == '__main__':` block.
-3.  Your response should **ONLY** include the function or class definition. Do not provide any usage examples or test cases, as the user will handle testing separately.
+2.  Your response should **ONLY** include the function or class definition. Do not provide any usage examples or test cases, the user already has their own test cases which will be used to execute your code automatically.
 
-Here is an answer example:
-<think>
-your step-by-step thinking
-</think>
-
-<answer>
-```python
-code snippet
-```
-</answer>
-
-Note that you should always think first, and the final answer block and code snippe must be done after your thoughts.
-**CRITICAL INSTRUCTION**: Your final code in the <answer> block must **ONLY** contain the core logic, such as functions or classes, required for the solution. **DO NOT** include any example usage, test cases, `if __name__ == '__main__':` blocks, or print statements for testing. The user already has their own test cases.
+"Here is an example of the desired format:\n<think>\nI need to solve problem X. First I will do A, then B.\n</think>\n<answer>\n```python\n# final code here\n```\n</answer>"
 
 Now, solve the following user request.
 """

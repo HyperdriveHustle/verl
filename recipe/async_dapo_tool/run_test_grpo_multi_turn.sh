@@ -8,7 +8,7 @@ leetcode2k=/nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/data/code-r1-
 leetcode2k_test=/nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/data/code-r1-3k-leetcode2k-test
 #for test:use the same
 aime_2025=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data
-model_path=/model/Qwen2.5-7B-Instruct
+model_path=/model/Qwen3-4B
 # model_path=/model/Qwen2.5-3B
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$leetcode2k']"
@@ -19,11 +19,11 @@ tool_config_path=$DATA_ROOT/recipe/async_dapo_tool/sandbox_fusion_tool_config.ya
 # wandb
 project_name=wlw_multi_turn
 export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-experiment_name=${project_name}_Qwen25-7B-Instruct_${TIMESTAMP}
+experiment_name=${project_name}_Qwen3-4B-Instruct_${TIMESTAMP}
 #experiment_name=wlw_multi_turn_Qwen25-7B-Instruct_2025-08-20_18-21-26
 # experiment_name=${project_name}_Qwen25-7B-Instruct_2025-08-20_18-21-26_650step_8k
-#experiment_name=wlw_multi_turn_Qwen25-7B-Instruct_2025-08-26_18-43-30
-#experiment_name=/model/Qwen3-4B-Instruct-2507
+# experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-28_10-26-16
+# experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-28_22-29-02
 default_local_dir=/nvfile-heatstorage/ai_infra/ckpts/wuxn5/wanglongwen/code_agent_checkpoint/$experiment_name
 
 # ================= algorithm =================
@@ -38,8 +38,8 @@ clip_ratio_low=0.2
 clip_ratio_high=0.28
 
 max_turns=4
-max_prompt_length=4029
-max_response_length=10240
+max_prompt_length=3072
+max_response_length=14336
 actor_lr=1e-6
 
 train_batch_size=32
@@ -90,9 +90,6 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=$log_prob_max_token_len_per_gpu \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.mode=async \
-    actor_rollout_ref.rollout.temperature=0.7 \
-    actor_rollout_ref.rollout.top_k=20 \
-    actor_rollout_ref.rollout.top_p=0.8 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=$infer_tp \
     actor_rollout_ref.rollout.multi_turn.enable=True \
     actor_rollout_ref.rollout.multi_turn.max_user_turns=$max_turns \
@@ -101,9 +98,6 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.multi_turn.format=hermes \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
     actor_rollout_ref.rollout.n=$n_resp_per_prompt \
-    actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
-    actor_rollout_ref.rollout.val_kwargs.top_k=20 \
     actor_rollout_ref.rollout.val_kwargs.n=$n_resp_per_prompt_val \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \

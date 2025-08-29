@@ -114,4 +114,4 @@ python3 -m verl.trainer.main_ppo \
     trainer.save_freq=50 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=5 \
-    trainer.total_epochs=10 #$@ 2>&1 | tee -a /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent_multi_turn/$experiment_name.log
+    trainer.total_epochs=10 $@ 2>&1 | tee -a /nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/workspace/logs/logs_agent_multi_turn/$experiment_name.log
