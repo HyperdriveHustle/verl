@@ -144,9 +144,13 @@ class OpenAIClientTool:
                     xid, completion = result["id"], result["completions"]
                     response_index = batch_messages[index].get("response_index", None)
 
-                    responses[index] = {"id": xid,
-                                        "response_index": response_index,
-                                        "responses": [choice.message.content for choice in completion.choices]}  # Store the response at the correct index
+                    responses[index] = {
+                        "id": xid,
+                        "response_index": response_index,
+                        "responses": [choice.message.content for choice in completion.choices],
+                        "prompt_tokens": completion.usage.prompt_tokens,
+                        "completion_tokens": completion.usage.completion_tokens,
+                    }  # Store the response at the correct index
                     # print(f"> result, responses[{index}] = ", responses[index])
                 except Exception as e:
                     print(f">>> Exception while processing {model_name} API, completion: {completion}, error: {e}")

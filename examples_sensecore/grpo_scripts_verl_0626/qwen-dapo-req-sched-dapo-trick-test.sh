@@ -24,21 +24,21 @@ test_files="['$aime2024_test_path', '$aime2025_test_path']"
 # resume config
 export resume_mode=${resume_mode:-auto}
 export resume_from_path=${resume_from_path:-null}
-export model_path=${model_path:-/afs/chatrl/public/models/Qwen2.5-32B}
+export model_path=/afs/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B
 export model_name=$(basename "$model_path")
 
 
 # project config
-export project_name=${project_name:-verl_dapo_req_sched_v0626}
+export project_name=${project_name:-verl_qwen_7b_dapo_req_sched_v0626}
 # train params
 export total_epochs=${total_epochs:-50}
-export vllm_tp=${vllm_tp:-4}
+export vllm_tp=${vllm_tp:-2}
 
-export train_prompt_batch_size=${train_prompt_batch_size:-512}
+export train_prompt_batch_size=${train_prompt_batch_size:-32}
 export grpo_rollout_n=${grpo_rollout_n:-16}
 # model params
 export max_response_length=${max_response_length:-20000}
-export prompt_key=${prompt_key:-prompt}
+export prompt_key=${prompt_key:-messages}
 export resume_type=${resume_type:-no_resume}
 # env config
 export nnode=${WORLD_SIZE:-1}
@@ -69,7 +69,7 @@ infer_micro_batch_size=null
 
 max_prompt_length=$((1024 * 2))
 
-enable_overlong_buffer=True
+enable_overlong_buffer=False
 overlong_buffer_len=$((1024 * 4))
 overlong_penalty_factor=1.0
 
@@ -117,7 +117,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 
 sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=${model_name}-${base_model_suffix}_dapo-${req_algo}-${agg}_${nnode}node_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_all_dapo_trick_${resume_type}_${TIMESTAMP}
+export experiment_name=${model_name}-${base_model_suffix}_dapo-${req_algo}-${agg}_${nnode}node_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_overlong_punish_${enable_overlong_buffer}_all_dapo_trick_${resume_type}
 
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=/afs/chatrl/users/hxh/models/verl_rl_models/${project_name}/${experiment_name}

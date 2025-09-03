@@ -24,10 +24,10 @@ from verl.utils.reward_score import default_compute_score
 from verl.workers.reward_manager import register
 import os
 import json
+from datetime import datetime
+
 
 save_num_examine_path_remote_batch = os.environ.get("SAVE_NUM_EXAMINE_PATH_REMOTE_BATCH", "/afs/chatrl/users/hwq/log/verl/logs_sensecore/save_num_examine_remote_batch_test_val.jsonl")  # 允许默认路径
-
-
 
 @register("remote_batch")
 class REMOTEBatchRewardManager:
@@ -71,12 +71,23 @@ class REMOTEBatchRewardManager:
         prompt_len = prompt_ids.shape[-1]
         valid_response_lengths = attention_mask[:, prompt_len:].sum(dim=-1)
 
-        responses_str = []
+        # responses_str = []
+        summary_str = []
         for i in range(len(data)):
             valid_len = valid_response_lengths[i]
             valid_response_ids = response_ids[i][:valid_len]
-            response_str = self.tokenizer.decode(valid_response_ids, skip_special_tokens=True)
-            responses_str.append(response_str)
+            # response_str = self.tokenizer.decode(valid_response_ids, skip_special_tokens=False)
+            # responses_str.append(response_str)
+            # @xiaohui: 提取 summary，只判断 summary
+            # 提取 summary 的逻辑：选择 valid_response_ids 里 [15, 16735, 21, 2298, 18] (<|start|>assistant<|channel|>final<|message|>) 之后的内容
+            current_summary = ""
+            for i in range(len(valid_response_ids)):
+                if valid_response_ids[i] == 15 and i < len(valid_response_ids) - 4 and valid_response_ids[i + 1] == 16735 and valid_response_ids[i + 2] == 21 and valid_response_ids[i + 3] == 2298 and valid_response_ids[i + 4] == 18:
+                    current_summary = self.tokenizer.decode(valid_response_ids[i + 5:], skip_special_tokens=True)
+                    break
+            # print({"\t> valid_response_ids": valid_response_ids})
+            # print({"\t> current_summary": current_summary})
+            summary_str.append(current_summary)
 
         ground_truths = [item.non_tensor_batch["reward_model"].get("ground_truth", None) for item in data]
         data_sources = data.non_tensor_batch[self.reward_fn_key]
@@ -86,13 +97,16 @@ class REMOTEBatchRewardManager:
         prompt_key = self.remote_reward_cfg.get("prompt_key")
         prompts_into_extras = data.non_tensor_batch.get(prompt_key, [None] * len(data))
 
+        print(f">>> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, [remote_batch.py] compute_score start...")
         scores = self.compute_score(
             data_source=data_sources,
-            solution_str=responses_str,
+            # solution_str=responses_str,
+            solution_str=summary_str,
             ground_truth=ground_truths,
             extra_info=prompts_into_extras,
             **self.reward_kwargs,
         )
+        print(f">>> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, [remote_batch.py] compute_score end!!!")
 
         return scores
 
@@ -132,7 +146,8 @@ class REMOTEBatchRewardManager:
             reward_tensor[i, length - 1] = reward
 
             data_source = data_sources[i]
-            response_str = self.tokenizer.decode(data.batch["responses"][i][:length], skip_special_tokens=True)
+            # @xiaohui: keep special tokens
+            response_str = self.tokenizer.decode(data.batch["responses"][i][:length], skip_special_tokens=False)
             prompt_str = self.tokenizer.decode(data.batch["prompts"][i], skip_special_tokens=True)
             ground_truth = data[i].non_tensor_batch["reward_model"].get("ground_truth", None)
             # 保存为 JSONL
@@ -147,7 +162,6 @@ class REMOTEBatchRewardManager:
                 fout.write(json.dumps(output_item, ensure_ascii=False) + "\n")
 
             if already_printed.get(data_source, 0) < self.num_examine:
-            # if already_printed.get(data_source, 0) < 500:
                 # response_str = self.tokenizer.decode(data.batch["responses"][i][:length], skip_special_tokens=True)
                 # prompt_str = self.tokenizer.decode(data.batch["prompts"][i], skip_special_tokens=True)
                 # ground_truth = data[i].non_tensor_batch["reward_model"].get("ground_truth", None)

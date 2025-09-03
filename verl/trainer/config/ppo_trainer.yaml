@@ -218,6 +218,7 @@ actor_rollout_ref:
 
     # Entropy regularization coefficient in PPO loss
     entropy_coeff: 0
+    entropy_max: null
 
     # Whether to use KL loss instead of KL reward penalty. True for GRPO
     use_kl_loss: false
@@ -842,10 +843,10 @@ reward_model:
     ranks: null
 
 remote_reward:
-  base_url: "http://127.0.0.1:6664/v1"
-  api_key: "EMPTY"
-  model_name: "Qwen2.5-32B-Instruct"
-  save_judge_path: "/afs/chatrl/users/hwq/code/verl-remote-reward/examples_sensecore/grpo_remote_reward/output_test_para.jsonl"
+  base_url: "http://111.31.225.52:16669/v1"
+  api_key: null
+  model_name: "Qwen3-30B-A3B"
+  save_judge_path: "/afs/chatrl/users/hxh/code/verl/logs/remote-reward/output_test_para.jsonl"
 
 # custom reward function definition
 custom_reward_function:

@@ -1,10 +1,6 @@
 set -x
 
-# export dapo_train_path=${dapo_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k_dedup.parquet}
-# export aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8.parquet}
-export dapo_train_path=${dapo_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_dapo-math-17k_by_acc_0.2_0.7.parquet}
-export deepmath_train_path=${deepmath_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_deepmath_by_acc_0.2_0.7.parquet}
-export math7d5k_train_path=${math7d5k_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_math_train_by_acc_0_0.7.parquet}
+export math7d5k_train_path=${math7d5k_train_path:-/afs/chatrl/users/hxh/data/math_data/MATH_train/rule_based_rl/train_7d5k_with_refined_answers_math_verify_telechat3_base_rl_onplicy_step400_acc_0-0d7.parquet}
 
 export aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8_no_prompt.parquet}
 export aime2025_test_path=${aime2025_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2025/dapo_aime2025_sample8_no_prompt.parquet}
@@ -12,7 +8,7 @@ export aime2025_test_path=${aime2025_test_path:-/afs/chatrl/users/hxh/data/rule_
 # train_files="['$math7d5k_train_path', '$dapo_train_path', '$deepmath_train_path']"
 
 
-export train_files=${train_files:-"['$math7d5k_train_path', '$dapo_train_path', '$deepmath_train_path']"}
+export train_files=${train_files:-"['$math7d5k_train_path']"}
 
 # test_files="['$aime2024_test_path', '$aime2025_test_path']"
 export test_files=${test_files:-"['$aime2024_test_path', '$aime2025_test_path']"}
@@ -21,20 +17,20 @@ export test_files=${test_files:-"['$aime2024_test_path', '$aime2025_test_path']"
 # resume config
 export resume_mode=${resume_mode:-auto}
 export resume_from_path=${resume_from_path:-null}
-export model_path=${model_path:-/afs/chatrl/public/models/Qwen2.5-32B}
+export model_path=${model_path:-/afs/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B}
 export model_name=$(basename "$model_path")
 
 # project config
-export project_name=${project_name:-verl_dapo_math_grpo_dapo_req_sched}
+export project_name=${project_name:-verl_dapo_math_grpo_test}
 # train params
 export total_epochs=${total_epochs:-50}
 export vllm_tp=${vllm_tp:-4}
 
-export train_prompt_batch_size=${train_prompt_batch_size:-512}
+export train_prompt_batch_size=${train_prompt_batch_size:-32}
 export grpo_rollout_n=${grpo_rollout_n:-16}
 # model params
-export max_response_length=${max_response_length:-20000}
-export prompt_key=${prompt_key:-prompt}
+export max_response_length=${max_response_length:-8000}
+export prompt_key=${prompt_key:-messages}
 export resume_type=${resume_type:-no_resume}
 # env config
 export nnode=${WORLD_SIZE:-1}
@@ -70,7 +66,7 @@ max_prompt_length=$((1024 * 2))
 
 export val_before_train=${val_before_train:-True}
 
-export trust_remote_code=${trust_remote_code:-False}
+export trust_remote_code=${trust_remote_code:-True}
 
 export enable_overlong_buffer=${enable_overlong_buffer:-True}
 export overlong_buffer_len=${overlong_buffer_len:-$((1024 * 4))}
@@ -83,7 +79,7 @@ real_train_batch_size=$((train_prompt_batch_size * grpo_rollout_n))
 ppo_mini_batch_size=32
 
 
-export lr=${lr:-1e-6}
+lr=1e-6
 
 # Algorithm
 export temperature=${temperature:-1.0}
@@ -201,7 +197,6 @@ python3 -u -m  recipe.dapo.main_dapo \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=${offload} \
     actor_rollout_ref.actor.fsdp_config.fsdp_size=-1 \
-    reward_model.reward_manager=dapo \
     reward_model.overlong_buffer.enable=${enable_overlong_buffer} \
     reward_model.overlong_buffer.len=${overlong_buffer_len} \
     reward_model.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
@@ -214,6 +209,10 @@ python3 -u -m  recipe.dapo.main_dapo \
     trainer.n_gpus_per_node=8 \
     trainer.val_before_train=${val_before_train} \
     trainer.nnodes=${nnode} \
+    remote_reward.base_url=http://111.31.225.52:16669/v1 \
+    remote_reward.api_key=EMPTY \
+    remote_reward.model_name="Qwen3-30B-A3B" \
+    reward_model.reward_manager=remote_batch \
     trainer.save_freq=${save_freq} \
     trainer.test_freq=${test_freq} \
     trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/hxh/code/verl/logs_sensecore/$experiment_name.log
