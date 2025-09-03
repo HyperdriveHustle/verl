@@ -460,6 +460,7 @@ class DataParallelPPOActor(BasePPOActor):
                     clip_ratio_high = self.config.clip_ratio_high if self.config.clip_ratio_high is not None else clip_ratio
                     clip_ratio_c = self.config.get("clip_ratio_c", 3.0)
                     entropy_coeff = self.config.entropy_coeff
+                    entropy_max = self.config.get("entropy_max", None)
                     loss_agg_mode = self.config.loss_agg_mode
 
                     # all return: (bsz, response_length)
@@ -490,7 +491,13 @@ class DataParallelPPOActor(BasePPOActor):
                         entropy_loss = agg_loss(loss_mat=entropy, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
 
                         # compute policy loss
-                        policy_loss = pg_loss - entropy_loss * entropy_coeff
+                        if entropy_coeff != 0:
+                            entropy_value = entropy_loss.detach().item()
+                            if entropy_max is not None and entropy_value > entropy_max:
+                                logger.warning(f"Entropy loss {entropy_value} exceeds max {entropy_max}, clipping it.")
+                                policy_loss = pg_loss
+                            else:
+                                policy_loss = pg_loss - entropy_loss * entropy_coeff
                     else:
                         policy_loss = pg_loss
 

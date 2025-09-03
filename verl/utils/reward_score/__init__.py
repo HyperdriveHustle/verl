@@ -53,6 +53,9 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
             from . import remote_reward_batch
             return remote_reward_batch.compute_score_batched(data_source, solution_str, ground_truth, extra_info)
 
+    elif data_source.startswith("math_verify"):
+        from . import math_verify
+        res = math_verify.compute_score(solution_str, ground_truth)
     elif data_source == "openai/gsm8k":
         from . import gsm8k
         res = gsm8k.compute_score(solution_str, ground_truth)

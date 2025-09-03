@@ -63,7 +63,7 @@ def _ensure_fresh_telechat_load(name_or_path, **kwargs):
     """Ensure a fresh loading of the telechat tokenizer to avoid caching issues."""
     from transformers import AutoTokenizer
     
-    max_retries = 2
+    max_retries = 5
     last_error = None
     
     for attempt in range(max_retries):
@@ -88,9 +88,15 @@ def _ensure_fresh_telechat_load(name_or_path, **kwargs):
                 print("[VERL] All retries failed")
                 break
         except Exception as e:
+            last_error = e
             # Other types of errors, do not retry
             print(f"[VERL] Load failed (non-retryable error): {e}")
-            raise
+            if attempt < max_retries - 1:
+                print("[VERL] Cleaning cache and retrying...")
+                continue
+            else:
+                print("[VERL] All retries failed")
+                break
     
     raise last_error
 

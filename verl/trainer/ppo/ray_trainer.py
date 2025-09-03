@@ -32,8 +32,9 @@ from pprint import pprint
 from typing import Optional, Type, Dict
 from codetiming import Timer
 from contextlib import contextmanager
-import glob
+from datetime import datetime
 
+import glob
 import numpy as np
 import ray
 import torch
@@ -365,7 +366,7 @@ class ReqScheduler:
                 with open(json_file, 'r') as f:
                     data = json.load(f)
                 
-                print(f"[ReqScheduler] data keys = {data.keys()} in {filename}")
+                # print(f"[ReqScheduler] data keys = {data.keys()} in {filename}")
                 # 按格式保存
                 ps = data['prompts']
                 ls = data['lengths']
@@ -373,7 +374,7 @@ class ReqScheduler:
                     p = tuple(p)
                     if p not in ans:
                         ans[p] = l
-                print(f"[ReqScheduler] Processed {filename}, found {len(ans)} unique prompts")
+                # print(f"[ReqScheduler] Processed {filename}, found {len(ans)} unique prompts")
             except Exception as e:
                 print(f"[ReqScheduler] Error processing {filename}: {str(e)}")
                 raise e
@@ -844,6 +845,7 @@ class RayPPOTrainer:
 
             collate_fn = default_collate_fn
 
+        print(f"> [debug] Size of train dataset: {len(self.train_dataset)}")
         self.train_dataloader = StatefulDataLoader(
             dataset=self.train_dataset,
             batch_size=self.config.data.get("gen_batch_size", self.config.data.train_batch_size),
@@ -967,7 +969,8 @@ class RayPPOTrainer:
             # Store original inputs
             input_ids = test_batch.batch["input_ids"]
             # TODO: Can we keep special tokens except for padding tokens?
-            input_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in input_ids]
+            # @xiaohui: keep special tokens
+            input_texts = [self.tokenizer.decode(ids, skip_special_tokens=False) for ids in input_ids]
             sample_inputs.extend(input_texts)
 
             batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
@@ -1016,18 +1019,22 @@ class RayPPOTrainer:
 
             # Store generated outputs
             output_ids = test_output_gen_batch.batch["responses"]
-            output_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids]
+            # @xiaohui: keep special tokens
+            output_texts = [self.tokenizer.decode(ids, skip_special_tokens=False) for ids in output_ids]
             sample_outputs.extend(output_texts)
 
             test_batch = test_batch.union(test_output_gen_batch)
 
             # evaluate using reward_function
+            print(f">> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, [ray_trainer.py] evaluate start...")
             result = self.val_reward_fn(test_batch, return_dict=True)
             reward_tensor = result["reward_tensor"]
             scores = reward_tensor.sum(-1).cpu().tolist()
             sample_scores.extend(scores)
 
             reward_extra_infos_dict["reward"].extend(scores)
+            print(f">> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, [ray_trainer.py] evaluate end !!!")
+            
             print(f"len reward_extra_infos_dict['reward']: {len(reward_extra_infos_dict['reward'])}")
             if "reward_extra_info" in result:
                 for key, lst in result["reward_extra_info"].items():
@@ -1300,6 +1307,7 @@ class RayPPOTrainer:
         last_val_metrics = None
 
         for epoch in range(self.config.trainer.total_epochs):
+            print(f"Epoch {epoch} / {self.config.trainer.total_epochs}")
             for batch_dict in self.train_dataloader:
                 do_profile = self.global_steps in self.config.trainer.profile_steps if self.config.trainer.profile_steps is not None else False
                 if do_profile:
@@ -1493,8 +1501,9 @@ class RayPPOTrainer:
                     if rollout_data_dir:
                         with marked_timer("dump_rollout_generations", timing_raw, color="green"):
                             print(batch.batch.keys())
-                            inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
-                            outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=True)
+                            # @xiaohui: keep special tokens
+                            inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=False)
+                            outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=False)
                             scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
                             self._dump_generations(
                                 inputs=inputs,

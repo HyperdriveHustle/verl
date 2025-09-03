@@ -50,6 +50,11 @@ parser.add_argument(
     required=False,
     help="test correctness of hf_model, , with hf_model in checkpoint.contents",
 )
+parser.add_argument(
+    "--trust_remote_code",
+    action="store_true",
+    help="Whether to trust remote code when loading the model config",
+)
 args = parser.parse_args()
 os.makedirs(args.target_dir, exist_ok=True)
 if args.test:
@@ -181,7 +186,7 @@ def convert_fsdp_checkpoints_to_hfmodels():
 
     print("Writing to local disk")
     hf_path = os.path.join(local_dir, "huggingface") if args.target_dir is None else args.target_dir
-    config = AutoConfig.from_pretrained(args.hf_model_path)
+    config = AutoConfig.from_pretrained(args.hf_model_path, trust_remote_code=args.trust_remote_code)
 
     if "ForTokenClassification" in config.architectures[0]:
         auto_model = AutoModelForTokenClassification
@@ -193,7 +198,7 @@ def convert_fsdp_checkpoints_to_hfmodels():
         raise NotImplementedError(f"Unknown architecture {config['architectures']}")
 
     with torch.device("meta"):
-        model = auto_model.from_config(config, torch_dtype=torch.bfloat16)
+        model = auto_model.from_config(config, torch_dtype=torch.bfloat16, trust_remote_code=args.trust_remote_code)
     model.to_empty(device="cpu")
 
     print(f"Saving model to {hf_path}")
@@ -259,7 +264,7 @@ def convert_megatron_checkpoints_to_hfmodels():
         process_one_shard(sharded_dir, model_state_dict_lst)
 
     state_dict = {}
-    config = AutoConfig.from_pretrained(args.hf_model_path)
+    config = AutoConfig.from_pretrained(args.hf_model_path, trust_remote_code=args.trust_remote_code)
     if args.test:
         ref_state_dict = load_file(os.path.join(args.test_hf_dir, "model.safetensors"))
 
@@ -398,7 +403,7 @@ def convert_megatron_checkpoints_to_hfmodels():
         raise NotImplementedError(f"Unknown architecture {config['architectures']}")
 
     with torch.device("meta"):
-        model = auto_model.from_config(config, torch_dtype=torch.bfloat16)
+        model = auto_model.from_config(config, torch_dtype=torch.bfloat16, trust_remote_code=args.trust_remote_code)
     model.to_empty(device="cpu")
 
     print(f"Saving model to {hf_path}")
