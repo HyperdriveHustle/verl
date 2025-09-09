@@ -73,14 +73,13 @@ class CustomRLHFDataset(RLHFDataset):
                 dataframe = datasets.load_dataset(parquet_file)["train"]
             elif "test" in data_source:
                 dataframe = datasets.load_dataset(parquet_file)["test"]
-            print(dataframe)
-            if "leetcode2k" in data_source:
+            if "leetcode" in data_source:
                 dataframe = dataframe.map(self.map_fn2, num_proc=16)
             else:
                 pass # other datasets are not supported yet
             dataframes.append(dataframe)
         self.dataframe: datasets.Dataset = datasets.concatenate_datasets(dataframes)
-
+        self.dataframe = self.maybe_filter_out_long_prompts(self.dataframe)
         print(f"dataset len: {len(self.dataframe)}")
 
     def map_fn2(self, row: dict):
