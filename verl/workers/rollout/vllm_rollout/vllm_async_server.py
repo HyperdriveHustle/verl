@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import cloudpickle
 import logging
 import os
-import pickle
 from typing import Any, Callable, Optional
 
 import ray
@@ -109,7 +109,7 @@ class ExternalRayDistributedExecutor(Executor):
         if isinstance(method, str):
             sent_method = method
         else:
-            sent_method = pickle.dumps(method)
+            sent_method = cloudpickle.dumps(method)
         del method
 
         # ~3ms overhead per schedule step due to SchedulerOutput/ModelRunnerOutput serialization/deserialization.
@@ -157,16 +157,16 @@ class ExternalZeroMQDistributedExecutor(Executor):
         if isinstance(method, str):
             sent_method = method
         else:
-            sent_method = pickle.dumps(method)
+            sent_method = cloudpickle.dumps(method)
         del method
-
-        message = pickle.dumps((sent_method, args, kwargs or {}))
+        message = cloudpickle.dumps((sent_method, args, kwargs or {}))
+        # message = cloudpickle.dumps((sent_method, args, kwargs or {}))
         for socket in self.sockets:
             socket.send(message, zmq.DONTWAIT)
 
         outputs = []
         for socket in self.sockets:
-            outputs.append(pickle.loads(socket.recv()))
+            outputs.append(cloudpickle.loads(socket.recv()))
         return outputs
 
     def check_health(self):
