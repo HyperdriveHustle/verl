@@ -57,7 +57,17 @@ def hf_tokenizer(name_or_path, correct_pad_token=True, correct_gemma2=True, **kw
         )
         kwargs["eos_token"] = "<end_of_turn>"
         kwargs["eos_token_id"] = 107
-    tokenizer = AutoTokenizer.from_pretrained(name_or_path, **kwargs)
+    if "telechat" in name_or_path:
+        max_retries = 5
+        while max_retries > 0:
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(name_or_path, **kwargs)
+                break
+            except Exception as e:
+                max_retries -= 1
+                print(f"Failed to load tokenizer: {e}. Retries left: {max_retries}")
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(name_or_path, **kwargs)
     if correct_pad_token:
         set_pad_token_id(tokenizer)
     return tokenizer
