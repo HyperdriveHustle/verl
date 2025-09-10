@@ -896,6 +896,9 @@ algorithm:
   # Whether to enable preference feedback PPO
   use_pf_ppo: False
 
+  # grpo pass@k k
+  grpo_passk: 1
+
   # Preference feedback PPO settings
   pf_ppo:
 
