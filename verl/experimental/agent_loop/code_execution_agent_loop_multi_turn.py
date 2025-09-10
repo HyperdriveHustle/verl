@@ -94,6 +94,8 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         timeout_reward = 0.0 
         reward_decay = 0.0
         format_ok_turns = 0
+        progress_reward=0.0
+        pre_pass_rate=0
         is_validate = sampling_params_w_test_code["validate"]
         cur_max_turns = 1 if is_validate else self.max_turns
         while turns < cur_max_turns:
@@ -115,14 +117,14 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             assistant_turns += 1
             solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
 
-            format_check = self.validate_response_structure(solution_text)
-            format_ok_turns += 1 if format_check else 0
+            format_ok_turns += 1 if self.validate_response_structure(solution_text) else 0
 
             extracted_code=self.extract_code_from_answer_efficiently(solution_text)
-            # if not extracted_code:
-            #     code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
-            #     extracted_code = code_match.group(1).strip() if code_match else None
+            if not extracted_code:
+                code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
+                extracted_code = code_match.group(1).strip() if code_match else None
             error_message = ""
+
             if extracted_code and hasattr(self, 'code_tool'):
                 
                 extracted_code_w_test = extracted_code + "\n" + test_code
@@ -166,7 +168,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
 {stderr}
 """
                     except Exception as e:
-                        breakpoint()
+                        #breakpoint()
                         logger.error(f"Error during reward calculation: {e}")
                         answer_reward = -0.2
                         break
@@ -198,7 +200,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
             else:
                 metrics["No_code_extracted_count"] = 1
                 answer_reward = -0.2
-                breakpoint()
+                #breakpoint()
                 break
 
 

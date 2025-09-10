@@ -22,6 +22,8 @@ import pprint
 
 import torch
 
+local_logger = logging.getLogger(__name__)
+local_logger.setLevel("INFO")
 
 def concat_dict_to_str(dict: dict, step):
     output = [f"step:{step}"]
@@ -52,7 +54,7 @@ class LocalLogger:
 
     def log(self, data, step):
         if self.print_to_console:
-            print(concat_dict_to_str(data, step=step), flush=True)
+            local_logger.info(concat_dict_to_str(data, step=step))
 
 
 class DecoratorLoggerBase:

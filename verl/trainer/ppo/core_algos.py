@@ -884,14 +884,12 @@ def compute_policy_loss_vanilla(
     pg_clipfrac_lower = verl_F.masked_mean(
         torch.gt(clip_pg_losses1, pg_losses3) * (advantages < 0).float(), response_mask
     )
-
+    pg_losses = torch.where(advantages < 0, clip_pg_losses2, clip_pg_losses1)
     if config.tis_imp_ratio_cap > 0 and rollout_log_probs is not None:
         # Apply truncated importance sampling -> https://fengyao.notion.site/off-policy-rl
         tis_imp_ratio = torch.exp(old_log_prob - rollout_log_probs)
         tis_imp_ratio = torch.clamp(tis_imp_ratio, max=config.tis_imp_ratio_cap)
         pg_losses = pg_losses * tis_imp_ratio
-    
-    pg_losses = torch.where(advantages < 0, clip_pg_losses2, clip_pg_losses1)
     pg_loss = agg_loss(loss_mat=pg_losses, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
 
     return pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower

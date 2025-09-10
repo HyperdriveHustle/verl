@@ -65,7 +65,8 @@ from verl.utils.tracking import ValidationGenerationsLogger
 WorkerType = type[Worker]
 # local_logger = logging.getLogger(__file__)
 # local_logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
-
+local_logger = logging.getLogger(__name__)
+local_logger.setLevel("INFO")
 
 class Role(Enum):
     """
@@ -628,7 +629,7 @@ class RayPPOTrainer:
         self.validation_generations_logger.log(self.config.trainer.logger, samples, self.global_steps)
 
     def _validate(self):
-        print("***************start validating***************")
+        local_logger.info("***************start validating***************")
         data_source_lst = []
         reward_extra_infos_dict: dict[str, list] = defaultdict(list)
 
@@ -794,7 +795,7 @@ class RayPPOTrainer:
         }
         #metric_dict.update(test_output_gen_batch.meta_info["timing"])
         #metric_dict.update(test_output_gen_batch.meta_info["tool_reward"])
-        print(metric_dict)
+        local_logger.info(metric_dict)
         return metric_dict
 
     def init_workers(self):

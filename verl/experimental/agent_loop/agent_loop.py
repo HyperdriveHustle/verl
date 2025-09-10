@@ -142,20 +142,16 @@ class _InternalAgentLoopOutput(AgentLoopOutput):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    prompt_ids: list[int]
+    prompt_ids: torch.Tensor
     """Prompt token ids."""
-    response_ids: list[int]
+    response_ids: torch.Tensor
     """Response token ids including LLM generated token, tool response token."""
-    response_mask: list[int]
+    response_mask: torch.Tensor
     """Response mask, 1 for LLM generated token, 0 for tool response token."""
-    num_turns: int = 0
-    """Number of chat turns, including user, assistant, tool."""
-    metrics: AgentLoopMetrics
-    """Auxiliary performance metrics"""
-    reward: float = 0.0
-    """Reward for the agent loop, can be used for reinforcement learning."""
-    response_logprobs: Optional[list[float]] = None
-    """Log probabilities for the response tokens."""
+    attention_mask: torch.Tensor
+    """Padded attention mask."""
+    response_logprobs: Optional[torch.Tensor] = None
+    """Padded log probabilities for the response tokens."""
 
 # make hydra.utils.instantiate happy
 class _DummyConfig:
@@ -431,8 +427,7 @@ class AgentLoopWorker:
         response_ids = torch.cat([input.response_ids for input in inputs], dim=0)
         response_mask = torch.cat([input.response_mask for input in inputs], dim=0)
         attention_mask = torch.cat([input.attention_mask for input in inputs], dim=0)
-
-        valid_response_lengths = [ len(input.response_ids) for input in inputs ]
+        valid_response_lengths = [ len(response_id) for response_id in response_ids ]
         logger.warning(f"[AgentLoop][DEBUG] max valid_response_lengths: {max(valid_response_lengths)}")
 
         input_ids = torch.cat([prompt_ids, response_ids], dim=1)
