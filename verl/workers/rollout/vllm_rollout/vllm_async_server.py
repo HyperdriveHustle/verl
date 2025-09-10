@@ -34,7 +34,7 @@ from vllm.v1.executor.abstract import Executor
 from vllm.worker.worker_base import WorkerWrapperBase
 
 from verl.utils.fs import copy_to_local
-from verl.workers.rollout.async_server import AsyncServerBase
+from verl.workers.rollout.async_server import AsyncServerBase, TokenOutput
 
 logger = logging.getLogger(__file__)
 
@@ -313,8 +313,9 @@ class AsyncvLLMServer(AsyncServerBase):
             assert isinstance(generator, ChatCompletionResponse)
             return JSONResponse(content=generator.model_dump())
 
-    async def generate(self, prompt_ids: list[int], sampling_params: dict[str, Any], request_id: str) -> list[int]:
+    async def generate(self, prompt_ids: list[int], sampling_params: dict[str, Any], request_id: str) -> TokenOutput:
         max_tokens = self.max_model_len - len(prompt_ids)
+        sampling_params["logprobs"] = 0 if sampling_params.pop("logprobs", False) else None
         sampling_params = SamplingParams(max_tokens=max_tokens, **sampling_params)
         prompt = TokensPrompt(prompt_token_ids=prompt_ids)
         generator = self.engine.generate(prompt=prompt, sampling_params=sampling_params, request_id=request_id)
@@ -325,7 +326,11 @@ class AsyncvLLMServer(AsyncServerBase):
             final_res = output
         assert final_res is not None
 
-        return final_res.outputs[0].token_ids
+        token_ids = final_res.outputs[0].token_ids
+        log_probs = None
+        if sampling_params.logprobs is not None:
+            log_probs = [logprobs[token_ids[i]].logprob for i, logprobs in enumerate(final_res.outputs[0].logprobs)]
+        return TokenOutput(token_ids=token_ids, log_probs=log_probs)
 
     async def wake_up(self):
         if self.config.rollout.free_cache_engine:

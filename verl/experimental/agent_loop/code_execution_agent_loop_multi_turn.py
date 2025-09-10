@@ -85,7 +85,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
 
         sampling_params = sampling_params_w_test_code["sampling_params"]
         test_code = sampling_params_w_test_code["test_code"]
-        response_mask = []
+        response_mask, response_logprobs = [], []
         turns = 0
         assistant_turns = 0
 
@@ -99,7 +99,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         while turns < cur_max_turns:
             turns += 1
             with simple_timer("generate_sequence", metrics):
-                response_ids = await self.server_manager.generate(
+                output  = await self.server_manager.generate(
                     request_id=request_id, prompt_ids=prompt_ids, sampling_params=sampling_params
                 )
             # if len(response_ids) > MAX_TURN_LEN:
@@ -107,9 +107,11 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             #     response_ids = response_ids[:MAX_TURN_LEN]
             #     reward_decay -= -0.1
             #     print("max_turn_len_exceed")
-            
+            response_ids = output.token_ids
             prompt_ids += response_ids
             response_mask += [1] * len(response_ids)
+            if output.log_probs:
+                response_logprobs += output.log_probs
             assistant_turns += 1
             solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
 
@@ -191,6 +193,8 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
                     break
                 prompt_ids += tool_response_ids
                 response_mask += [0] * len(tool_response_ids)
+                if response_logprobs:
+                    response_logprobs += [0.0] * len(tool_response_ids)
             else:
                 metrics["No_code_extracted_count"] = 1
                 answer_reward = -0.2
@@ -214,6 +218,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
             response_mask=response_mask[: self.response_length],
             num_turns=turns, 
             metrics=metrics,
-            reward=reward
+            reward=reward,
+            response_logprobs=response_logprobs[: self.response_length] if response_logprobs else None,
         )
         return output
