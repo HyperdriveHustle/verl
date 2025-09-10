@@ -117,6 +117,9 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             format_ok_turns += 1 if format_check else 0
 
             extracted_code=self.extract_code_from_answer_efficiently(solution_text)
+            # if not extracted_code:
+            #     code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
+            #     extracted_code = code_match.group(1).strip() if code_match else None
             error_message = ""
             if extracted_code and hasattr(self, 'code_tool'):
                 

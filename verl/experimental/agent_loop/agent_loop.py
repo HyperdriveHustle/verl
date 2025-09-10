@@ -364,23 +364,23 @@ class AgentLoopWorker:
         )
         response_ids, response_attention_mask = outputs["input_ids"], outputs["attention_mask"]
         valid_response_lengths = [ len(input.response_ids) for input in inputs ]
-        print(f"[AgentLoop][DEBUG] max valid_response_lengths: {max(valid_response_lengths)}")
+        logger.warning(f"[AgentLoop][DEBUG] max valid_response_lengths: {max(valid_response_lengths)}")
 
-        try:
-            top_k = 1
-            if len(valid_response_lengths) > 0:
-                num_to_get = min(top_k, len(valid_response_lengths))
-                longest_indices = np.argsort(valid_response_lengths)[-num_to_get:][::-1]
+        # try:
+        #     top_k = 1
+        #     if len(valid_response_lengths) > 0:
+        #         num_to_get = min(top_k, len(valid_response_lengths))
+        #         longest_indices = np.argsort(valid_response_lengths)[-num_to_get:][::-1]
 
-                longest_response_ids = [inputs[i].response_ids for i in longest_indices]
+        #         longest_response_ids = [inputs[i].response_ids for i in longest_indices]
 
-                decoded_longest_responses = self.tokenizer.batch_decode(longest_response_ids, skip_special_tokens=True)
-                logger.debug(f"Top {len(decoded_longest_responses)} longest responses:")
-                breakpoint()
-                for i, idx in enumerate(longest_indices):
-                    logger.warning(f"  Length: {valid_response_lengths[idx]}, Decoded: {decoded_longest_responses[i][-1000]}...")
-        except Exception as e:
-            logger.error(f"Error decoding longest responses: {e}")
+        #         decoded_longest_responses = self.tokenizer.batch_decode(longest_response_ids, skip_special_tokens=True)
+        #         logger.debug(f"Top {len(decoded_longest_responses)} longest responses:")
+        #         breakpoint()
+        #         for i, idx in enumerate(longest_indices):
+        #             logger.warning(f"  Length: {valid_response_lengths[idx]}, Decoded: {decoded_longest_responses[i][:-1000]}...")
+        # except Exception as e:
+        #     logger.error(f"Error decoding longest responses: {e}")
         
         # response_mask
         outputs = self.tokenizer.pad(

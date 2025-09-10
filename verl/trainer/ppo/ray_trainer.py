@@ -22,6 +22,7 @@ import json
 import os
 import uuid
 import warnings
+import logging
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -62,6 +63,8 @@ from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
 
 WorkerType = type[Worker]
+# local_logger = logging.getLogger(__file__)
+# local_logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
 class Role(Enum):
@@ -787,6 +790,7 @@ class RayPPOTrainer:
             "val-core/code/min_score": min(sample_scores) if sample_scores else 0.0,
             "val-core/code/mean_answer_reward": test_output_gen_batch.meta_info["tool_reward"]["agent_loop/answer_reward/mean"],
             "val-core/code/mean_format_reward": test_output_gen_batch.meta_info["tool_reward"]["agent_loop/format_reward/mean"],
+            "agent_loop/No_code_extracted_count": test_output_gen_batch.meta_info["tool_reward"]["agent_loop/No_code_extracted_count"]
         }
         #metric_dict.update(test_output_gen_batch.meta_info["timing"])
         #metric_dict.update(test_output_gen_batch.meta_info["tool_reward"])

@@ -20,7 +20,6 @@ import logging
 import numbers
 import pprint
 
-local_logger = logging.getLogger(__name__)
 import torch
 
 
@@ -49,13 +48,11 @@ class LocalLogger:
         Flushes the log handlers. In a simple setup, this might not be
         necessary, but it's good practice for compatibility.
         """
-        for handler in local_logger.handlers:
-            handler.flush()
+        pass
 
     def log(self, data, step):
         if self.print_to_console:
-            log_message = concat_dict_to_str(data, step=step)
-            local_logger.info(log_message)
+            print(concat_dict_to_str(data, step=step), flush=True)
 
 
 class DecoratorLoggerBase:
