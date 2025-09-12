@@ -147,7 +147,11 @@ Code execution timeout, please reflect your answer and answer again to slove the
 ```
 """
                         else:
-                            if score.lower() == "success":
+                            match_test_pass_rate = re.search(r"Pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
+                            pass_rate = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 0.0
+                            progress_reward += 0.5 * (pass_rate - pre_pass_rate) #if pass_rate > pre_pass_rate else 0 # it can be negative
+                            pre_pass_rate=pass_rate
+                            if score.lower() == "success" and pass_rate == 1.0:
                                 answer_reward = ANSWER_REWARD * (REWARD_DECAY_FACTOR ** (turns - 1))
                                 metrics["success_at_turn"] = turns
                                 break
@@ -209,7 +213,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
         format_reward = FORMAT_REARD * format_ok_turns if format_ok_turns else -0.2
 
         #timeout_reward = metrics["timeout"] * TIMEOUTDECAY
-        metrics["answer_reward"] = answer_reward
+        metrics["answer_reward"] = answer_reward + progress_reward
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward
         reward = answer_reward + format_reward + timeout_reward + reward_decay

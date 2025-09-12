@@ -85,28 +85,38 @@ def leetcode2k():
             assert_lines = [line.strip() for line in all_lines if line.strip().startswith('assert')]
             test_cases_list_str = repr(assert_lines)
             new_check_function_template = f"""
-def check(candidate):
-    passed_count = 0
-    test_cases = {test_cases_list_str}
-    total_count = len(test_cases)
-    for test_case in test_cases:
-        try:
-            # `exec` will run the assert statement.
-            # `candidate` is available in this local scope.
-            exec(test_case)
-            passed_count += 1
-        except Exception as e:
-            # This catches AssertionError and any other runtime errors from the candidate code
-            pass # We just count it as a failure and continue
+def check(candidate): 
+    test_cases = {test_cases_list_str} 
+    total_count = len(test_cases) 
 
-    if total_count == 0:
-        pass_rate = 0.0
-    else:
-        pass_rate = passed_count / total_count
+    if total_count == 0: 
+        # Edge case: No test cases to run. 
+        print("Pass rate: **0.0**") 
+        return 
 
-    # This is the final output the sandbox will capture.
-    # It provides a float reward signal.
-    print(f"Pass rate: **{{pass_rate}}**")
+    for i, test_case in enumerate(test_cases):  
+            parts = test_case.split('==', 1)
+            call_part_str = parts[0].replace('assert', '').strip()
+            expected_part_str = parts[1].strip()
+
+            actual_output = eval(call_part_str)
+            
+
+            expected_output = eval(expected_part_str)
+            if actual_output == expected_output:
+                continue
+            else:
+                # A test case has failed. Calculate pass rate based on the current progress. 
+                pass_rate = i / total_count 
+                # The sandbox will capture this multi-line output. 
+                print(f"Pass rate: **{{pass_rate:.2f}}**") 
+                print(f"Failed Test Case: {{test_case}}") 
+                print(f"- Your return value: {{repr(actual_output)}}")
+                print(f"- Expected answer:  {{repr(expected_output)}}")
+                return # Exit immediately on the first failure 
+
+    # If the loop completes without any exceptions, all tests passed. 
+    print("Pass rate: **1.0**") 
 """
             return {
                 "data_source": "code",

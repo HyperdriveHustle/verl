@@ -8,7 +8,7 @@ leetcode2k=/nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/data/code-r1-
 leetcode2k_test=/nvfile-heatstorage/ai_infra/code/wuxn5/wanglongwen/wlw/data/code-r1-3k-leetcode2k-test
 #for test:use the same
 aime_2025=/nvfile-heatstorage/chatrl/users/hxh/data/rule_based_rl/DAPO-AIME-2024/data
-model_path=/model/Qwen3-4B-Instruct-2507
+model_path=/model/Qwen3-14B
 # model_path=/model/Qwen2.5-3B
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$leetcode2k']"
@@ -20,12 +20,12 @@ tool_config_path=$DATA_ROOT/recipe/async_dapo_tool/sandbox_fusion_tool_config.ya
 project_name=wlw_multi_turn
 export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 #experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-31_23-17-12 #Qwen3-14B 
-#experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-31_23-17-12_500step #Qwen3-14B 500step
+experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-31_23-17-12_500step #Qwen3-14B 500step
 #experiment_name=wlw_multi_turn_Qwen25-7B-Instruct_2025-08-20_18-21-26
 # experiment_name=${project_name}_Qwen25-7B-Instruct_2025-08-20_18-21-26_650step_8k
 # experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-28_10-26-16
 # experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-28_22-29-02
-experiment_name=${project_name}_Qwen3-4B-Instruct_${TIMESTAMP}_TIP
+#experiment_name=${project_name}_Qwen3-4B-Instruct_${TIMESTAMP}_TIP
 default_local_dir=/nvfile-heatstorage/ai_infra/ckpts/wuxn5/wanglongwen/code_agent_checkpoint/$experiment_name
 
 # ================= algorithm =================
@@ -43,7 +43,7 @@ calculate_log_probs=True
 
 max_turns=4
 max_prompt_length=3072
-max_response_length=14336
+max_response_length=17408
 actor_lr=1e-6
 
 train_batch_size=32
@@ -109,7 +109,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
     trainer.n_gpus_per_node=8 \
-    trainer.val_before_train=False \
+    trainer.val_before_train=True \
     trainer.val_only=False\
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \
