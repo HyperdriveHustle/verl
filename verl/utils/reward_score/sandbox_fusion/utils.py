@@ -36,7 +36,8 @@ import collections
 import string
 import math
 import datetime
-
+import json 
+import traceback 
 from typing import *
 from functools import *
 from collections import *
@@ -305,7 +306,7 @@ def call_sandbox_api(
         {
             "compile_timeout": compile_timeout,
             "run_timeout": run_timeout,
-            "code": code,
+            "code": PY_IMPORTS + code,
             "stdin": stdin,
             "memory_limit_MB": memory_limit_mb,
             "language": language,  # Use the passed language parameter

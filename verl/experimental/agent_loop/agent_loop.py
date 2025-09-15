@@ -118,6 +118,8 @@ class AgentLoopMetrics(BaseModel):
     format_reward: float = 0.0
     timeout_reward: float = 0.0
     No_code_extracted_count:int=0
+    extra_fields: dict[str, Any] = {}
+    """Extra fields for dynamic addition."""
 
 class AgentLoopOutput(BaseModel):
     """Agent loop output."""
@@ -418,6 +420,7 @@ class AgentLoopWorker:
                 num_turns=output.num_turns,
                 response_logprobs=response_logprobs,
                 metrics=output.metrics,
+                reward=output.reward,
             )
 
     def _postprocess(self, inputs: list[_InternalAgentLoopOutput]) -> DataProto:
@@ -608,6 +611,7 @@ class AgentLoopManager:
         format_reward = np.array([metric["format_reward"] for chunk in metrics for metric in chunk])
         success_at_turn = np.array([metric["success_at_turn"] for chunk in metrics for metric in chunk])
         No_code_extracted_count = np.array([metric["No_code_extracted_count"] for chunk in metrics for metric in chunk])
+        progress_reward = np.array([metric["extra_fields"]["progress_reward"] for chunk in metrics for metric in chunk])
 
         timing["agent_loop/generate_sequences/min"] = t_generate_sequences.min()
         timing["agent_loop/generate_sequences/max"] = t_generate_sequences.max()
@@ -628,6 +632,7 @@ class AgentLoopManager:
         tool_reward["agent_loop/answer_reward/mean"] = answer_reward.mean()
         
         tool_reward["agent_loop/format_reward/mean"] = format_reward.mean()
+        tool_reward["agent_loop/progress_reward/mean"] = progress_reward.mean()
 
         tool_reward["agent_loop/correct_count"] = np.sum(success_at_turn > 0).item()
         tool_reward["agent_loop/No_code_extracted_count"] = No_code_extracted_count.sum()

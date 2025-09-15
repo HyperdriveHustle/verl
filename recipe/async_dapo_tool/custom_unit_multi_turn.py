@@ -75,13 +75,13 @@ class CustomRLHFDataset(RLHFDataset):
                 dataframe = datasets.load_dataset(parquet_file)["test"]
             print(dataframe)
             if "leetcode2k" in data_source:
-                if "train" in data_source:
-                    print(f"Original training data size: {len(dataframe)}")
-                    dataframe = dataframe.filter(
-                        lambda example: example['difficulty'] != 'Easy', 
-                        num_proc=16
-                    )
-                    print(f"Filtered training data size (difficulty != 'Easy'): {len(dataframe)}")
+                # if "train" in data_source:
+                #     print(f"Original training data size: {len(dataframe)}")
+                #     dataframe = dataframe.filter(
+                #         lambda example: example['difficulty'] != 'Easy', 
+                #         num_proc=16
+                #     )
+                #     print(f"Filtered training data size (difficulty != 'Easy'): {len(dataframe)}")
                 dataframe = dataframe.map(self.map_fn2, num_proc=16)
             else:
                 pass # other datasets are not supported yet

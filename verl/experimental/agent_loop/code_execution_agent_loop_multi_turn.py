@@ -16,10 +16,17 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 ANSWER_REWARD = 1.0
-FORMAT_REARD = 0.1
+FORMAT_REARD = 0.3
+
 REWARD_DECAY_FACTOR = 0.7
+SUCCESS_FLOOR = 0.6
+DECAYING_BONUS_SCALE = 1.0 - SUCCESS_FLOOR 
+
+WEIGHT_PEAK = 0.4
+WEIGHT_FINAL = 0.6
+
 TIMEOUTDECAY = -0.2
-MAX_TURN_LEN = 4096
+
 
 
 @register("code_execution_agent_multi_turn")
@@ -92,10 +99,15 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         answer_reward = 0.0
         format_reward = 0.0
         timeout_reward = 0.0 
-        reward_decay = 0.0
+
         format_ok_turns = 0
         progress_reward=0.0
-        pre_pass_rate=0
+
+        pre_pass_rate=0.0
+        max_pass_rate=0
+        final_pass_rate=0
+        pass_rate = 0.0
+
         is_validate = sampling_params_w_test_code["validate"]
         cur_max_turns = 1 if is_validate else self.max_turns
         while turns < cur_max_turns:
@@ -104,18 +116,13 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 output  = await self.server_manager.generate(
                     request_id=request_id, prompt_ids=prompt_ids, sampling_params=sampling_params
                 )
-            # if len(response_ids) > MAX_TURN_LEN:
-            #     breakpoint()
-            #     response_ids = response_ids[:MAX_TURN_LEN]
-            #     reward_decay -= -0.1
-            #     print("max_turn_len_exceed")
             response_ids = output.token_ids
             prompt_ids += response_ids
             response_mask += [1] * len(response_ids)
             if output.log_probs:
                 response_logprobs += output.log_probs
             assistant_turns += 1
-            solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
+            solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=False)
 
             format_ok_turns += 1 if self.validate_response_structure(solution_text) else 0
 
@@ -147,29 +154,28 @@ Code execution timeout, please reflect your answer and answer again to slove the
 ```
 """
                         else:
-                            match_test_pass_rate = re.search(r"Pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
+                            match_test_pass_rate = re.search(r"Test cases pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
+                            pre_pass_rate = pass_rate
                             pass_rate = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 0.0
-                            progress_reward += 0.5 * (pass_rate - pre_pass_rate) #if pass_rate > pre_pass_rate else 0 # it can be negative
-                            pre_pass_rate=pass_rate
+                            final_pass_rate = pass_rate
                             if score.lower() == "success" and pass_rate == 1.0:
-                                answer_reward = ANSWER_REWARD * (REWARD_DECAY_FACTOR ** (turns - 1))
+                                answer_reward = SUCCESS_FLOOR  + DECAYING_BONUS_SCALE  * (REWARD_DECAY_FACTOR ** (turns - 1)) #wlw 9.12
                                 metrics["success_at_turn"] = turns
                                 break
                             else:
+                                if turns == 4 or request_id == 'b42a13d3f7e54d809e4c9425e94ee1e1':
+                                    breakpoint()
                                 stdout = meta_data.get("stdout", "")
                                 stderr = meta_data.get("stderr", "")
                                 c = error_message = f"""
 ### Instruction
-Code test failed.\n\nPlease reflect your answer and asnwer again to slove the problem.
 
-### Previous Code
-```python
-{extracted_code}
-```
-
-### ERROR
+### Tool Response
 {stdout}
 {stderr}
+
+Code test failed.\n\nPlease reflect your answer and asnwer again to slove the problem.
+
 """
                     except Exception as e:
                         #breakpoint()
@@ -203,20 +209,23 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
                     response_logprobs += [0.0] * len(tool_response_ids)
             else:
                 metrics["No_code_extracted_count"] = 1
-                answer_reward = -0.2
-                #breakpoint()
+                answer_reward = -0.3
+                final_pass_rate = 0
+                breakpoint()
                 break
 
 
         response_ids = prompt_ids[-len(response_mask) :]
         prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
-        format_reward = FORMAT_REARD * format_ok_turns if format_ok_turns else -0.2
+        format_reward = FORMAT_REARD * format_ok_turns / turns
 
         #timeout_reward = metrics["timeout"] * TIMEOUTDECAY
-        metrics["answer_reward"] = answer_reward + progress_reward
+        progress_reward = 0.6 * final_pass_rate if answer_reward == 0 else 0
+        metrics["answer_reward"] = answer_reward #+ progress_reward
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward
-        reward = answer_reward + format_reward + timeout_reward + reward_decay
+        metrics["extra_fields"]= {"progress_reward": progress_reward}
+        reward = answer_reward + format_reward + timeout_reward + progress_reward
 
         output = AgentLoopOutput(
             prompt_ids=prompt_ids,
