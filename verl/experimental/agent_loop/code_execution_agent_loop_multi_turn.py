@@ -79,7 +79,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             return None
     
     @rollout_trace_op
-    async def run(self, messages: list[dict[str, Any]], sampling_params_w_test_code: dict[str, Any]) -> AgentLoopOutput:
+    async def run(self, messages: list[dict[str, Any]], sampling_params_w_ground_truth: dict[str, Any]) -> AgentLoopOutput:
         #logger.warning("**************agent run start**************")
         metrics = {}
         request_id = uuid4().hex
@@ -90,8 +90,8 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             ),
         )
 
-        sampling_params = sampling_params_w_test_code["sampling_params"]
-        test_code = sampling_params_w_test_code["test_code"]
+        sampling_params = sampling_params_w_ground_truth["sampling_params"]
+        ground_truth = sampling_params_w_ground_truth["ground_truth"]
         response_mask, response_logprobs = [], []
         turns = 0
         assistant_turns = 0
@@ -108,7 +108,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         final_pass_rate=0
         pass_rate = 0.0
 
-        is_validate = sampling_params_w_test_code["validate"]
+        is_validate = sampling_params_w_ground_truth["validate"]
         cur_max_turns = 1 if is_validate else self.max_turns
         while turns < cur_max_turns:
             turns += 1

@@ -24,7 +24,7 @@ from uuid import uuid4
 import ray
 
 from verl.tools.base_tool import BaseTool
-from verl.utils.reward_score.sandbox_fusion.utils import _process_single_case
+from verl.utils.reward_score.sandbox_fusion.utils import _process_single_case, check_correctness
 from verl.utils.rollout_trace import rollout_trace_op
 
 from .schemas import OpenAIFunctionToolSchema
@@ -170,19 +170,25 @@ class SandboxFusionTool(BaseTool):
         code = parameters.get("code", "")
         timeout = parameters.get("timeout", self.default_timeout)
         language = parameters.get("language", self.default_language)
+        ground_truth = self.kwargs.get("ground_truth", None)
         if not isinstance(code, str):
             code = str(code)
 
-        result = await self.execution_pool.execute.remote(self.execute_code, instance_id, code, timeout, language)
+        result = await self.execution_pool.execute.remote(self.execute_code, instance_id, code, timeout, language, ground_truth)
         # sandbox has no score or metrics, use Nones
         return result, None, None
 
-    def execute_code(self, instance_id, code, timeout=30, language="python"):
+    def execute_code(self, instance_id, code, timeout=30, language="python", ground_truth=None):
         #breakpoint()
         start = perf_counter()
-        result_status, metadata = _process_single_case(
-            0, None, None, self.sandbox_fusion_url, code, timeout, self.memory_limit_mb, language
-        )
+        if "functional" in ground_truth:
+            result_status, metadata = _process_single_case(
+                0, None, None, self.sandbox_fusion_url, code, timeout, self.memory_limit_mb, language
+            )
+        elif "inputs" in ground_truth and "outputs" in ground_truth:
+            result_status, metadata = check_correctness(
+                self.sandbox_fusion_url, ground_truth,  code, timeout, self.memory_limit_mb, language
+            )
         end = perf_counter()
         duration = end - start
         if duration > 200:

@@ -699,7 +699,7 @@ def check_correctness(
 
     inputs = in_outs["inputs"]
     expected_outputs = in_outs["outputs"]
-    fn_name = in_outs.get("fn_name")
+    fn_name = in_outs.get("fn_name", None)
     num_cases = len(inputs)
     results = [None] * num_cases  # Initialize with placeholders
     metadata_list = [None] * num_cases  # Initialize with placeholders

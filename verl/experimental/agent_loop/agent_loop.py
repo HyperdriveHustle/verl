@@ -302,7 +302,7 @@ class AgentLoopWorker:
         tasks = []
         agent_names = batch.non_tensor_batch["agent_name"]
         raw_prompts = batch.non_tensor_batch["raw_prompt"]
-        test_codes = [json.loads(node["ground_truth"])["functional"] for node in batch.non_tensor_batch["reward_model"]]
+        ground_truths = [json.loads(node["ground_truth"]) for node in batch.non_tensor_batch["reward_model"]]
         #wlw
         
         if "index" in batch.non_tensor_batch:
@@ -314,10 +314,10 @@ class AgentLoopWorker:
             batch.meta_info.get("global_steps", -1), index, batch.meta_info.get("validate", False)
         )
         #wlw
-        for agent_name, messages, trajectory, test_code in zip(agent_names, raw_prompts, trajectory_info, test_codes, strict=True):
-            sampling_params_w_test_code = {"sampling_params": sampling_params, "test_code": test_code}
+        for agent_name, messages, trajectory, ground_truth in zip(agent_names, raw_prompts, trajectory_info, ground_truths, strict=True):
+            sampling_params_w_ground_truth = {"sampling_params": sampling_params, "ground_truth": ground_truth}
             tasks.append(
-                asyncio.create_task(self._run_agent_loop(agent_name, messages.tolist(), sampling_params_w_test_code, trajectory))
+                asyncio.create_task(self._run_agent_loop(agent_name, messages.tolist(), sampling_params_w_ground_truth, trajectory))
             )
         outputs = await asyncio.gather(*tasks)
 
@@ -328,7 +328,7 @@ class AgentLoopWorker:
         self,
         agent_name: str,
         messages: list[dict[str, Any]],
-        sampling_params_w_test_code: dict[str, Any], #wlw:{"sampling_params": sampling_params, "test_code": test_code}
+        sampling_params_w_ground_truth: dict[str, Any], #wlw:{"sampling_params": sampling_params, "test_code": test_code}
         trajectory: dict[str, Any],
     ) -> _InternalAgentLoopOutput:
         with rollout_trace_attr(
@@ -349,8 +349,8 @@ class AgentLoopWorker:
                 server_manager=self.server_manager,
                 tokenizer=self.tokenizer,
             )
-            sampling_params_w_test_code["validate"] = trajectory["validate"]
-            output = await agent_loop.run(messages, sampling_params_w_test_code)
+            sampling_params_w_ground_truth["validate"] = trajectory["validate"]
+            output = await agent_loop.run(messages, sampling_params_w_ground_truth)
 
             # NOTE: consistent with batch version of generate_sequences in vllm_rollout_spmd.py
             # prompt_ids: left padded with zeros (e.g., [0,0,0,0,1,2,3,4])
