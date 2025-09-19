@@ -22,7 +22,7 @@ PPO_RAY_RUNTIME_ENV = {
         "VLLM_ALLOW_RUNTIME_LORA_UPDATING": "true",
         "CUDA_DEVICE_MAX_CONNECTIONS": "1",
         "VLLM_USE_V1":"1",
-        "RAY_DEBUG" :"0"
+        "RAY_DEBUG" :"1"
     },
 }
 

@@ -92,6 +92,10 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
 
         sampling_params = sampling_params_w_ground_truth["sampling_params"]
         ground_truth = sampling_params_w_ground_truth["ground_truth"]
+        if isinstance(ground_truth, list):
+            ground_truth = ground_truth[0]
+
+        assert isinstance(ground_truth, dict), f"ground_truth should be a dict, but got {type(ground_truth)}"
         response_mask, response_logprobs = [], []
         turns = 0
         assistant_turns = 0
@@ -134,13 +138,12 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
 
             if extracted_code and hasattr(self, 'code_tool'):
                 
-                extracted_code_w_test = extracted_code + "\n" + test_code
+                extracted_code_w_test = extracted_code + "\n"
                 with simple_timer(f"tool_calls", metrics):
                     instance_id = None
                     try:
                         instance_id = await self.code_tool.create()
-
-                        response, score, meta_data = await self.code_tool.execute(instance_id, {"code": extracted_code_w_test})
+                        response, score, meta_data = await self.code_tool.execute(instance_id=instance_id, parameters={"code": extracted_code_w_test, "ground_truth": ground_truth})
                         #breakpoint()
                         if meta_data["status"] == "timeout":
                             metrics["timeout"] = 1
@@ -226,7 +229,10 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
         metrics["timeout_reward"] = timeout_reward
         metrics["extra_fields"]= {"progress_reward": progress_reward}
         reward = answer_reward + format_reward + timeout_reward + progress_reward
+        if "inputs" in ground_truth and "outputs" in ground_truth:
+            breakpoint()
 
+        
         output = AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids[: self.response_length],

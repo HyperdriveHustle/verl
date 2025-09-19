@@ -671,8 +671,8 @@ class RayPPOTrainer:
                 non_tensor_batch_keys_to_pop.append("agent_name")
 
             #wlw
-                if "reward_model" in test_batch.non_tensor_batch:
-                    non_tensor_batch_keys_to_pop.append("reward_model")
+            if "reward_model" in test_batch.non_tensor_batch:
+                non_tensor_batch_keys_to_pop.append("reward_model")
 
             test_gen_batch = test_batch.pop(
                 batch_keys=batch_keys_to_pop,

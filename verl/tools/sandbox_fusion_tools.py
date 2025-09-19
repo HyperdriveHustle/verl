@@ -30,7 +30,7 @@ from verl.utils.rollout_trace import rollout_trace_op
 from .schemas import OpenAIFunctionToolSchema
 
 logger = logging.getLogger(__name__)
-logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
+logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "DEBUG"))
 
 T = TypeVar("T")
 
@@ -170,21 +170,28 @@ class SandboxFusionTool(BaseTool):
         code = parameters.get("code", "")
         timeout = parameters.get("timeout", self.default_timeout)
         language = parameters.get("language", self.default_language)
-        ground_truth = self.kwargs.get("ground_truth", None)
+        ground_truth = parameters.get("ground_truth", None)
+        logger.debug(f"parameters:{parameters}")
         if not isinstance(code, str):
             code = str(code)
-
         result = await self.execution_pool.execute.remote(self.execute_code, instance_id, code, timeout, language, ground_truth)
         # sandbox has no score or metrics, use Nones
         return result, None, None
 
     def execute_code(self, instance_id, code, timeout=30, language="python", ground_truth=None):
-        #breakpoint()
         start = perf_counter()
         if "functional" in ground_truth:
+            code = code + "\n" + ground_truth["functional"]
             result_status, metadata = _process_single_case(
                 0, None, None, self.sandbox_fusion_url, code, timeout, self.memory_limit_mb, language
             )
+            if metadata["run_status"] == "Finished":
+                actual_output = metadata["stdout"] + metadata["stderr"]
+                code_status = metadata["api_status"]
+                logger.debug(f"actual_output from sandbox fusion: {actual_output},{instance_id}")
+                return actual_output, code_status, metadata
+            else:
+                return "no stdout here", "Not Finished", metadata
         elif "inputs" in ground_truth and "outputs" in ground_truth:
             result_status, metadata = check_correctness(
                 self.sandbox_fusion_url, ground_truth,  code, timeout, self.memory_limit_mb, language

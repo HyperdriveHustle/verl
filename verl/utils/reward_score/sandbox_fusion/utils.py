@@ -27,7 +27,9 @@ DEFAULT_TIMEOUT = 10  # Default compile and run timeout
 MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1
 API_TIMEOUT = 10
-CALL_LOCALLY = False  # Whether to call local sandbox or remote API
+CALL_LOCALLY = True  # Whether to call local sandbox or remote API
+
+
 PY_IMPORTS = """import heapq
 import itertools
 import random
@@ -169,7 +171,7 @@ def call_local_sandbox_api(
     
     try:
         # 创建临时工作目录
-        with tempfile.TemporaryDirectory(prefix="verl_fj_", dir="/firejail_code/verl") as workdir:
+        with tempfile.TemporaryDirectory(prefix="verl_fj_", dir="/tmp/firejail_code/verl") as workdir:
             full_code = PY_IMPORTS + code
             
             script_path = os.path.join(workdir, "main.py")
@@ -226,7 +228,6 @@ def call_local_sandbox_api(
                 run_result["stderr"] = proc.stderr.decode().strip()
                 run_result["return_code"] = proc.returncode
                 run_result["execution_time"] = duration
-                breakpoint()
                 if proc.returncode == 0:
                     result["status"] = "Success"
                     run_result["status"] = "Finished"
@@ -504,7 +505,6 @@ if __name__ == '__main__':
             memory_limit_mb=memory_limit_mb,
             language=language,
         )
-        breakpoint()
     else:
         try:
             if concurrent_semaphore:
@@ -714,7 +714,7 @@ def check_correctness(
         return [-1] * num_cases, [{"error": "Input/output count mismatch", "case_index": i} for i in range(num_cases)]
 
     first_compile_error_index = -1
-
+    first_test_error = -1
     # max_workers is limited by sandbox_fusion_max_concurrent from concurrent_semaphore
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(32, os.cpu_count() * 5)) as executor:
         # Submit all tasks, passing the concurrent_semaphore to _process_single_case
@@ -743,12 +743,10 @@ def check_correctness(
                 results[index] = result_status
                 metadata_list[index] = metadata
 
-                # Check for compile error (-4)
+
                 if result_status == -4:
                     if first_compile_error_index == -1 or index < first_compile_error_index:
                         first_compile_error_index = index
-                    # Optimization: could potentially cancel futures for index > first_compile_error_index
-                    # However, cancellation is not guaranteed. Post-processing is safer.
 
             except Exception as exc:
                 logger.error(f"Test case {index} generated an exception: {exc}")
@@ -760,8 +758,7 @@ def check_correctness(
                     "expected_output": str(expected_outputs[index]),
                     "api_request_error": f"Internal execution error: {exc}",
                     "status": "internal_error",
-                }
-
+                }    
     # Post-processing for compile errors
     if first_compile_error_index != -1:
         logger.warning(
