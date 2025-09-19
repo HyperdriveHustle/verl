@@ -162,6 +162,7 @@ class CustomRLHFDataset(RLHFDataset):
             dataframes.append(dataframe)
         self.dataframe: datasets.Dataset = datasets.concatenate_datasets(dataframes)
         self.dataframe = self.maybe_filter_out_long_prompts(self.dataframe)
+        self.dataframe = self.maybe_filter_out_long_prompts(self.dataframe)
         print(f"dataset len: {len(self.dataframe)}")
 
     def map_fn2(self, row: dict):
