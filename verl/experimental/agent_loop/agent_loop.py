@@ -593,11 +593,17 @@ class AgentLoopManager:
             self.sleep()
 
         # calculate performance metrics
+        all_raw_metrics = [
+            metric_item
+            for proto in outputs 
+            for metric_item in proto.meta_info.get("metrics", [])
+        ]#List[Dict[str, str]]
         metrics = [output.meta_info["metrics"] for output in outputs]  # List[List[Dict[str, str]]]
         timing, tool_reward = self._performance_metrics(metrics, output)
 
         output.meta_info = {"timing": timing,
-                            "tool_reward": tool_reward}
+                            "tool_reward": tool_reward,
+                            "raw_metrics": all_raw_metrics}
         return output
 
     def _performance_metrics(self, metrics: list[list[dict[str, str]]], output: DataProto) -> dict[str, float]:

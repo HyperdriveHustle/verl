@@ -13,11 +13,13 @@ taco=/afs/chatrl/users/lyy/data/code_train/DeepCoder-Preview-Dataset_wlw/taco
 #test data:
 #lcbv5_test=/afs/chatrl/users/lyy/data/code_test/DeepCoder-Preview-Dataset_wlw/lcbv5-240801-250102
 codeforces=/afs/chatrl/users/lyy/data/code_test/DeepCoder-Preview-Dataset_wlw/codeforces
+leetcode2k_test=/afs/chatrl/users/lyy/data/code_test/leetcode2k_wlw
+
 model_path=/afs/chatrl/public/models/Qwen3-4B-Base
 # model_path=/model/Qwen2.5-3B
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$leetcode2k']"
-test_files="['$codeforces']"
+test_files="['$leetcode2k_test']"
 
 # tool
 tool_config_path=$DATA_ROOT/recipe/async_dapo_tool/sandbox_fusion_tool_config.yaml
@@ -54,8 +56,8 @@ max_prompt_length=2548
 max_response_length=4096
 actor_lr=1e-6
 
-train_batch_size=32
-ppo_mini_batch_size=32
+train_batch_size=16
+ppo_mini_batch_size=16
 n_resp_per_prompt=16
 n_resp_per_prompt_val=1
 

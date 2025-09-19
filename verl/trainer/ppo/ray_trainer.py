@@ -701,9 +701,15 @@ class RayPPOTrainer:
             else:
                 test_output_gen_batch_padded = self.async_rollout_manager.generate_sequences(test_gen_batch_padded)
 
+            padded_raw_metrics = test_output_gen_batch_padded.meta_info.get("raw_metrics", [])
+            local_logger.info(f"len(padded_raw_metrics): {len(padded_raw_metrics)}")
             # unpad
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
-
+            
+            raw_metrics = padded_raw_metrics
+            if pad_size > 0:
+                raw_metrics = padded_raw_metrics[:-pad_size]
+                local_logger.info(f"Removed {pad_size} padded raw_metrics, now {len(raw_metrics)} remain.")
             print("validation generation end")
             #breakpoint()
             # Store generated outputs
@@ -739,10 +745,28 @@ class RayPPOTrainer:
             data_source_lst.append(test_batch.non_tensor_batch.get("data_source", ["unknown"] * result.shape[0]))
 
         self._maybe_log_val_generations(inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores)
+        
+        pass_count = 0
+        total_count = len(sample_scores)  # Use the actual number of samples as the total count
+        pass_rate = 0.0
+        mean_answer_reward = 0.0
+        mean_format_reward = 0.0
+        total_no_code_extracted = 0
 
-        pass_count = test_output_gen_batch.meta_info["tool_reward"]["agent_loop/correct_count"]
-        total_count = len(sample_scores)
-        pass_rate = pass_count / total_count if total_count > 0 else 0.0
+        if raw_metrics:
+            assert len(raw_metrics) == total_count, \
+                f"Metrics count ({len(raw_metrics)}) mismatches sample count ({total_count})"
+            success_at_turn = np.array([m["success_at_turn"] for m in raw_metrics])
+            answer_reward = np.array([m["answer_reward"] for m in raw_metrics])
+            format_reward = np.array([m["format_reward"] for m in raw_metrics])
+            No_code_extracted_count = np.array([m["No_code_extracted_count"] for m in raw_metrics])
+            
+            pass_count = np.sum(success_at_turn > 0).item()
+            mean_answer_reward = answer_reward.mean() if len(answer_reward) > 0 else 0.0
+            mean_format_reward = format_reward.mean() if len(format_reward) > 0 else 0.0
+            total_no_code_extracted = No_code_extracted_count.sum()
+            pass_at_1 = (np.sum(success_at_turn == 1) / len(success_at_turn)).item() if len(success_at_turn) else 0.0
+
         # dump generations
         val_data_dir = self.config.trainer.get("validation_data_dir", None)
         if val_data_dir:
@@ -783,18 +807,18 @@ class RayPPOTrainer:
         #     metric_dict["val-aux/num_turns/max"] = sample_turns.max()
         #     metric_dict["val-aux/num_turns/mean"] = sample_turns.mean()
         metric_dict = {
-            "val-core/code/pass@1": pass_rate,
+            "val-core/code/pass@1": pass_at_1,
             "val-core/code/correct_count": pass_count,
             "val-core/code/total_count": total_count,
             "val-core/code/mean_reward": np.mean(sample_scores) if sample_scores else 0.0,
             "val-core/code/max_score": max(sample_scores) if sample_scores else 0.0,
             "val-core/code/min_score": min(sample_scores) if sample_scores else 0.0,
-            "val-core/code/mean_answer_reward": test_output_gen_batch.meta_info["tool_reward"]["agent_loop/answer_reward/mean"],
-            "val-core/code/mean_format_reward": test_output_gen_batch.meta_info["tool_reward"]["agent_loop/format_reward/mean"],
-            "agent_loop/No_code_extracted_count": test_output_gen_batch.meta_info["tool_reward"]["agent_loop/No_code_extracted_count"]
+            "val-core/code/mean_answer_reward": mean_answer_reward,
+            "val-core/code/mean_format_reward": mean_format_reward,
+            "val-core/No_code_extracted_count": total_no_code_extracted,
+
         }
-        #metric_dict.update(test_output_gen_batch.meta_info["timing"])
-        #metric_dict.update(test_output_gen_batch.meta_info["tool_reward"])
+
         local_logger.info(metric_dict)
         return metric_dict
 
