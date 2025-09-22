@@ -129,7 +129,7 @@ class CustomSandboxFusionTool(SandboxFusionTool):
 
             final_actual_output = final_metadata["stdout"]
             
-            # 只有当stderr中有内容时才附加，避免在stdout中混入不必要的信息
+
             if final_metadata["stderr"]:
                 final_actual_output += "\n#Error Log:\n" + final_metadata["stderr"]
                 

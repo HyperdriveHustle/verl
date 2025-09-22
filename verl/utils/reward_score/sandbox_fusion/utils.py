@@ -171,7 +171,9 @@ def call_local_sandbox_api(
     
     try:
         # 创建临时工作目录
-        with tempfile.TemporaryDirectory(prefix="verl_fj_", dir="/tmp/firejail_code/verl") as workdir:
+        parent_dir = "/tmp/firejail_code/verl"
+        os.makedirs(parent_dir, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="verl_fj_", dir=parent_dir) as workdir:
             full_code = PY_IMPORTS + code
             
             script_path = os.path.join(workdir, "main.py")
@@ -241,7 +243,7 @@ def call_local_sandbox_api(
                 return result, None
             except subprocess.TimeoutExpired:
                 duration = time.monotonic() - start_time
-                logger.warning(f"{log_prefix}Process timed out after {duration:.2f}s")
+                #logger.warning(f"{log_prefix}Process timed out after {duration:.2f}s")
                 
                 result["status"] = "Failed"
                 run_result["status"] = "TimeLimitExceeded"
@@ -716,7 +718,7 @@ def check_correctness(
     first_compile_error_index = -1
     first_test_error = -1
     # max_workers is limited by sandbox_fusion_max_concurrent from concurrent_semaphore
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(32, os.cpu_count() * 5)) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(inputs), 32)) as executor:
         # Submit all tasks, passing the concurrent_semaphore to _process_single_case
         future_to_index = {
             executor.submit(

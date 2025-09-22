@@ -54,6 +54,8 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
         cls.response_length = config.actor_rollout_ref.rollout.response_length
         cls.tool_parser = ToolParser.get_tool_parser(config.actor_rollout_ref.rollout.multi_turn.format, cls.tokenizer)
         cls.system_prompt = tokenizer.apply_chat_template([{}], add_generation_prompt=False, tokenize=True)
+
+        cls.overlong_filter = config.actor_rollout_ref.rollout.overlong_filter
         
     def validate_response_structure(self, processed_str: str) -> bool:
         pattern = re.compile(r'<think>.*</think>.*<answer>.*</answer>$', re.DOTALL)
@@ -183,7 +185,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
                     except Exception as e:
                         #breakpoint()
                         logger.error(f"Error during reward calculation: {e}")
-                        answer_reward = -0.2
+                        answer_reward = 0
                         break
                     finally:
                         if instance_id:
@@ -212,7 +214,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
                     response_logprobs += [0.0] * len(tool_response_ids)
             else:
                 metrics["No_code_extracted_count"] = 1
-                answer_reward = -0.3
+                answer_reward = 0
                 final_pass_rate = 0
                 breakpoint()
                 break
@@ -231,7 +233,10 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
         reward = answer_reward + format_reward + timeout_reward + progress_reward
         if "inputs" in ground_truth and "outputs" in ground_truth:
             breakpoint()
-
+        
+        if self.overlong_filter and len(response_ids) > self.response_length:
+           reward = 0
+           response_mask = [0] * len(response_mask)
         
         output = AgentLoopOutput(
             prompt_ids=prompt_ids,

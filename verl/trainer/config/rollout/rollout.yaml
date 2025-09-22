@@ -76,6 +76,9 @@ n: 1
 # Whether to wake up inference engine in multi-stage to reduce peak memory during training-rollout transition.
 multi_stage_wake_up: false
 
+# Whether to filter out overlong samples in the Rollout
+overlong_filter: false 
+
 # Extra inference engine arguments (vllm, sglang).
 engine_kwargs:
 
