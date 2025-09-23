@@ -40,7 +40,7 @@ class PoolMode(Enum):
     ProcessMode = 2
 
 
-@ray.remote(concurrency_groups={"acquire": 1, "release": 10})
+@ray.remote(concurrency_groups={"acquire": 1, "release": 32})
 class TokenBucketWorker:
     def __init__(self, rate_limit: int):
         self.rate_limit = rate_limit
@@ -76,15 +76,15 @@ class ExecutionWorker:
 
     def execute(self, fn: Callable[..., T], *fn_args, **fn_kwargs) -> T:
         if not self.rate_limit_worker:
-            return fn(*fn_args, **fn_kwargs)
-        with ExitStack() as stack:
-            stack.callback(self.rate_limit_worker.release.remote)
-            ray.get(self.rate_limit_worker.acquire.remote())
-            try:
-                return fn(*fn_args, **fn_kwargs)
-            except Exception as e:
-                # TODO we should make this available to the tool caller
-                logger.warning(f"Error when executing code: {e}")
+            return fn(*fn_args, **fn_kwargs, concurrent_semaphore=None)
+        #with ExitStack() as stack:
+            #stack.callback(self.rate_limit_worker.release.remote)
+            #ray.get(self.rate_limit_worker.acquire.remote())
+        try:
+            return fn(*fn_args, **fn_kwargs, concurrent_semaphore=self.rate_limit_worker)
+        except Exception as e:
+            # TODO we should make this available to the tool caller
+            logger.warning(f"Error when executing code: {e}")
 
 
 def init_execution_pool(

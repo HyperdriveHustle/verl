@@ -25,7 +25,6 @@ from verl.utils.rollout_trace import rollout_trace_op
 from verl.utils.reward_score.sandbox_fusion.utils import _process_single_case, check_correctness
 logger = logging.getLogger(__name__)
 
-
 class CustomSandboxFusionTool(SandboxFusionTool):
     def __init__(self, config: dict, tool_schema: OpenAIFunctionToolSchema):
         super().__init__(config, tool_schema)

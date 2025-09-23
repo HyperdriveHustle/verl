@@ -54,11 +54,11 @@ class CustomSandboxFusionTool(SandboxFusionTool):
         breakpoint()
         return actual_output, code_status, meta_data
     
-    def execute_code(self, instance_id, code, timeout=30, language="python", ground_truth=None):
+    def execute_code(self, instance_id, code, timeout=30, language="python", ground_truth=None, concurrent_semaphore=None):
         if "functional" in ground_truth:
             code = code + "\n" + ground_truth["functional"]
             result_status, metadata = _process_single_case(
-                0, None, None, self.sandbox_fusion_url, code, timeout, self.memory_limit_mb, language
+                0, None, None, self.sandbox_fusion_url, code, timeout, self.memory_limit_mb, language, concurrent_semaphore
             )
             if metadata["run_status"] == "Finished":
                 actual_output = metadata["stdout"] + metadata["stderr"]
@@ -69,7 +69,7 @@ class CustomSandboxFusionTool(SandboxFusionTool):
                 return "no stdout here", "Not Finished", metadata
         elif "inputs" in ground_truth and "outputs" in ground_truth:
             result_status, metadata = check_correctness(
-                self.sandbox_fusion_url, ground_truth,  code, timeout, self.memory_limit_mb, language
+                self.sandbox_fusion_url, ground_truth,  code, timeout, self.memory_limit_mb, language, concurrent_semaphore
             )
 
             total_cases = len(result_status)

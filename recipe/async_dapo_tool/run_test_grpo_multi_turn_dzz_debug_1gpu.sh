@@ -15,7 +15,7 @@ taco=/afs/chatrl/users/lyy/data/code_train/DeepCoder-Preview-Dataset_wlw/taco
 codeforces=/afs/chatrl/users/lyy/data/code_test/DeepCoder-Preview-Dataset_wlw/codeforces
 leetcode2k_test=/afs/chatrl/users/lyy/data/code_test/leetcode2k_wlw
 
-model_path=/afs/chatrl/public/models/Qwen3-8B
+model_path=/afs/chatrl/public/models/Qwen3-4B-Base
 # model_path=/model/Qwen2.5-3B
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$taco']"
@@ -32,8 +32,8 @@ export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 #experiment_name=wlw_multi_turn_Qwen25-7B-Instruct_2025-08-20_18-21-26
 # experiment_name=${project_name}_Qwen25-7B-Instruct_2025-08-20_18-21-26_650step_8k
 # experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-28_10-26-16
-experiment_name=wlw_multi_turn_Qwen3-8B-16k_TISfalse_reward_v3_grpo_bs32_minibs32_overlongfilter_2025-09-21_15-23-32
-#experiment_name=debug_${project_name}_Qwen3-8B-16k_TISfalse_reward_v3_grpo_bs32_minibs32_overlongfilter_${TIMESTAMP}
+# experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-28_22-29-02
+experiment_name=ddebug_${project_name}_Qwen3-8B-16k_TISfalse_reward_v3_grpo_bs32_minibs32_overlongfilter_${TIMESTAMP}
 #experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_TIS_reward_v3_2025-09-15_01-22-32 #10k->12k
 default_local_dir=/afs/chatrl/users/wlw/ckpt/$experiment_name
 
@@ -54,7 +54,7 @@ calculate_log_probs=False # if tis_imp_ratio_cap != -1, you should set calculate
 
 max_turns=4
 max_prompt_length=2548
-max_response_length=16384
+max_response_length=4096
 overlong_filter=True # whether to filter out overlong samples in the Rollout(mask out)
 
 actor_lr=1e-6
@@ -116,16 +116,16 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.multi_turn.max_assistant_turns=$max_turns \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=$tool_config_path \
     actor_rollout_ref.rollout.multi_turn.format=hermes \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.5 \
     actor_rollout_ref.rollout.n=$n_resp_per_prompt \
     actor_rollout_ref.rollout.overlong_filter=$overlong_filter \
     actor_rollout_ref.rollout.val_kwargs.n=$n_resp_per_prompt_val \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=8 \
+    trainer.n_gpus_per_node=1 \
     trainer.val_before_train=Ture \
-    trainer.val_only=False\
+    trainer.val_only=True\
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \
     trainer.save_freq=50 \

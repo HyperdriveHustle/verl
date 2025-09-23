@@ -168,8 +168,6 @@ Code execution timeout, please reflect your answer and answer again to slove the
                                 metrics["success_at_turn"] = turns
                                 break
                             else:
-                                if turns == 4 or request_id == 'b42a13d3f7e54d809e4c9425e94ee1e1':
-                                    breakpoint()
                                 stdout = meta_data.get("stdout", "")
                                 stderr = meta_data.get("stderr", "")
                                 c = error_message = f"""
@@ -216,7 +214,6 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
                 metrics["No_code_extracted_count"] = 1
                 answer_reward = 0
                 final_pass_rate = 0
-                breakpoint()
                 break
 
 
