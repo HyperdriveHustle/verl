@@ -148,7 +148,7 @@ SUPPORTED_LANGUAGES = [
 ]
 def _set_memory_limit(mb_limit: int):
     if mb_limit > 0:
-        limit_in_bytes = mb_limit * 2 * 1024 * 1024
+        limit_in_bytes = mb_limit * 5 * 1024 * 1024
         resource.setrlimit(resource.RLIMIT_AS, (limit_in_bytes, limit_in_bytes))
 
 def call_local_sandbox_api(
@@ -195,11 +195,9 @@ def call_local_sandbox_api(
             cmd = [
                 "firejail",
                 f"--private={workdir}",              # 独立的工作目录
-                f"--rlimit-as={memory_limit_mb}m",  # 内存限制
                 "--rlimit-fsize=2m",                # 文件大小限制
                 "--rlimit-nproc=32",
                 "--rlimit-nofile=32",
-                "--seccomp",                        # 启用 seccomp 安全过滤器
                 "--quiet",                          # 静默模式
                 f"--timeout=00:00:{run_timeout}",   # 超时设置
                 f"--whitelist={workdir}",           # 白名单工作目录
@@ -238,6 +236,16 @@ def call_local_sandbox_api(
                 if proc.returncode == 0:
                     result["status"] = "Success"
                     run_result["status"] = "Finished"
+                elif proc.returncode < 0:
+                    import signal
+                    signal_num = -proc.returncode
+                    signal_name = signal.Signals(signal_num).name
+
+                    result["status"] = "Failed"
+                    run_result["status"] = "MemoryLimitExceeded" 
+                    run_result["stderr"] = f"Process was killed by signal {signal_num} ({signal_name}). This is often caused by exceeding a memory limit."
+                    print(run_result["stderr"])
+                    logger.error(run_result["stderr"])
                 else:
                     result["status"] = "Failed"
                     run_result["status"] = "Finished"
@@ -259,6 +267,8 @@ def call_local_sandbox_api(
                 result["run_result"] = run_result
                 
                 return result, None
+            
+
 
     except Exception as e:
         error_msg = f"{log_prefix}Unexpected error during local sandbox execution: {e}"

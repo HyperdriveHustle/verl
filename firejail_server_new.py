@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import resource
 from typing import Optional, Dict, List
 from fastapi import FastAPI
 from pydantic import BaseModel,Field
@@ -87,6 +88,10 @@ def is_same_tree(p, q):
         return is_same_tree(p.left, q.left) and is_same_tree(p.right, q.right)
 
 """
+def _set_memory_limit(mb_limit: int):
+    if mb_limit > 0:
+        limit_in_bytes = mb_limit * 5 * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_AS, (limit_in_bytes, limit_in_bytes))
 
 app = FastAPI()
 
@@ -126,7 +131,6 @@ def run(req: RunReq):
                 f"--private={workdir}",              # 独立的工作目录
                 f"--rlimit-as={req.memory_limit_MB}m",  # 内存限制 (Bytes)
                 "--rlimit-fsize=2m",  # Limit file size
-                "--seccomp",                         # 启用 seccomp 安全过滤器
                 "--quiet",                           # 静默模式，减少不必要的输出
                 f"--timeout=00:00:{req.run_timeout}",
                 f"--whitelist={workdir}",
@@ -137,7 +141,7 @@ def run(req: RunReq):
             start_time = time.monotonic()
             proc = subprocess.run(
                 cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE,text=True, 
-                timeout=req.run_timeout, input=req.stdin, 
+                timeout=req.run_timeout, input=req.stdin, preexec_fn=lambda: _set_memory_limit(req.memory_limit_MB)
             )
             duration = time.monotonic() - start_time
 

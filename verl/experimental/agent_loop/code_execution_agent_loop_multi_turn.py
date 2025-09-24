@@ -133,9 +133,18 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             format_ok_turns += 1 if self.validate_response_structure(solution_text) else 0
 
             extracted_code=self.extract_code_from_answer_efficiently(solution_text)
+
             if not extracted_code:
-                code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
-                extracted_code = code_match.group(1).strip() if code_match else None
+                try:
+                    think_end_tag = "</think>"
+                    search_start_index = solution_text.rindex(think_end_tag) + len(think_end_tag)
+                    search_area = solution_text[search_start_index:]
+                    
+                    code_match = re.search(r"```(?:python\n)?(.*?)```", search_area, re.DOTALL)
+                    extracted_code = code_match.group(1).strip() if code_match else None
+                except ValueError:
+                    extracted_code = None
+
             error_message = ""
 
             if extracted_code and hasattr(self, 'code_tool'):
