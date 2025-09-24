@@ -29,8 +29,6 @@ DEFAULT_TIMEOUT = 10  # Default compile and run timeout
 MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1
 API_TIMEOUT = 10
-CALL_LOCALLY = True  # Whether to call local sandbox or remote API
-
 
 PY_IMPORTS = """import heapq
 import itertools
@@ -224,7 +222,7 @@ def call_local_sandbox_api(
                     cwd=workdir, 
                     stdout=subprocess.PIPE, 
                     stderr=subprocess.PIPE,
-                    timeout=run_timeout + 1, 
+                    timeout=run_timeout + 5, 
                     env=env,
                     input=stdin.encode() if stdin else None,
                     check=False,
@@ -394,6 +392,7 @@ def _process_single_case(
     timeout: int,
     memory_limit_mb: int,
     language: str,
+    local_run: bool = False,
     concurrent_semaphore: Optional[threading.Semaphore] = None,
     fn_name: Optional[str] = None,
 ) -> tuple[int, dict[str, Any]]:
@@ -504,19 +503,33 @@ if __name__ == '__main__':
 """
         current_generation_code = wrapper_code
     stdin = None if stdin_data is None else str(stdin_data)
-    def run_sandbox():
+    if local_run:
+        api_response, error_msg = call_local_sandbox_api(
+            code=current_generation_code,
+            stdin=stdin,
+            compile_timeout=timeout,
+            run_timeout=timeout,
+            memory_limit_mb=memory_limit_mb,
+            language=language,
+        )
+    else:
         try:
-            if CALL_LOCALLY:
-                return call_local_sandbox_api(
-                    code=current_generation_code,
-                    stdin=stdin,
-                    compile_timeout=timeout,
-                    run_timeout=timeout,
-                    memory_limit_mb=memory_limit_mb,
-                    language=language,
-                )
+            if concurrent_semaphore:
+                # logger.debug(f"Case {case_index + 1}: Attempting to acquire semaphore.")
+                with concurrent_semaphore:
+                    # logger.debug(f"Case {case_index + 1}: Semaphore acquired. Calling API.")
+                    api_response, error_msg = call_sandbox_api(
+                        sandbox_fusion_url=sandbox_fusion_url,
+                        code=current_generation_code,
+                        stdin=stdin,
+                        compile_timeout=timeout,
+                        run_timeout=timeout,
+                        memory_limit_mb=memory_limit_mb,
+                        language=language,
+                    )
+                # logger.debug(f"Case {case_index + 1}: Semaphore released.")
             else:
-                return call_sandbox_api(
+                api_response, error_msg = call_sandbox_api(
                     sandbox_fusion_url=sandbox_fusion_url,
                     code=current_generation_code,
                     stdin=stdin,
@@ -529,14 +542,6 @@ if __name__ == '__main__':
             error_msg = f"API Request Exception during check_correctness for case {case_index + 1}: {e}"
             logger.error(f"Case {case_index + 1}: {error_msg}")
             traceback.print_exc()
-    if concurrent_semaphore:
-        ray.get(concurrent_semaphore.acquire.remote())
-        try:
-            api_response, error_msg = run_sandbox()
-        finally:
-            concurrent_semaphore.release.remote()
-    else:
-        api_response, error_msg = run_sandbox()
 
     metadata = {
         "case_index": case_index,
@@ -670,6 +675,7 @@ def check_correctness(
     timeout: int = DEFAULT_TIMEOUT,
     memory_limit_mb: int = 1024,
     language: str = "python",
+    local_run: bool = False,
     concurrent_semaphore: Optional[threading.Semaphore] = None,
 ) -> tuple[list[Any], list[dict[str, Any]]]:
     """
@@ -715,8 +721,11 @@ def check_correctness(
 
     first_compile_error_index = -1
     first_test_error = -1
+
+    #local run -- cpu_bound    Remote run -- io_bound
+    max_workers = min(os.cpu_count() // 2 , len(inputs)) if local_run else max(32, os.cpu_count() * 5)
     # max_workers is limited by sandbox_fusion_max_concurrent from concurrent_semaphore
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(32, os.cpu_count() * 5)) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks, passing the concurrent_semaphore to _process_single_case
         future_to_index = {
             executor.submit(
@@ -729,6 +738,7 @@ def check_correctness(
                 timeout,
                 memory_limit_mb,
                 language,
+                local_run,
                 concurrent_semaphore,
                 fn_name,
             ): i

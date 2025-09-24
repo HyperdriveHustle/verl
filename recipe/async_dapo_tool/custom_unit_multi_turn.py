@@ -50,15 +50,15 @@ class CustomSandboxFusionTool(SandboxFusionTool):
         ground_truth = parameters.get("ground_truth", None)
         if not isinstance(code, str):
             code = str(code)
-        actual_output, code_status, meta_data = await self.execution_pool.execute.remote(self.execute_code, instance_id, code, timeout, language, ground_truth)
+        actual_output, code_status, meta_data = await self.execution_pool.execute.remote(self.execute_code, instance_id, code, timeout, language, ground_truth, self.local_run)
         breakpoint()
         return actual_output, code_status, meta_data
     
-    def execute_code(self, instance_id, code, timeout=30, language="python", ground_truth=None, concurrent_semaphore=None):
+    def execute_code(self, instance_id, code, timeout=30, language="python", ground_truth=None, local_run=False):
         if "functional" in ground_truth:
             code = code + "\n" + ground_truth["functional"]
             result_status, metadata = _process_single_case(
-                0, None, None, self.sandbox_fusion_url, code, timeout, self.memory_limit_mb, language, concurrent_semaphore
+                0, None, None, self.sandbox_fusion_url, code, timeout, self.memory_limit_mb, language, local_run
             )
             if metadata["run_status"] == "Finished":
                 actual_output = metadata["stdout"] + metadata["stderr"]
@@ -69,7 +69,7 @@ class CustomSandboxFusionTool(SandboxFusionTool):
                 return "no stdout here", "Not Finished", metadata
         elif "inputs" in ground_truth and "outputs" in ground_truth:
             result_status, metadata = check_correctness(
-                self.sandbox_fusion_url, ground_truth,  code, timeout, self.memory_limit_mb, language, concurrent_semaphore
+                self.sandbox_fusion_url, ground_truth,  code, timeout, self.memory_limit_mb, language, local_run
             )
 
             total_cases = len(result_status)

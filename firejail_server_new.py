@@ -103,15 +103,13 @@ class RunReq(BaseModel):
 
 @app.post("/run")
 def run(req: RunReq):
-    #base_dir = "/tmp/verl_firejail"
+    base_dir = "/tmp/verl_firejail"
 
-    # 2. 确保这个目录存在，如果不存在则创建它
-    # exist_ok=True 确保了即使目录已经存在，这行代码也不会报错
-    #os.makedirs(base_dir, exist_ok=True)
+    os.makedirs(base_dir, exist_ok=True)
 
     # 3. 现在可以安全地在已存在的目录中创建临时工作目录了
     try:
-        with tempfile.TemporaryDirectory(prefix="ver1_fj_", dir="/tmp") as workdir:
+        with tempfile.TemporaryDirectory(prefix="ver1_fj_", dir=base_dir) as workdir:
             script_path = os.path.join(workdir, "main.py")
             result = {
                 "status": "unknown",
@@ -139,7 +137,7 @@ def run(req: RunReq):
             start_time = time.monotonic()
             proc = subprocess.run(
                 cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE,text=True, 
-                timeout=req.run_timeout, input=req.stdin
+                timeout=req.run_timeout, input=req.stdin, 
             )
             duration = time.monotonic() - start_time
 
@@ -149,7 +147,7 @@ def run(req: RunReq):
         run_result["execution_time"] = duration
         result["run_result"] = run_result
         
-        # 7. 根据退出码衍生状态
+
         if proc.returncode == 0:
             result["status"] = "Success"
             run_result["status"] = "Finished"

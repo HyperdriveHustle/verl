@@ -4,11 +4,12 @@ tools:
       sandbox_fusion_url: "http://10.127.16.170:28893/run"
       num_workers: 256
       enable_global_rate_limit: true
-      rate_limit: 512
+      rate_limit: 256
       default_timeout: 30
       default_language: "python"
       memory_limit_mb: 512
       type: native
+      local_run: true
 
     tool_schema:
       type: "function"
