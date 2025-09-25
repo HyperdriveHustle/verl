@@ -282,13 +282,19 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 actor_module_class = AutoModelForVision2Seq
             else:
                 actor_module_class = AutoModelForCausalLM
-
-            actor_module = actor_module_class.from_pretrained(
-                pretrained_model_name_or_path=local_path,
-                torch_dtype=torch_dtype,
-                config=actor_model_config,
-                trust_remote_code=trust_remote_code,
-            )
+            max_retries = 5
+            while max_retries > 0:
+                try:
+                    actor_module = actor_module_class.from_pretrained(
+                        pretrained_model_name_or_path=local_path,
+                        torch_dtype=torch_dtype,
+                        config=actor_model_config,
+                        trust_remote_code=trust_remote_code,
+                    )
+                    break
+                except Exception as e:
+                    max_retries -= 1
+                    print(f"Failed to load actor: {e}. Retries left: {max_retries}")
 
             # Apply Liger kernel to the model if use_liger is set to True
             if use_liger:
