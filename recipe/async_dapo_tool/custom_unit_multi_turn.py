@@ -74,7 +74,7 @@ class CustomSandboxFusionTool(SandboxFusionTool):
 
             total_cases = len(result_status)
             if total_cases == 0:
-                return "No test cases found.", "Success", {"status": "Success", "run_status": "Finished", "stdout": "No test cases found.", "stderr": ""}
+                return "No test cases found.", "Success", {"status": "Success", "run_status": "Finished", "stdout": "Test cases pass rate:**0.00**\n No test cases found.", "stderr": ""}
     
             passed_count = 0
             first_failure_meta = None

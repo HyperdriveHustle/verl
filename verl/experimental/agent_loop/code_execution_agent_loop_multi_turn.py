@@ -173,7 +173,7 @@ Code execution timeout, please reflect your answer and answer again to slove the
                             pass_rate = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 0.0
                             final_pass_rate = pass_rate
                             if score.lower() == "success" and pass_rate == 1.0:
-                                answer_reward = SUCCESS_FLOOR  + DECAYING_BONUS_SCALE  * (REWARD_DECAY_FACTOR ** (turns - 1)) #wlw 9.12
+                                answer_reward = 1
                                 metrics["success_at_turn"] = turns
                                 break
                             else:
@@ -231,12 +231,11 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
         format_reward = FORMAT_REARD * format_ok_turns / turns
 
         #timeout_reward = metrics["timeout"] * TIMEOUTDECAY
-        progress_reward = 0.6 * final_pass_rate if answer_reward == 0 else 0
         metrics["answer_reward"] = answer_reward #+ progress_reward
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward
         metrics["extra_fields"]= {"progress_reward": progress_reward}
-        reward = answer_reward + format_reward + timeout_reward + progress_reward
+        reward = answer_reward + format_reward + timeout_reward
         if "inputs" in ground_truth and "outputs" in ground_truth:
             breakpoint()
         
