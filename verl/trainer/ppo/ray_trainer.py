@@ -636,6 +636,7 @@ class RayPPOTrainer:
         # Lists to collect samples for the table
         sample_inputs = []
         sample_outputs = []
+        sample_lens = []
         sample_scores = []
         sample_turns = []
 
@@ -710,6 +711,13 @@ class RayPPOTrainer:
             if pad_size > 0:
                 raw_metrics = padded_raw_metrics[:-pad_size]
                 local_logger.info(f"Removed {pad_size} padded raw_metrics, now {len(raw_metrics)} remain.")
+            if "tool_call_response" in test_output_gen_batch.meta_info:
+                reward_extra_infos_dict['tool_call_response'].extend(test_output_gen_batch.meta_info["tool_call_response"][:-pad_size])
+            if "extracted_code" in test_output_gen_batch.meta_info:
+                reward_extra_infos_dict['extracted_code'].extend(test_output_gen_batch.meta_info["extracted_code"][:-pad_size])
+            if "response_length" in test_output_gen_batch.meta_info:
+                sample_lens.extend(test_output_gen_batch.meta_info["response_length"][:-pad_size])
+                reward_extra_infos_dict['response_length'].extend(test_output_gen_batch.meta_info["response_length"][:-pad_size])
             print("validation generation end")
             #breakpoint()
             # Store generated outputs
@@ -726,8 +734,10 @@ class RayPPOTrainer:
             #     raise ValueError("val_reward_fn must be provided for validation.")
             # result = self.val_reward_fn(test_batch, return_dict=True)
             # evaluate using reward_function
-            if "code_rewards" in test_batch.non_tensor_batch:
-                result = test_batch.non_tensor_batch["code_rewards"]
+            # if "code_rewards" in test_batch.non_tensor_batch:
+            #     result = test_batch.non_tensor_batch["code_rewards"]
+            if "code_scores" in test_batch.non_tensor_batch:
+                result = test_batch.non_tensor_batch["code_scores"]
             else:
                 if self.val_reward_fn is None:
                     raise ValueError("val_reward_fn must be provided for validation.")
@@ -746,29 +756,26 @@ class RayPPOTrainer:
 
         self._maybe_log_val_generations(inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores)
         
-        pass_count = 0
-        total_count = len(sample_scores)  # Use the actual number of samples as the total count
-        pass_rate = 0.0
-        mean_answer_reward = 0.0
-        mean_format_reward = 0.0
-        total_no_code_extracted = 0
-
         if raw_metrics:
+            total_count = len(sample_scores)  # Use the actual number of samples as the total count
             assert len(raw_metrics) == total_count, \
                 f"Metrics count ({len(raw_metrics)}) mismatches sample count ({total_count})"
             success_at_turn = np.array([m["success_at_turn"] for m in raw_metrics])
             answer_reward = np.array([m["answer_reward"] for m in raw_metrics])
             format_reward = np.array([m["format_reward"] for m in raw_metrics])
-            No_code_extracted_count = np.array([m["No_code_extracted_count"] for m in raw_metrics])
-            
-            pass_count = np.sum(success_at_turn > 0).item()
-            mean_answer_reward = answer_reward.mean() if len(answer_reward) > 0 else 0.0
-            mean_format_reward = format_reward.mean() if len(format_reward) > 0 else 0.0
-            total_no_code_extracted = No_code_extracted_count.sum()
-            pass_at_1 = (np.sum(success_at_turn == 1) / len(success_at_turn)).item() if len(success_at_turn) else 0.0
+            progress_reward = np.array([m['extra_fields'].get("progress_reward", 0.) for m in raw_metrics])
+            no_code_extracted_count = np.array([m["No_code_extracted_count"] for m in raw_metrics])
+            tool_call_error_count = np.array([m["tool_call_error_count"] for m in raw_metrics])
+            tool_timeout = np.array([m["timeout"] for m in raw_metrics])
 
         # dump generations
         val_data_dir = self.config.trainer.get("validation_data_dir", None)
+        reward_extra_infos_dict["question_id"] = test_batch.non_tensor_batch.get("question_id", ["unknown"] * result.shape[0])
+        reward_extra_infos_dict["data_source"] = test_batch.non_tensor_batch.get("data_source", ["unknown"] * result.shape[0])
+        reward_extra_infos_dict["answer_reward"] = answer_reward
+        reward_extra_infos_dict["format_reward"] = format_reward
+        reward_extra_infos_dict["progress_reward"] = progress_reward
+
         if val_data_dir:
             self._dump_generations(
                 inputs=sample_inputs,
@@ -806,18 +813,41 @@ class RayPPOTrainer:
         #     metric_dict["val-aux/num_turns/min"] = sample_turns.min()
         #     metric_dict["val-aux/num_turns/max"] = sample_turns.max()
         #     metric_dict["val-aux/num_turns/mean"] = sample_turns.mean()
-        metric_dict = {
-            "val-core/code/pass@1": pass_at_1,
-            "val-core/code/correct_count": pass_count,
-            "val-core/code/total_count": total_count,
-            "val-core/code/mean_reward": np.mean(sample_scores) if sample_scores else 0.0,
-            "val-core/code/max_score": max(sample_scores) if sample_scores else 0.0,
-            "val-core/code/min_score": min(sample_scores) if sample_scores else 0.0,
-            "val-core/code/mean_answer_reward": mean_answer_reward,
-            "val-core/code/mean_format_reward": mean_format_reward,
-            "val-core/No_code_extracted_count": total_no_code_extracted,
 
-        }
+        data_source_lst = np.array(data_source_lst)
+        sample_scores = np.array(sample_scores)
+        uniq_source, inv = np.unique(data_source_lst, return_inverse=True)
+        sample_lens = np.array(sample_lens)
+        metric_dict = {}
+        result = {}
+        for idx, _source in enumerate(uniq_source):
+            vals = sample_scores[inv == idx]
+            metric_dict[f"val-core/{_source}/pass@1"] = (np.sum(vals == 1) / len(vals)).item() if len(vals) else 0.0
+            metric_dict[f"val-core/{_source}/strict_correct_count"] = np.sum(vals == 1).item()
+            metric_dict[f"val-core/{_source}/pass_count"] = np.sum(vals > 0).item()
+            metric_dict[f"val-core/{_source}/total_count"] = len(vals)
+            metric_dict[f"val-core/{_source}/mean_score"] = vals.mean().item() if len(vals) else 0.0
+            metric_dict[f"val-core/{_source}/max_score"] = vals.max().item() if len(vals) else 0.0
+            metric_dict[f"val-core/{_source}/min_score"] = vals.min().item() if len(vals) else 0.0
+            metric_dict[f"val-core/{_source}/min_score"] = vals.min().item() if len(vals) else 0.0
+
+            len_vals = sample_lens[inv == idx]
+            metric_dict[f"val-core/{_source}/mean_response_length"] = len_vals.mean().item() if len(len_vals) else 0.0
+            metric_dict[f"val-core/{_source}/max_response_length"] = len_vals.max().item() if len(len_vals) else 0.0
+            metric_dict[f"val-core/{_source}/min_response_length"] = len_vals.min().item() if len(len_vals) else 0.0
+            if raw_metrics:
+                _answer_reward = answer_reward[inv == idx]
+                _format_reward = format_reward[inv == idx]
+                _no_code_extracted_count = no_code_extracted_count[inv == idx]
+                _tool_call_error_count = tool_call_error_count[inv == idx]
+                _success_at_turn = success_at_turn[inv == idx]
+                _tool_timeout = tool_timeout[inv == idx]
+                metric_dict[f"val-core/{_source}/mean_answer_reward"] = _answer_reward.mean().item() if len(_answer_reward) else 0.0
+                metric_dict[f"val-core/{_source}/mean_format_reward"] = _format_reward.mean().item() if len(_format_reward) else 0.0
+                metric_dict[f"val-core/{_source}/no_code_extracted_ratio"] = _no_code_extracted_count.sum().item() / len(vals) if len(vals) else 0.0
+                metric_dict[f"val-core/{_source}/tool_call_error_ratio"] = _tool_call_error_count.sum().item() / len(vals) if len(vals) else 0.0
+                metric_dict[f"val-core/{_source}/tool_timeout_ratio"] = _tool_timeout.sum().item() / len(vals) if len(vals) else 0.0
+                metric_dict[f"val-core/{_source}/mean_success_at_turn"] = _success_at_turn.mean().item() if len(_success_at_turn) else 0.0
 
         local_logger.info(metric_dict)
         return metric_dict

@@ -118,6 +118,7 @@ class AgentLoopMetrics(BaseModel):
     format_reward: float = 0.0
     timeout_reward: float = 0.0
     No_code_extracted_count:int=0
+    tool_call_error_count:int=0
     extra_fields: dict[str, Any] = {}
     """Extra fields for dynamic addition."""
 
@@ -138,6 +139,8 @@ class AgentLoopOutput(BaseModel):
     """Reward for the agent loop, can be used for reinforcement learning."""
     response_logprobs: Optional[list[float]] = None
     """Log probabilities for the response tokens."""
+    extra_info: dict[str, Any] = {}
+    """Extra info for the agent loop, can be used for logging or debugging."""
     
 class _InternalAgentLoopOutput(AgentLoopOutput):
     """Internal agent loop output with padded sequences."""
@@ -320,7 +323,6 @@ class AgentLoopWorker:
                 asyncio.create_task(self._run_agent_loop(agent_name, messages.tolist(), sampling_params_w_ground_truth, trajectory))
             )
         outputs = await asyncio.gather(*tasks)
-
         output = self._postprocess(outputs)
         return output
 
@@ -421,6 +423,7 @@ class AgentLoopWorker:
                 response_logprobs=response_logprobs,
                 metrics=output.metrics,
                 reward=output.reward,
+                extra_info=output.extra_info
             )
 
     def _postprocess(self, inputs: list[_InternalAgentLoopOutput]) -> DataProto:
@@ -463,13 +466,26 @@ class AgentLoopWorker:
         #breakpoint()
         metrics = [input.metrics.model_dump() for input in inputs]
         code_rewards = np.array([input.reward for input in inputs])
+        code_scores = np.array([max(metrics[i]['answer_reward'], 0.) for i in range(len(metrics))])
+        tool_call_response = [input.extra_info.get('tool_call_response', None) for input in inputs]
+        extracted_code = [input.extra_info.get('extracted_code', None) for input in inputs]
+        response_length_lst = [input.extra_info.get('response_length', -1) for input in inputs]
         non_tensor_batch ={
             "__num_turns__": num_turns,
-            "code_rewards":code_rewards
+            "code_rewards":code_rewards,
+            "code_scores": code_scores
         }
         for key, value in reward_extra_info.items():
             non_tensor_batch[key] = np.array(value)
-        return DataProto(batch=batch, non_tensor_batch=non_tensor_batch, meta_info={"metrics": metrics})
+        return DataProto(
+            batch=batch, 
+            non_tensor_batch=non_tensor_batch, 
+            meta_info={
+                "metrics": metrics,
+                "tool_call_response": tool_call_response,
+                "extracted_code": extracted_code,
+                "response_length": response_length_lst
+            })
 
 
 async def get_trajectory_info(step, index, validate):
@@ -600,10 +616,17 @@ class AgentLoopManager:
         ]#List[Dict[str, str]]
         metrics = [output.meta_info["metrics"] for output in outputs]  # List[List[Dict[str, str]]]
         timing, tool_reward = self._performance_metrics(metrics, output)
-
+        tool_call_response = [item for output in outputs for item in output.meta_info["tool_call_response"]]
+        extracted_code = [item for output in outputs for item in output.meta_info["extracted_code"]]
+        response_length_lst = [item for output in outputs for item in output.meta_info["response_length"]]
+        
         output.meta_info = {"timing": timing,
                             "tool_reward": tool_reward,
-                            "raw_metrics": all_raw_metrics}
+                            "raw_metrics": all_raw_metrics,
+                            "tool_call_response": tool_call_response,
+                            "extracted_code": extracted_code,
+                            "response_length": response_length_lst}
+
         return output
 
     def _performance_metrics(self, metrics: list[list[dict[str, str]]], output: DataProto) -> dict[str, float]:

@@ -2,6 +2,7 @@
 import logging
 import os
 import re
+import json
 import numpy as np
 from typing import Any
 from uuid import uuid4
@@ -84,6 +85,8 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
     async def run(self, messages: list[dict[str, Any]], sampling_params_w_ground_truth: dict[str, Any]) -> AgentLoopOutput:
         #logger.warning("**************agent run start**************")
         metrics = {}
+        extra_info = {}
+
         request_id = uuid4().hex
         prompt_ids = await self.loop.run_in_executor(
             None,
@@ -91,7 +94,6 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                 messages, add_generation_prompt=True, tokenize=True, enable_thinking=True
             ),
         )
-
         sampling_params = sampling_params_w_ground_truth["sampling_params"]
         ground_truth = sampling_params_w_ground_truth["ground_truth"]
         if isinstance(ground_truth, list):
@@ -125,6 +127,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             response_ids = output.token_ids
             prompt_ids += response_ids
             response_mask += [1] * len(response_ids)
+            extra_info['response_length'] = len(response_ids)
             if output.log_probs:
                 response_logprobs += output.log_probs
             assistant_turns += 1
@@ -144,7 +147,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                     extracted_code = code_match.group(1).strip() if code_match else None
                 except ValueError:
                     extracted_code = None
-
+            extra_info["extracted_code"] = extracted_code
             error_message = ""
 
             if extracted_code and hasattr(self, 'code_tool'):
@@ -155,6 +158,8 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                     try:
                         instance_id = await self.code_tool.create()
                         response, score, meta_data = await self.code_tool.execute(instance_id=instance_id, parameters={"code": extracted_code_w_test, "ground_truth": ground_truth})
+                        meta_data['success'] = True
+                        extra_info['tool_call_response'] = json.dumps(meta_data, ensure_ascii=False)
                         #breakpoint()
                         if meta_data["status"] == "timeout":
                             metrics["timeout"] = 1
@@ -192,6 +197,8 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
                     except Exception as e:
                         #breakpoint()
                         logger.error(f"Error during reward calculation: {e}")
+                        extra_info['tool_call_response'] = json.dumps({"success": False, "error": e})
+                        metrics["tool_call_error_count"] = 1
                         answer_reward = 0
                         break
                     finally:
@@ -221,6 +228,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
                     response_logprobs += [0.0] * len(tool_response_ids)
             else:
                 metrics["No_code_extracted_count"] = 1
+                extra_info['tool_call_response'] = None
                 answer_reward = 0
                 final_pass_rate = 0
                 break
@@ -243,7 +251,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
         if self.overlong_filter and len(response_ids) > self.response_length:
            reward = 0
            response_mask = [0] * len(response_mask)
-        
+
         output = AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids[: self.response_length],
@@ -252,5 +260,6 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
             metrics=metrics,
             reward=reward,
             response_logprobs=response_logprobs[: self.response_length] if response_logprobs else None,
+            extra_info=extra_info
         )
         return output
