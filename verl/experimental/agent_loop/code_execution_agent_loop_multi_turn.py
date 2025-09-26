@@ -197,7 +197,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
                     except Exception as e:
                         #breakpoint()
                         logger.error(f"Error during reward calculation: {e}")
-                        extra_info['tool_call_response'] = json.dumps({"success": False, "error": e})
+                        extra_info['tool_call_response'] = json.dumps({"success": False, "error": repr(e)})
                         metrics["tool_call_error_count"] = 1
                         answer_reward = 0
                         break
