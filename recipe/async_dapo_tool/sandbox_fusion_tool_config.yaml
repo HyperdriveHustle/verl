@@ -9,7 +9,7 @@ tools:
       default_language: "python"
       memory_limit_mb: 1024
       type: native
-      local_run: false
+      local_run: true
 
     tool_schema:
       type: "function"

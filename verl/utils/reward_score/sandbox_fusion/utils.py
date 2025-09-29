@@ -148,7 +148,7 @@ SUPPORTED_LANGUAGES = [
 ]
 def _set_memory_limit(mb_limit: int):
     if mb_limit > 0:
-        limit_in_bytes = mb_limit * 5 * 1024 * 1024
+        limit_in_bytes = mb_limit * 4 * 1024 * 1024
         resource.setrlimit(resource.RLIMIT_AS, (limit_in_bytes, limit_in_bytes))
 
 def call_local_sandbox_api(

@@ -49,7 +49,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             logger.warning("CodeExecutionAgentLoop initialized, but no reward tool was found in the config.")
         else:
             cls.code_tool = next(iter(cls.tools.values()))
-            print(f"Initialized reward tool: {cls.code_tool.name}")
+            #print(f"Initialized reward tool: {cls.code_tool.name}")
 
         cls.response_length = config.actor_rollout_ref.rollout.response_length
         cls.tool_parser = ToolParser.get_tool_parser(config.actor_rollout_ref.rollout.multi_turn.format, cls.tokenizer)
@@ -128,6 +128,11 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             if output.log_probs:
                 response_logprobs += output.log_probs
             assistant_turns += 1
+
+            if len(response_mask) >= self.response_length:
+                answer_reward = 0.0
+                break
+
             solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=False)
 
             format_ok_turns += 1 if self.validate_response_structure(solution_text) else 0
@@ -230,8 +235,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
         prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
         format_reward = FORMAT_REARD * format_ok_turns / turns
 
-        #timeout_reward = metrics["timeout"] * TIMEOUTDECAY
-        metrics["answer_reward"] = answer_reward #+ progress_reward
+        metrics["answer_reward"] = answer_reward 
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward
         metrics["extra_fields"]= {"progress_reward": progress_reward}

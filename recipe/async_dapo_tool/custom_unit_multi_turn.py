@@ -13,6 +13,9 @@
 # limitations under the License.
 import logging
 import re
+import pandas as pd
+import tempfile
+import os
 from typing import Any
 from time import perf_counter
 import datasets
@@ -161,7 +164,6 @@ class CustomRLHFDataset(RLHFDataset):
             
             dataframes.append(dataframe)
         self.dataframe: datasets.Dataset = datasets.concatenate_datasets(dataframes)
-        self.dataframe = self.maybe_filter_out_long_prompts(self.dataframe)
         self.dataframe = self.maybe_filter_out_long_prompts(self.dataframe)
         print(f"dataset len: {len(self.dataframe)}")
 
