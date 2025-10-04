@@ -138,7 +138,8 @@ class AgentLoopOutput(BaseModel):
     """Reward for the agent loop, can be used for reinforcement learning."""
     response_logprobs: Optional[list[float]] = None
     """Log probabilities for the response tokens."""
-    
+    extra_fields: dict[str, Any] = {}
+    """Extra fields for dynamic addition."""
 class _InternalAgentLoopOutput(AgentLoopOutput):
     """Internal agent loop output with padded sequences."""
 
@@ -154,6 +155,8 @@ class _InternalAgentLoopOutput(AgentLoopOutput):
     """Padded attention mask."""
     response_logprobs: Optional[torch.Tensor] = None
     """Padded log probabilities for the response tokens."""
+    extra_fields: dict[str, Any] = {}
+    """Extra fields for dynamic addition."""
 
 # make hydra.utils.instantiate happy
 class _DummyConfig:
@@ -421,6 +424,7 @@ class AgentLoopWorker:
                 response_logprobs=response_logprobs,
                 metrics=output.metrics,
                 reward=output.reward,
+                extra_fields=output.extra_fields
             )
 
     def _postprocess(self, inputs: list[_InternalAgentLoopOutput]) -> DataProto:
@@ -467,9 +471,14 @@ class AgentLoopWorker:
             "__num_turns__": num_turns,
             "code_rewards":code_rewards
         }
+        meta_info={"metrics": metrics}
+        if inputs and hasattr(inputs[0], 'extra_fields') and "tool_pass_fail_lists" in inputs[0].extra_fields:
+            tool_pass_fail_lists = [input.extra_fields["tool_pass_fail_lists"] for input in inputs]
+            meta_info["tool_pass_fail_lists"] = tool_pass_fail_lists
+
         for key, value in reward_extra_info.items():
             non_tensor_batch[key] = np.array(value)
-        return DataProto(batch=batch, non_tensor_batch=non_tensor_batch, meta_info={"metrics": metrics})
+        return DataProto(batch=batch, non_tensor_batch=non_tensor_batch, meta_info=meta_info)
 
 
 async def get_trajectory_info(step, index, validate):
@@ -588,6 +597,11 @@ class AgentLoopManager:
                 for worker, chunk in zip(self.agent_loop_workers, chunkes, strict=True)
             ]
         )
+        all_tool_pass_fail_lists = []
+        for worker_output in outputs:
+            worker_tool_pass_fail_lists = worker_output.meta_info.get("tool_pass_fail_lists", [])
+            all_tool_pass_fail_lists.extend(worker_tool_pass_fail_lists)
+        breakpoint()
         output = DataProto.concat(outputs)
         if self.config.actor_rollout_ref.rollout.free_cache_engine:
             self.sleep()
@@ -603,7 +617,9 @@ class AgentLoopManager:
 
         output.meta_info = {"timing": timing,
                             "tool_reward": tool_reward,
-                            "raw_metrics": all_raw_metrics}
+                            "raw_metrics": all_raw_metrics,
+                            "tool_pass_fail_lists": all_tool_pass_fail_lists
+                            }
         return output
 
     def _performance_metrics(self, metrics: list[list[dict[str, str]]], output: DataProto) -> dict[str, float]:

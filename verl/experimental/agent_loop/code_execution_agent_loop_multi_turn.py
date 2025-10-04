@@ -99,6 +99,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
 
         assert isinstance(ground_truth, dict), f"ground_truth should be a dict, but got {type(ground_truth)}"
         response_mask, response_logprobs = [], []
+        tool_pass_fail_lists= []
         turns = 0
         assistant_turns = 0
 
@@ -131,6 +132,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
 
             if len(response_mask) >= self.response_length:
                 answer_reward = 0.0
+                tool_pass_fail_lists.append([0]*len(ground_truth.get("inputs",[])))
                 break
 
             solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=False)
@@ -160,7 +162,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                     try:
                         instance_id = await self.code_tool.create()
                         response, score, meta_data = await self.code_tool.execute(instance_id=instance_id, parameters={"code": extracted_code_w_test, "ground_truth": ground_truth})
-                        #breakpoint()
+                        tool_pass_fail_lists.append(meta_data.get("pass_fail_list", [0] * len(ground_truth["inputs"])))
                         if meta_data["status"] == "timeout":
                             metrics["timeout"] = 1
                             error_message = f"""
@@ -227,6 +229,8 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
             else:
                 metrics["No_code_extracted_count"] = 1
                 answer_reward = 0
+                num_test_cases = len(ground_truth.get("inputs", []))
+                tool_pass_fail_lists.append([0] * num_test_cases)
                 final_pass_rate = 0
                 break
 
@@ -240,9 +244,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
         metrics["timeout_reward"] = timeout_reward
         metrics["extra_fields"]= {"progress_reward": progress_reward}
         reward = answer_reward + format_reward + timeout_reward
-        if "inputs" in ground_truth and "outputs" in ground_truth:
-            breakpoint()
-        
+
         if self.overlong_filter and len(response_ids) > self.response_length:
            reward = 0
            response_mask = [0] * len(response_mask)
@@ -255,5 +257,6 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
             metrics=metrics,
             reward=reward,
             response_logprobs=response_logprobs[: self.response_length] if response_logprobs else None,
+            extra_fields={"tool_pass_fail_lists": tool_pass_fail_lists}
         )
         return output

@@ -100,6 +100,7 @@ class AdvantageEstimator(str, Enum):
     OPO = "opo"
     GRPO_PASSK = "grpo_passk"
     GPG = "gpg"
+    D_GIGPO_UNGROUPED = "d_gigpo_ungrouped"
 
 
 ADV_ESTIMATOR_REGISTRY: dict[str, Any] = {}
@@ -321,6 +322,173 @@ def compute_grpo_outcome_advantage(
 
     return scores, scores
 
+
+@register_adv_est(AdvantageEstimator.D_GIGPO_UNGROUPED)
+def compute_d_gigpo_ungrouped_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    tool_pass_fail_lists: list[list[list[int]]],
+    epsilon: float = 1e-8,
+    config: Optional[AlgoConfig] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Computes a step-centric, grouping-free D-GiGPO advantage.
+
+    - Macro Advantage (A^E): Based on the final trajectory outcome (0/1 success), using standard GRPO.
+    - Micro Advantage (A^S): Based on a dynamically weighted decomposed reward,
+      normalized across all steps in the batch.
+    """
+    bsz = token_level_rewards.shape[0]
+    gamma = config.gamma if config and hasattr(config, "gamma") else 0.5
+    omega = config.d_gigpo.omega if config and hasattr(config, "d_gigpo") else 1.0
+
+    with torch.no_grad():
+        # ========== 1. 宏观优势 (A^E) 计算 ==========
+        # 完全复用标准的 GRPO 逻辑，衡量整条轨迹的最终成败
+        final_scores = token_level_rewards.sum(dim=-1)
+
+        id2score_macro = defaultdict(list)
+        id2mean_macro = {}
+        id2std_macro = {}
+        
+        for i in range(bsz):
+            id2score_macro[index[i]].append(final_scores[i])
+
+        for idx in id2score_macro:
+            group_scores = torch.tensor(id2score_macro[idx], device=token_level_rewards.device)
+            if len(group_scores) > 1:
+                id2mean_macro[idx] = torch.mean(group_scores)
+                id2std_macro[idx] = torch.std(group_scores)
+            else:
+                id2mean_macro[idx] = torch.tensor(0.0, device=token_level_rewards.device)
+                id2std_macro[idx] = torch.tensor(1.0, device=token_level_rewards.device)
+        
+        advantages_macro_trajectory = torch.zeros_like(final_scores)
+        for i in range(bsz):
+            mean = id2mean_macro[index[i]]
+            std = id2std_macro[index[i]]
+            advantages_macro_trajectory[i] = (final_scores[i] - mean) / (std + epsilon)
+
+        # 将轨迹级的宏观优势广播到该轨迹的每一个 token 上
+        advantages_macro = advantages_macro_trajectory.unsqueeze(-1) * response_mask
+
+        # ========== 2. 微观优势 (A^S) 计算 ==========
+        
+        id2pass_lists = defaultdict(list)
+        id2batch_indices = defaultdict(list)
+        breakpoint()
+        for i in range(bsz):
+            idx = index[i]
+            id2pass_lists[idx].append(tool_pass_fail_lists[i])
+            id2batch_indices[idx].append(i)
+        
+        # 用于存储所有步骤最终的微观优势值
+        step_advantages_micro_map = {} # key: (batch_idx, turn_idx), value: advantage_score
+
+        # 2.2. 在每个组内部独立进行所有计算
+        for idx in id2pass_lists:
+            group_pass_fail_lists = id2pass_lists[idx] # 当前组的所有轨迹的步级别通过列表
+            group_batch_indices = id2batch_indices[idx] # 当前组的轨迹在原始 batch 中的 index
+            N_group = len(group_pass_fail_lists)
+
+            # 2.2.1. [组内] 计算动态难度权重 w_j
+            test_case_counts_in_group = defaultdict(int)
+            total_steps_in_group = 0
+            all_test_cases_in_group = set()
+
+            for trajectory_pass_fail_lists in group_pass_fail_lists:
+                for pass_fail_list in trajectory_pass_fail_lists:
+                    total_steps_in_group += 1
+                    for test_id, status in enumerate(pass_fail_list):
+                        if status == 1:
+                            test_case_counts_in_group[test_id] += 1
+                        all_test_cases_in_group.add(test_id)
+            
+            weights_j_group = {
+                j: np.log((total_steps_in_group / (test_case_counts_in_group.get(j, 0) + 1))) if total_steps_in_group > 0 else 0
+                for j in all_test_cases_in_group
+            }
+
+            # 2.2.2. [组内] 计算每个步骤的“未来新成就回报”
+            group_step_returns = []
+            
+            for i in range(N_group):
+                trajectory_pass_fail_lists = group_pass_fail_lists[i]
+                num_actual_turns = len(trajectory_pass_fail_lists)
+                
+                step_rewards_d = []
+                for t in range(num_actual_turns):
+                    current_pass_list = trajectory_pass_fail_lists[t]
+                    prev_pass_list = trajectory_pass_fail_lists[t - 1] if t > 0 else [0] * len(current_pass_list)
+                    
+                    reward_d_t = 0
+                    for test_id, status in enumerate(current_pass_list):
+                        if status == 1 and prev_pass_list[test_id] == 0:
+                            reward_d_t += weights_j_group.get(test_id, 0)
+                    step_rewards_d.append(reward_d_t)
+
+                for t in range(num_actual_turns):
+                    future_return = 0
+                    for k in range(t, num_actual_turns):
+                        future_return += (gamma ** (k - t)) * step_rewards_d[k]
+                    group_step_returns.append(future_return)
+            
+            # 2.2.3. [组内] 标准化，得到微观优势
+            if group_step_returns:
+                returns_tensor = torch.tensor(group_step_returns, dtype=torch.float32, device=token_level_rewards.device)
+                mean_micro_group = returns_tensor.mean()
+                std_micro_group = returns_tensor.std()
+                advantages_micro_group_flat = (returns_tensor - mean_micro_group) / (std_micro_group + epsilon)
+
+                # 2.2.4. 将组内计算出的优势值存入 map
+                current_step_idx = 0
+                for i in range(N_group):
+                    batch_idx = group_batch_indices[i]
+                    num_actual_turns = len(group_pass_fail_lists[i])
+                    for t in range(num_actual_turns):
+                        step_advantages_micro_map[(batch_idx, t)] = advantages_micro_group_flat[current_step_idx]
+                        current_step_idx += 1
+
+        # 2.3. 将所有组的微观优势广播到 token 级别
+        advantages_micro = torch.zeros_like(token_level_rewards)
+        for i in range(bsz):
+            num_actual_turns = len(tool_pass_fail_lists[i])
+            if num_actual_turns == 0: continue
+
+            is_llm_token = response_mask[i] > 0
+            
+            # 找出所有 LLM 生成块的起始点
+            # 1. 如果第一个 token 是 LLM 生成的，那么 0 就是一个起始点
+            # 2. 如果一个 token 是 LLM 生成的(1)，而它前一个是 tool token(0)，那它也是一个起始点 (0->1 的边界)
+            start_indices = [0] if is_llm_token[0] else []
+            turn_starts = (is_llm_token[1:] & ~is_llm_token[:-1]).nonzero(as_tuple=True)[0] + 1
+            start_indices.extend(turn_starts.tolist())
+            
+            # 遍历我们找到的每一个 LLM 回合
+            for turn_count, start_idx in enumerate(start_indices):
+                if turn_count >= num_actual_turns:
+                    break
+
+                # 从起始点开始，找到这个 LLM 回合的结束点
+                # 结束点就是下一个 mask 为 0 的地方，或者是 response 的末尾
+                end_idx = start_idx
+                while end_idx < len(is_llm_token) and is_llm_token[end_idx]:
+                    end_idx += 1
+                
+                # 从 map 中获取这个步骤 (turn) 对应的微观优势值
+                step_advantage = step_advantages_micro_map.get((i, turn_count), 0.0)
+                
+                # 将这个优势值“广播”给这个回合内所有的 token
+                advantages_micro[i, start_idx:end_idx] = step_advantage
+
+        # ========== 3. 优势合并 ==========
+        # 将宏观优势和微观优势加权相加
+        advantages_total = advantages_macro + omega * advantages_micro
+        returns = advantages_total
+
+        return advantages_total, returns
 
 @register_adv_est(AdvantageEstimator.GRPO_PASSK)  # or simply: @register_adv_est("grpo_passk")
 def compute_grpo_passk_outcome_advantage(

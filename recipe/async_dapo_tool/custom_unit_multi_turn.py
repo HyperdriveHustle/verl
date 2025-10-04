@@ -54,7 +54,6 @@ class CustomSandboxFusionTool(SandboxFusionTool):
         if not isinstance(code, str):
             code = str(code)
         actual_output, code_status, meta_data = await self.execution_pool.execute.remote(self.execute_code, instance_id, code, timeout, language, ground_truth, self.local_run)
-        breakpoint()
         return actual_output, code_status, meta_data
     
     def execute_code(self, instance_id, code, timeout=30, language="python", ground_truth=None, local_run=False):
@@ -77,7 +76,7 @@ class CustomSandboxFusionTool(SandboxFusionTool):
 
             total_cases = len(result_status)
             if total_cases == 0:
-                return "No test cases found.", "Success", {"status": "Success", "run_status": "Finished", "stdout": "Test cases pass rate:**0.00**\n No test cases found.", "stderr": ""}
+                return "No test cases found.", "Success", {"status": "Success", "run_status": "Finished", "stdout": "Test cases pass rate:**0.00**\n No test cases found.", "stderr": "", "results": [], }
     
             passed_count = 0
             first_failure_meta = None
@@ -91,7 +90,6 @@ class CustomSandboxFusionTool(SandboxFusionTool):
                     break 
             
             final_metadata = {}
-            breakpoint()
             if first_failure_meta is None:
                 stdout_str = f"Test cases pass rate: **1.00**\nAll {total_cases} test cases passed."
                 stderr_str = ""
@@ -131,8 +129,10 @@ class CustomSandboxFusionTool(SandboxFusionTool):
                 }
 
             final_actual_output = final_metadata["stdout"]
-            
-
+            final_metadata["results"] = result_status
+            pass_fail_list = [1 if status is True else 0 for status in result_status]
+            final_metadata["pass_fail_list"] = pass_fail_list
+            breakpoint()
             if final_metadata["stderr"]:
                 final_actual_output += "\n#Error Log:\n" + final_metadata["stderr"]
                 

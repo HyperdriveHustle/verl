@@ -38,7 +38,7 @@ experiment_name=ddebug_${project_name}_Qwen3-4B-base-16k_TISfalse_reward_v3_grpo
 default_local_dir=/afs/chatrl/users/wlw/ckpt/$experiment_name
 
 # ================= algorithm =================
-adv_estimator=grpo
+adv_estimator=d_gigpo_ungrouped
 
 
 use_kl_in_reward=False
@@ -54,14 +54,14 @@ calculate_log_probs=False # if tis_imp_ratio_cap != -1, you should set calculate
 
 max_turns=4
 max_prompt_length=2548
-max_response_length=4096
+max_response_length=6144
 overlong_filter=True # whether to filter out overlong samples in the Rollout(mask out)
 
 actor_lr=1e-6
 
-train_batch_size=32
-ppo_mini_batch_size=32
-n_resp_per_prompt=16
+train_batch_size=8
+ppo_mini_batch_size=8
+n_resp_per_prompt=8
 n_resp_per_prompt_val=1
 
 # ================= perfomance =================
@@ -124,8 +124,8 @@ python3 -m verl.trainer.main_ppo \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
     trainer.n_gpus_per_node=1 \
-    trainer.val_before_train=Ture \
-    trainer.val_only=True\
+    trainer.val_before_train=False \
+    trainer.val_only=False\
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \
     trainer.save_freq=50 \

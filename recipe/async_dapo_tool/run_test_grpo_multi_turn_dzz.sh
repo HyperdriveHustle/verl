@@ -19,7 +19,7 @@ model_path=/afs/chatrl/public/models/Qwen3-8B
 # model_path=/model/Qwen2.5-3B
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$taco']"
-test_files="['$lcbv5_test']"
+test_files="['$codeforces']"
 
 # tool
 tool_config_path=$DATA_ROOT/recipe/async_dapo_tool/sandbox_fusion_tool_config.yaml
@@ -35,7 +35,7 @@ export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 #experiment_name=wlw_multi_turn_Qwen3-8B-16k_TISfalse_reward_v3_grpo_bs32_minibs32_overlongfilter_2025-09-21_15-23-32
 
 # ================= algorithm =================
-adv_estimator=grpo
+adv_estimator=d_gigpo_ungrouped
 
 
 use_kl_in_reward=False
@@ -126,9 +126,9 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=1 \
+    trainer.n_gpus_per_node=8 \
     trainer.val_before_train=True \
-    trainer.val_only=True\
+    trainer.val_only=False\
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \
     trainer.save_freq=40 \
