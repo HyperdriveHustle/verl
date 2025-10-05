@@ -131,9 +131,9 @@ python3 -m verl.trainer.main_ppo \
     trainer.val_only=False\
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \
-    trainer.save_freq=40 \
+    trainer.save_freq=50 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=5 \
     trainer.total_epochs=1 $@ 2>&1 | tee -a /afs/chatrl/users/wlw/worklog/log/agent_multi_turn/$experiment_name.log
 
-#sleep inf
+sleep inf

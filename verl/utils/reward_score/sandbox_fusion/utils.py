@@ -244,8 +244,6 @@ def call_local_sandbox_api(
                     result["status"] = "Failed"
                     run_result["status"] = "MemoryLimitExceeded" 
                     run_result["stderr"] = f"Process was killed by signal {signal_num} ({signal_name}). This is often caused by exceeding a memory limit."
-                    print(run_result["stderr"])
-                    logger.error(run_result["stderr"])
                 else:
                     result["status"] = "Failed"
                     run_result["status"] = "Finished"

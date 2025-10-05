@@ -341,7 +341,7 @@ def compute_d_gigpo_ungrouped_advantage(
       normalized across all steps in the batch.
     """
     bsz = token_level_rewards.shape[0]
-    gamma = config.gamma if config and hasattr(config, "gamma") else 0.5
+    gamma = config.gamma if config and hasattr(config, "gamma") else 0.
     omega = config.d_gigpo.omega if config and hasattr(config, "d_gigpo") else 1.0
 
     with torch.no_grad():
@@ -369,7 +369,7 @@ def compute_d_gigpo_ungrouped_advantage(
         for i in range(bsz):
             mean = id2mean_macro[index[i]]
             std = id2std_macro[index[i]]
-            advantages_macro_trajectory[i] = (final_scores[i] - mean) / (std + epsilon)
+            advantages_macro_trajectory[i] = final_scores[i] - mean ##不要std
 
         # 将轨迹级的宏观优势广播到该轨迹的每一个 token 上
         advantages_macro = advantages_macro_trajectory.unsqueeze(-1) * response_mask
@@ -440,7 +440,7 @@ def compute_d_gigpo_ungrouped_advantage(
                 returns_tensor = torch.tensor(group_step_returns, dtype=torch.float32, device=token_level_rewards.device)
                 mean_micro_group = returns_tensor.mean()
                 std_micro_group = returns_tensor.std()
-                advantages_micro_group_flat = (returns_tensor - mean_micro_group) / (std_micro_group + epsilon)
+                advantages_micro_group_flat = returns_tensor - mean_micro_group ##不要std
 
                 # 2.2.4. 将组内计算出的优势值存入 map
                 current_step_idx = 0
@@ -478,7 +478,10 @@ def compute_d_gigpo_ungrouped_advantage(
                     end_idx += 1
                 
                 # 从 map 中获取这个步骤 (turn) 对应的微观优势值
-                step_advantage = step_advantages_micro_map.get((i, turn_count), 0.0)
+                try:
+                    step_advantage = step_advantages_micro_map[(i, turn_count)]
+                except KeyError:
+                    KeyError(f"Missing advantage for batch {i}, turn {turn_count}")
                 
                 # 将这个优势值“广播”给这个回合内所有的 token
                 advantages_micro[i, start_idx:end_idx] = step_advantage
