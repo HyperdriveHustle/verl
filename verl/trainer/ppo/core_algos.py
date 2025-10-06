@@ -341,7 +341,7 @@ def compute_d_gigpo_ungrouped_advantage(
       normalized across all steps in the batch.
     """
     bsz = token_level_rewards.shape[0]
-    gamma = config.gamma if config and hasattr(config, "gamma") else 0.
+    gamma = config.gamma if config and hasattr(config, "gamma") else 0.5
     omega = config.d_gigpo.omega if config and hasattr(config, "d_gigpo") else 1.0
 
     with torch.no_grad():
@@ -369,7 +369,7 @@ def compute_d_gigpo_ungrouped_advantage(
         for i in range(bsz):
             mean = id2mean_macro[index[i]]
             std = id2std_macro[index[i]]
-            advantages_macro_trajectory[i] = final_scores[i] - mean ##不要std
+            advantages_macro_trajectory[i] = (final_scores[i] - mean) / (std + epsilon) ##不要std
 
         # 将轨迹级的宏观优势广播到该轨迹的每一个 token 上
         advantages_macro = advantages_macro_trajectory.unsqueeze(-1) * response_mask
@@ -405,51 +405,76 @@ def compute_d_gigpo_ungrouped_advantage(
                         if status == 1:
                             test_case_counts_in_group[test_id] += 1
                         all_test_cases_in_group.add(test_id)
-            
-            weights_j_group = {
-                j: np.log((total_steps_in_group / (test_case_counts_in_group.get(j, 0) + 1))) if total_steps_in_group > 0 else 0
-                for j in all_test_cases_in_group
-            }
+
+            alpha = config.d_gigpo.alpha if config and hasattr(config, "d_gigpo") and hasattr(config.d_gigpo, "alpha") else 2.0
+            weights_j_group = {}
+            if total_steps_in_group > 0:
+                for j in all_test_cases_in_group:
+                    pass_rate_j = test_case_counts_in_group.get(j, 0) / total_steps_in_group
+                    weights_j_group[j] = np.exp(-alpha * pass_rate_j)
 
             # 2.2.2. [组内] 计算每个步骤的“未来新成就回报”
+            max_theoretical_reward = sum(weights_j_group.values())
             group_step_returns = []
-            
+            step_info_list = [] 
             for i in range(N_group):
                 trajectory_pass_fail_lists = group_pass_fail_lists[i]
                 num_actual_turns = len(trajectory_pass_fail_lists)
+                batch_idx = group_batch_indices[i]
                 
                 step_rewards_d = []
                 for t in range(num_actual_turns):
                     current_pass_list = trajectory_pass_fail_lists[t]
-                    prev_pass_list = trajectory_pass_fail_lists[t - 1] if t > 0 else [0] * len(current_pass_list)
                     
                     reward_d_t = 0
                     for test_id, status in enumerate(current_pass_list):
-                        if status == 1 and prev_pass_list[test_id] == 0:
+                        if status == 1:
                             reward_d_t += weights_j_group.get(test_id, 0)
+
                     step_rewards_d.append(reward_d_t)
 
                 for t in range(num_actual_turns):
                     future_return = 0
                     for k in range(t, num_actual_turns):
                         future_return += (gamma ** (k - t)) * step_rewards_d[k]
-                    group_step_returns.append(future_return)
+                    # 存储元组 (原始 batch 索引, 时间步, 该步骤的回报)
+                    step_info_list.append((batch_idx, t, future_return))
             
-            # 2.2.3. [组内] 标准化，得到微观优势
-            if group_step_returns:
-                returns_tensor = torch.tensor(group_step_returns, dtype=torch.float32, device=token_level_rewards.device)
-                mean_micro_group = returns_tensor.mean()
-                std_micro_group = returns_tensor.std()
-                advantages_micro_group_flat = returns_tensor - mean_micro_group ##不要std
+            # 将回报按时间步 t 聚合到字典中
+            returns_by_timestep = defaultdict(list)
+            for _, t, future_return in step_info_list:
+                returns_by_timestep[t].append(future_return)
 
-                # 2.2.4. 将组内计算出的优势值存入 map
-                current_step_idx = 0
-                for i in range(N_group):
-                    batch_idx = group_batch_indices[i]
-                    num_actual_turns = len(group_pass_fail_lists[i])
-                    for t in range(num_actual_turns):
-                        step_advantages_micro_map[(batch_idx, t)] = advantages_micro_group_flat[current_step_idx]
-                        current_step_idx += 1
+            # 2.2.3. [组内] 对每个时间步的回报列表，独立计算均值
+            mean_by_timestep = {}
+            for t, returns_list in returns_by_timestep.items():
+                if returns_list:
+                    mean_by_timestep[t] = torch.tensor(returns_list, device=token_level_rewards.device).mean()
+
+            # 2.2.4. [组内] 计算每个步骤的优势值，并存入 map
+            raw_advantages_with_keys = []
+            for batch_idx, t, future_return in step_info_list:
+                mean_for_this_timestep = mean_by_timestep[t]
+                raw_advantage = future_return - mean_for_this_timestep
+                raw_advantages_with_keys.append(((batch_idx, t), raw_advantage))
+
+            all_raw_advantages_list = [adv for _, adv in raw_advantages_with_keys]
+            all_raw_advantages = torch.stack(all_raw_advantages_list)
+            # 计算全局的均值和标准差
+            # 注意：理论上 mean 应该非常接近0，但为了鲁棒性可以再减一次
+            global_mean_adv = torch.mean(all_raw_advantages)
+            global_std_adv = torch.std(all_raw_advantages)
+
+            # 遍历并填充 map
+            for (batch_idx, t), raw_advantage in raw_advantages_with_keys:
+                # 使用全局的 mean 和 std 进行归一化
+                if global_std_adv > 1e-8:
+                    normalized_advantage = (raw_advantage - global_mean_adv) / global_std_adv
+                else:
+                    normalized_advantage = torch.tensor(0.0, device=token_level_rewards.device)
+
+                # 存入 map
+                step_advantages_micro_map[(batch_idx, t)] = normalized_advantage
 
         # 2.3. 将所有组的微观优势广播到 token 级别
         advantages_micro = torch.zeros_like(token_level_rewards)
@@ -481,7 +506,7 @@ def compute_d_gigpo_ungrouped_advantage(
                 try:
                     step_advantage = step_advantages_micro_map[(i, turn_count)]
                 except KeyError:
-                    KeyError(f"Missing advantage for batch {i}, turn {turn_count}")
+                    raise KeyError(f"Missing advantage for batch {i}, turn {turn_count}")
                 
                 # 将这个优势值“广播”给这个回合内所有的 token
                 advantages_micro[i, start_idx:end_idx] = step_advantage

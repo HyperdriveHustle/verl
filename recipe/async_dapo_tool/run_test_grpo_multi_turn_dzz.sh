@@ -69,7 +69,7 @@ offload=True
 actor_max_token_len_per_gpu=$(( (max_prompt_length + max_response_length) * 1 ))
 log_prob_max_token_len_per_gpu=$(( actor_max_token_len_per_gpu * 4 ))
 
-experiment_name=${project_name}_Qwen3-8B-$(( max_response_length / 1024 ))k_TIS${tis_imp_ratio_cap}_reward_01reward_${adv_estimator}_bs${train_batch_size}_minibs${ppo_mini_batch_size}_overlongfilter${overlong_filter}_n${n_resp_per_prompt}_${TIMESTAMP}
+experiment_name=${project_name}_Qwen3-8B-$(( max_response_length / 1024 ))k_TIS${tis_imp_ratio_cap}_reward_01reward_${adv_estimator}xiangtongT_bs${train_batch_size}_minibs${ppo_mini_batch_size}_overlongfilter${overlong_filter}_n${n_resp_per_prompt}_${TIMESTAMP}
 default_local_dir=/afs/chatrl/users/wlw/ckpt/$experiment_name
 export TENSORBOARD_DIR=/afs/chatrl/users/wlw/worklog/tensorboard_log/${project_name}/${experiment_name}
 export VERL_LOGGING_LEVEL=INFO

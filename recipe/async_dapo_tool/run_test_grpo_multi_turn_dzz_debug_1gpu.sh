@@ -33,7 +33,7 @@ export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 # experiment_name=${project_name}_Qwen25-7B-Instruct_2025-08-20_18-21-26_650step_8k
 # experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-28_10-26-16
 # experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_2025-08-28_22-29-02
-experiment_name=ddebug_${project_name}_Qwen3-4B-base-16k_TISfalse_reward_v3_grpo_bs32_minibs32_overlongfilter_${TIMESTAMP}
+experiment_name=debug_${project_name}_Qwen3-4B-base-16k_TISfalse_reward_v3_grpo_bs32_minibs32_overlongfilter_${TIMESTAMP}
 #experiment_name=wlw_multi_turn_Qwen3-4B-Instruct_TIS_reward_v3_2025-09-15_01-22-32 #10k->12k
 default_local_dir=/afs/chatrl/users/wlw/ckpt/$experiment_name
 
@@ -123,7 +123,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=1 \
+    trainer.n_gpus_per_node=8 \
     trainer.val_before_train=False \
     trainer.val_only=False\
     trainer.log_val_generations=100 \
