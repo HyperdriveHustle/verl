@@ -19,7 +19,7 @@ implement PPO-like algorithms.
 """
 
 __all__ = ["register_adv_est", "get_adv_estimator_fn", "AdvantageEstimator"]
-
+import logging
 from collections import defaultdict
 from enum import Enum
 from typing import Any, Callable, Optional
@@ -43,7 +43,7 @@ PolicyLossFn = Callable[
     ],
     tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
 ]
-
+logger = logging.getLogger(__name__)
 POLICY_LOSS_REGISTRY: dict[str, PolicyLossFn] = {}
 
 
@@ -341,13 +341,21 @@ def compute_d_gigpo_ungrouped_advantage(
       normalized across all steps in the batch.
     """
     bsz = token_level_rewards.shape[0]
-    gamma = config.gamma if config and hasattr(config, "gamma") else 0.5
+    gamma = config.gamma if config and hasattr(config, "gamma") else 0
     omega = config.d_gigpo.omega if config and hasattr(config, "d_gigpo") else 1.0
-
+    efficiency_decay_rate = config.d_gigpo.efficiency_decay_rate if config and hasattr(config, "d_gigpo") else 0.95
+    logger.debug(f"Using D-GiGPO ungrouped with omega={omega}, gamma={gamma}, efficiency_decay_rate={efficiency_decay_rate}")
     with torch.no_grad():
         # ========== 1. 宏观优势 (A^E) 计算 ==========
         # 完全复用标准的 GRPO 逻辑，衡量整条轨迹的最终成败
         final_scores = token_level_rewards.sum(dim=-1)
+        num_steps_per_trajectory = [len(p) for p in tool_pass_fail_lists]
+
+        num_steps_tensor = torch.tensor(num_steps_per_trajectory, device=final_scores.device, dtype=torch.float32)
+        decay_tensor = efficiency_decay_rate ** num_steps_tensor
+        decay_tensor = torch.clamp(decay_tensor, min=0.7)
+        shaped_scores = final_scores * decay_tensor
+        final_scores = shaped_scores # decayed final scores, testing only
 
         id2score_macro = defaultdict(list)
         id2mean_macro = {}
@@ -369,7 +377,7 @@ def compute_d_gigpo_ungrouped_advantage(
         for i in range(bsz):
             mean = id2mean_macro[index[i]]
             std = id2std_macro[index[i]]
-            advantages_macro_trajectory[i] = (final_scores[i] - mean) / (std + epsilon) ##不要std
+            advantages_macro_trajectory[i] = (final_scores[i] - mean) / (std + epsilon) 
 
         # 将轨迹级的宏观优势广播到该轨迹的每一个 token 上
         advantages_macro = advantages_macro_trajectory.unsqueeze(-1) * response_mask
@@ -414,8 +422,7 @@ def compute_d_gigpo_ungrouped_advantage(
                     weights_j_group[j] = np.exp(-alpha * pass_rate_j)
 
             # 2.2.2. [组内] 计算每个步骤的“未来新成就回报”
-            max_theoretical_reward = sum(weights_j_group.values())
-            group_step_returns = []
+            group_step_scores_with_keys = []
             step_info_list = [] 
             for i in range(N_group):
                 trajectory_pass_fail_lists = group_pass_fail_lists[i]
@@ -438,37 +445,20 @@ def compute_d_gigpo_ungrouped_advantage(
                     for k in range(t, num_actual_turns):
                         future_return += (gamma ** (k - t)) * step_rewards_d[k]
                     # 存储元组 (原始 batch 索引, 时间步, 该步骤的回报)
-                    step_info_list.append((batch_idx, t, future_return))
+                    group_step_scores_with_keys.append(((batch_idx, t), future_return))
             
-            # 将回报按时间步 t 聚合到字典中
-            returns_by_timestep = defaultdict(list)
-            for _, t, future_return in step_info_list:
-                returns_by_timestep[t].append(future_return)
 
-            # 2.2.3. [组内] 对每个时间步的回报列表，独立计算均值
-            mean_by_timestep = {}
-            for t, returns_list in returns_by_timestep.items():
-                if returns_list:
-                    mean_by_timestep[t] = torch.tensor(returns_list, device=token_level_rewards.device).mean()
-
-            # 2.2.4. [组内] 计算每个步骤的优势值，并存入 map
-            raw_advantages_with_keys = []
-            for batch_idx, t, future_return in step_info_list:
-                mean_for_this_timestep = mean_by_timestep[t]
-                raw_advantage = future_return - mean_for_this_timestep
-                raw_advantages_with_keys.append(((batch_idx, t), raw_advantage))
-
-            all_raw_advantages_list = [adv for _, adv in raw_advantages_with_keys]
-            all_raw_advantages = torch.stack(all_raw_advantages_list)
-            # 计算全局的均值和标准差
-            # 注意：理论上 mean 应该非常接近0，但为了鲁棒性可以再减一次
-            global_mean_adv = torch.mean(all_raw_advantages)
-            global_std_adv = torch.std(all_raw_advantages)
+            all_step_scores = torch.tensor(
+                [score for _, score in group_step_scores_with_keys], 
+                device=token_level_rewards.device
+            )
+            global_mean_adv = torch.mean(all_step_scores)
+            global_std_adv = torch.std(all_step_scores)
 
             # 遍历并填充 map
-            for (batch_idx, t), raw_advantage in raw_advantages_with_keys:
+            for (batch_idx, t), raw_advantage in group_step_scores_with_keys:
                 # 使用全局的 mean 和 std 进行归一化
-                if global_std_adv > 1e-8:
+                if global_std_adv > epsilon:
                     normalized_advantage = (raw_advantage - global_mean_adv) / global_std_adv
                 else:
                     normalized_advantage = torch.tensor(0.0, device=token_level_rewards.device)
