@@ -377,7 +377,7 @@ def compute_d_gigpo_ungrouped_advantage(
         for i in range(bsz):
             mean = id2mean_macro[index[i]]
             std = id2std_macro[index[i]]
-            advantages_macro_trajectory[i] = (final_scores[i] - mean) / (std + epsilon) 
+            advantages_macro_trajectory[i] = (final_scores[i] - mean) 
 
         # 将轨迹级的宏观优势广播到该轨迹的每一个 token 上
         advantages_macro = advantages_macro_trajectory.unsqueeze(-1) * response_mask
@@ -459,7 +459,7 @@ def compute_d_gigpo_ungrouped_advantage(
             for (batch_idx, t), raw_advantage in group_step_scores_with_keys:
                 # 使用全局的 mean 和 std 进行归一化
                 if global_std_adv > epsilon:
-                    normalized_advantage = (raw_advantage - global_mean_adv) / global_std_adv
+                    normalized_advantage = (raw_advantage - global_mean_adv)
                 else:
                     normalized_advantage = torch.tensor(0.0, device=token_level_rewards.device)
 
@@ -503,8 +503,23 @@ def compute_d_gigpo_ungrouped_advantage(
 
         # ========== 3. 优势合并 ==========
         # 将宏观优势和微观优势加权相加
+        active_mask = response_mask > 0
+        adv_macro_active = advantages_macro[active_mask] != 0
+        adv_micro_active = advantages_micro[active_mask] != 0
+
+        # 检查这两个掩码是否完全相同
+        if not torch.equal(adv_macro_active, adv_micro_active):
+            raise ValueError("Advantage masks for macro and micro are not identical!")
+        
         advantages_total = advantages_macro + omega * advantages_micro
-        returns = advantages_total
+        active_advantages = advantages_total[active_mask]
+        batch_mean = active_advantages.mean()
+        batch_std = active_advantages.std()
+        
+        # 应用归一化，并确保 padding 部分的 advantage 仍然为 0
+        normalized_advantages = (advantages_total - batch_mean) / (batch_std + epsilon)
+        final_advantages = normalized_advantages * response_mask
+        returns = final_advantages
 
         return advantages_total, returns
 

@@ -35,7 +35,7 @@ export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 #experiment_name=wlw_multi_turn_Qwen3-8B-16k_TISfalse_reward_v3_grpo_bs32_minibs32_overlongfilter_2025-09-21_15-23-32
 
 # ================= algorithm =================
-adv_estimator=d_gigpo_ungrouped
+adv_estimator=grpo
 
 
 use_kl_in_reward=False
@@ -127,7 +127,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
     trainer.n_gpus_per_node=8 \
-    trainer.val_before_train=True \
+    trainer.val_before_train=False \
     trainer.val_only=False\
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \

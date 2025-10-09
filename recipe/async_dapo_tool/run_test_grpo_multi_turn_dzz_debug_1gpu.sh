@@ -15,7 +15,7 @@ taco=/afs/chatrl/users/lyy/data/code_train/DeepCoder-Preview-Dataset_wlw/taco
 codeforces=/afs/chatrl/users/lyy/data/code_test/DeepCoder-Preview-Dataset_wlw/codeforces
 leetcode2k_test=/afs/chatrl/users/lyy/data/code_test/leetcode2k_wlw
 
-model_path=/afs/chatrl/public/models/Qwen3-4B-Base
+model_path=/afs/chatrl/public/models/Qwen2.5-7B
 # model_path=/model/Qwen2.5-3B
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$taco']"
@@ -123,7 +123,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=8 \
+    trainer.n_gpus_per_node=1 \
     trainer.val_before_train=False \
     trainer.val_only=False\
     trainer.log_val_generations=100 \
