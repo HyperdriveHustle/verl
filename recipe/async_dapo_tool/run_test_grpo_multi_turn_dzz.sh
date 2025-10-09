@@ -15,7 +15,7 @@ lcbv5_test=/afs/chatrl/users/lyy/data/code_test/DeepCoder-Preview-Dataset_wlw/lc
 codeforces=/afs/chatrl/users/lyy/data/code_test/DeepCoder-Preview-Dataset_wlw/codeforces
 leetcode2k_test=/afs/chatrl/users/lyy/data/code_test/leetcode2k_wlw
 
-model_path=/afs/chatrl/public/models/Qwen3-8B
+model_path=/afs/chatrl/public/models/Qwen3-4B-Base
 # model_path=/model/Qwen2.5-3B
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$taco']"
@@ -35,7 +35,7 @@ export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 #experiment_name=wlw_multi_turn_Qwen3-8B-16k_TISfalse_reward_v3_grpo_bs32_minibs32_overlongfilter_2025-09-21_15-23-32
 
 # ================= algorithm =================
-adv_estimator=grpo
+adv_estimator=d_gigpo_ungrouped
 
 
 use_kl_in_reward=False
@@ -133,7 +133,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.nnodes=1 \
     trainer.save_freq=50 \
     trainer.default_local_dir=$default_local_dir \
-    trainer.test_freq=5 \
+    trainer.test_freq=10 \
     trainer.total_epochs=1 $@ 2>&1 | tee -a /afs/chatrl/users/wlw/worklog/log/agent_multi_turn/$experiment_name.log
 
 sleep inf

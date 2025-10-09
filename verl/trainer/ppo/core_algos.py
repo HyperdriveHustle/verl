@@ -341,10 +341,9 @@ def compute_d_gigpo_ungrouped_advantage(
       normalized across all steps in the batch.
     """
     bsz = token_level_rewards.shape[0]
-    gamma = config.gamma if config and hasattr(config, "gamma") else 0
+    gamma = config.d_gigpo.gamma if config and hasattr(config, "d_gigpo") else 0
     omega = config.d_gigpo.omega if config and hasattr(config, "d_gigpo") else 1.0
     efficiency_decay_rate = config.d_gigpo.efficiency_decay_rate if config and hasattr(config, "d_gigpo") else 0.95
-    logger.debug(f"Using D-GiGPO ungrouped with omega={omega}, gamma={gamma}, efficiency_decay_rate={efficiency_decay_rate}")
     with torch.no_grad():
         # ========== 1. 宏观优势 (A^E) 计算 ==========
         # 完全复用标准的 GRPO 逻辑，衡量整条轨迹的最终成败
@@ -414,12 +413,39 @@ def compute_d_gigpo_ungrouped_advantage(
                             test_case_counts_in_group[test_id] += 1
                         all_test_cases_in_group.add(test_id)
 
-            alpha = config.d_gigpo.alpha if config and hasattr(config, "d_gigpo") and hasattr(config.d_gigpo, "alpha") else 2.0
-            weights_j_group = {}
-            if total_steps_in_group > 0:
-                for j in all_test_cases_in_group:
-                    pass_rate_j = test_case_counts_in_group.get(j, 0) / total_steps_in_group
-                    weights_j_group[j] = np.exp(-alpha * pass_rate_j)
+            
+            test_case_list = sorted(list(all_test_cases_in_group))
+            id_to_idx_map = {test_id: i for i, test_id in enumerate(test_case_list)}
+            pass_rates = torch.tensor(
+                [test_case_counts_in_group.get(j, 0) / total_steps_in_group for j in test_case_list],
+                device=token_level_rewards.device,
+                dtype=torch.float32
+            )
+            # 2.2.2. 计算原始难度权重 w_j = exp(-alpha * P(j))
+            alpha = config.d_gigpo.alpha if config and hasattr(config, "d_gigpo") else 2.0
+            weights_j = torch.exp(-alpha * pass_rates)
+
+            # 2.2.3. 计算密度 rho_j (核心步骤)
+            # 使用 broadcasting 实现高效的 pairwise distance 计算: (K, 1) - (1, K) -> (K, K)
+            pairwise_dist_sq = (pass_rates.unsqueeze(1) - pass_rates.unsqueeze(0)) ** 2
+
+            # 获取或自动计算带宽 sigma
+            sigma = config.d_gigpo.density_sigma if config and hasattr(config, "d_gigpo") else None
+            if sigma is None:
+                # 鲁棒的自动化 sigma 选择策略
+                pass_rates_std = torch.std(pass_rates)
+                auto_sigma_factor = config.d_gigpo.auto_sigma_factor if config and hasattr(config, "d_gigpo") else 0.5
+                sigma = auto_sigma_factor * pass_rates_std + epsilon
+
+            # 计算高斯核密度 rho_j = sum_k(exp(-dist^2 / (2*sigma^2)))
+            kernel_matrix = torch.exp(-pairwise_dist_sq / (2 * sigma**2))
+            rho_j = torch.sum(kernel_matrix, dim=1)
+            
+            # 2.2.4. 计算最终的逆密度权重 w'_j = w_j / rho_j
+            weights_prime_j = weights_j / (rho_j + epsilon)
+            
+            # 将 tensor 转换回 dict 方便查找
+            final_weights_map = {test_id: weights_prime_j[i] for i, test_id in enumerate(test_case_list)}
 
             # 2.2.2. [组内] 计算每个步骤的“未来新成就回报”
             group_step_scores_with_keys = []
@@ -433,15 +459,15 @@ def compute_d_gigpo_ungrouped_advantage(
                 for t in range(num_actual_turns):
                     current_pass_list = trajectory_pass_fail_lists[t]
                     
-                    reward_d_t = 0
+                    reward_d_t = 0.
                     for test_id, status in enumerate(current_pass_list):
                         if status == 1:
-                            reward_d_t += weights_j_group.get(test_id, 0)
+                            reward_d_t += final_weights_map.get(test_id, 0)
 
                     step_rewards_d.append(reward_d_t)
 
                 for t in range(num_actual_turns):
-                    future_return = 0
+                    future_return = 0.
                     for k in range(t, num_actual_turns):
                         future_return += (gamma ** (k - t)) * step_rewards_d[k]
                     # 存储元组 (原始 batch 索引, 时间步, 该步骤的回报)
@@ -468,23 +494,25 @@ def compute_d_gigpo_ungrouped_advantage(
 
         # 2.3. 将所有组的微观优势广播到 token 级别
         advantages_micro = torch.zeros_like(token_level_rewards)
+        advantages_micro_mask= torch.zeros_like(token_level_rewards)
         for i in range(bsz):
             num_actual_turns = len(tool_pass_fail_lists[i])
             if num_actual_turns == 0: continue
 
-            is_llm_token = response_mask[i] > 0
+            is_llm_token = (response_mask[i] > 0).bool()
             
             # 找出所有 LLM 生成块的起始点
             # 1. 如果第一个 token 是 LLM 生成的，那么 0 就是一个起始点
             # 2. 如果一个 token 是 LLM 生成的(1)，而它前一个是 tool token(0)，那它也是一个起始点 (0->1 的边界)
             start_indices = [0] if is_llm_token[0] else []
-            turn_starts = (is_llm_token[1:] & ~is_llm_token[:-1]).nonzero(as_tuple=True)[0] + 1
+            turn_starts = (is_llm_token[1:] & (~is_llm_token[:-1])).nonzero(as_tuple=True)[0] + 1
             start_indices.extend(turn_starts.tolist())
             
             # 遍历我们找到的每一个 LLM 回合
             for turn_count, start_idx in enumerate(start_indices):
                 if turn_count >= num_actual_turns:
-                    break
+                    logger.error(f"start_indices: {start_indices}")
+                    raise ValueError(f"More LLM turns than expected in batch {i}: found {turn_count+1}, expected {num_actual_turns}")
 
                 # 从起始点开始，找到这个 LLM 回合的结束点
                 # 结束点就是下一个 mask 为 0 的地方，或者是 response 的末尾
@@ -500,15 +528,16 @@ def compute_d_gigpo_ungrouped_advantage(
                 
                 # 将这个优势值“广播”给这个回合内所有的 token
                 advantages_micro[i, start_idx:end_idx] = step_advantage
-
+                advantages_micro_mask[i, start_idx:end_idx] = 1.0
         # ========== 3. 优势合并 ==========
         # 将宏观优势和微观优势加权相加
         active_mask = response_mask > 0
-        adv_macro_active = advantages_macro[active_mask] != 0
-        adv_micro_active = advantages_micro[active_mask] != 0
-
         # 检查这两个掩码是否完全相同
-        if not torch.equal(adv_macro_active, adv_micro_active):
+        if not torch.equal(advantages_micro_mask, response_mask):
+            logger.error(f"Macro active shape: {advantages_micro_mask.shape}")
+            logger.error(f"Micro active shape: {response_mask.shape}")
+            logger.error(f"Macro active sum: {advantages_micro_mask.sum()}")
+            logger.error(f"Micro active sum: {response_mask.sum()}")
             raise ValueError("Advantage masks for macro and micro are not identical!")
         
         advantages_total = advantages_macro + omega * advantages_micro
@@ -520,7 +549,7 @@ def compute_d_gigpo_ungrouped_advantage(
         normalized_advantages = (advantages_total - batch_mean) / (batch_std + epsilon)
         final_advantages = normalized_advantages * response_mask
         returns = final_advantages
-
+        logger.debug(f"Using D-GiGPO ungrouped with omega={omega}, gamma={gamma}, efficiency_decay_rate={efficiency_decay_rate}, alpha={alpha}, density_sigma={sigma}, auto_sigma_factor={auto_sigma_factor}")
         return advantages_total, returns
 
 @register_adv_est(AdvantageEstimator.GRPO_PASSK)  # or simply: @register_adv_est("grpo_passk")

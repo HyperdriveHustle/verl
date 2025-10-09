@@ -15,7 +15,7 @@ taco=/afs/chatrl/users/lyy/data/code_train/DeepCoder-Preview-Dataset_wlw/taco
 codeforces=/afs/chatrl/users/lyy/data/code_test/DeepCoder-Preview-Dataset_wlw/codeforces
 leetcode2k_test=/afs/chatrl/users/lyy/data/code_test/leetcode2k_wlw
 
-model_path=/afs/chatrl/public/models/Qwen2.5-7B
+model_path=/afs/chatrl/public/models/Qwen3-4B-Base
 # model_path=/model/Qwen2.5-3B
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$taco']"
@@ -54,7 +54,7 @@ calculate_log_probs=False # if tis_imp_ratio_cap != -1, you should set calculate
 
 max_turns=4
 max_prompt_length=2548
-max_response_length=6144
+max_response_length=1024
 overlong_filter=True # whether to filter out overlong samples in the Rollout(mask out)
 
 actor_lr=1e-6

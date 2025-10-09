@@ -280,7 +280,7 @@ def compute_advantage(
             "token_level_rewards": data.batch["token_level_rewards"],
             "response_mask": data.batch["response_mask"],
             "index": data.non_tensor_batch["uid"],
-            "tool_pass_fail_lists": data.meta_info["tool_pass_fail_lists"],
+            "tool_pass_fail_lists": data.non_tensor_batch["tool_pass_fail_lists"].tolist(),
             "config": config,
         }
         adv_estimator_fn = core_algos.get_adv_estimator_fn(adv_estimator)
@@ -1221,7 +1221,9 @@ class RayPPOTrainer:
                     breakpoint()
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
-
+                    if "tool_pass_fail_lists" in batch.meta_info:
+                        tpf = batch.meta_info.pop("tool_pass_fail_lists")
+                        batch.non_tensor_batch["tool_pass_fail_lists"] = np.array(tpf, dtype=object)
                     if "response_mask" not in batch.batch.keys():
                         batch.batch["response_mask"] = compute_response_mask(batch)
                     # Balance the number of valid tokens across DP ranks.

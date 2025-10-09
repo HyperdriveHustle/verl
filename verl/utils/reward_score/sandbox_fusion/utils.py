@@ -631,11 +631,15 @@ if __name__ == '__main__':
                     metadata["run_status"] == "TimeLimitExceeded"
                     or metadata["run_status"] == "Error"
                     or (metadata["run_status"] == "Finished" and run_result.get("return_code") != 0)
+                    or metadata["run_status"] == "MemoryLimitExceeded"
                 )
                 if is_runtime_error:
                     if metadata["run_status"] == "TimeLimitExceeded":
                         metadata["status"] = "timeout"  # Runtime timeout
                         result_status = -3
+                    elif metadata["run_status"] == "MemoryLimitExceeded":
+                        metadata["status"] = "memory_limit_exceeded"  # Memory limit exceeded
+                        result_status = -2
                     else:  # Includes Error and Finished with non-zero return_code
                         metadata["status"] = "runtime_error"
                         result_status = -2

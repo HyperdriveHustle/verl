@@ -197,9 +197,9 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
 
 """
                     except Exception as e:
-                        #breakpoint()
                         logger.error(f"Error during reward calculation: {e}")
                         answer_reward = 0
+                        tool_pass_fail_lists.append([0]*len(ground_truth.get("inputs",[])))
                         break
                     finally:
                         if instance_id:
