@@ -128,6 +128,7 @@ export experiment_name=${base_model_suffix}_dapo-${req_algo}-${agg}_${nnode}node
 
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=/afs/chatrl/users/hxh/models/verl_rl_models/${project_name}/${experiment_name}
+export save_judge_path=/afs/chatrl/users/hxh/code/verl/logs/remote-reward/${project_name}-${experiment_name}.log
 
 #data.max_batch_size=${train_prompt_batch_size} \
 #python3 -u -m verl.trainer.main_ppo \
@@ -201,7 +202,6 @@ python3 -u -m  recipe.dapo.main_dapo \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=${offload} \
     actor_rollout_ref.actor.fsdp_config.fsdp_size=-1 \
-    reward_model.reward_manager=dapo \
     reward_model.overlong_buffer.enable=${enable_overlong_buffer} \
     reward_model.overlong_buffer.len=${overlong_buffer_len} \
     reward_model.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
@@ -214,6 +214,11 @@ python3 -u -m  recipe.dapo.main_dapo \
     trainer.n_gpus_per_node=8 \
     trainer.val_before_train=${val_before_train} \
     trainer.nnodes=${nnode} \
+    remote_reward.base_url=http://111.31.225.52:16669/v1 \
+    remote_reward.save_judge_path=${save_judge_path} \
+    remote_reward.api_key=EMPTY \
+    remote_reward.model_name="Qwen3-30B-A3B" \
+    reward_model.reward_manager=remote_batch \
     trainer.save_freq=${save_freq} \
     trainer.test_freq=${test_freq} \
     trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/hxh/code/verl/logs_sensecore/$experiment_name.log

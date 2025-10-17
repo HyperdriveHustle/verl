@@ -33,7 +33,6 @@ def main(config):
 
 
 def run_ppo(config) -> None:
-    print(f"> config = {config}")
     if not ray.is_initialized():
         # this is for local ray cluster
         ray.init(

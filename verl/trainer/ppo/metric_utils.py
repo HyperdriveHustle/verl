@@ -25,6 +25,9 @@ import torch
 from verl import DataProto
 from verl.utils.import_utils import deprecated
 
+from verl.utils.reward_score.language_detect import detect_language
+from verl.utils.tokenizer import hf_tokenizer
+
 
 @deprecated("verl.utils.metric.reduce_metrics")
 def reduce_metrics(metrics: Dict[str, List[Any]]) -> Dict[str, Any]:
@@ -424,3 +427,134 @@ def process_validation_metrics(data_sources: list[str], sample_inputs: list[str]
                 data_src2var2metric2val[data_source][var_name][metric_name] = np.mean(prompt_vals)
 
     return data_src2var2metric2val
+
+
+def compute_mix_metrics(batch: DataProto) -> dict:
+    """
+    计算mix相关指标
+    """
+    reward_scores = batch.batch["token_level_scores"].sum(-1)
+
+    num_samples = len(reward_scores)
+    num_mix = 0
+    num_non_mix = 0
+    num_mix_correct = 0
+    num_mix_wrong = 0
+    num_non_mix_correct = 0
+    num_non_mix_wrong = 0
+
+    for score in reward_scores:
+        if score == 0.2:
+            num_mix_correct += 1
+            num_mix += 1
+        elif score == -1.0:
+            num_mix_wrong += 1
+            num_mix += 1
+        elif score == 1.0:
+            num_non_mix_correct += 1
+            num_non_mix += 1
+        elif score == -0.8:
+            num_non_mix_wrong += 1
+            num_non_mix += 1
+        else:
+            num_non_mix += 1
+
+    mix_ratio = num_mix / num_samples if num_samples > 0 else 0
+    mix_acc = num_mix_correct / num_mix if num_mix > 0 else 0
+    non_mix_acc = num_non_mix_correct / num_non_mix if num_non_mix > 0 else 0
+
+    return {
+        "training/mix_sample_ratio": mix_ratio,
+        "training/mix_accuracy": mix_acc,
+        "training/non_mix_accuracy": non_mix_acc,
+    }
+
+def compute_acc_metrics(batch: DataProto) -> dict:
+    """
+    计算整体准确率指标
+    """
+    reward_scores = batch.batch["token_level_scores"].sum(-1)
+
+    num_samples = len(reward_scores)
+    num_correct = 0
+    num_incorrect = 0
+
+    for score in reward_scores:
+        if score == 0.2 or score == 1.0:
+            num_correct += 1
+        elif score == -1.0 or score == -0.8:
+            num_incorrect += 1
+        else:
+            # 如果有其他分数，可以根据需求决定是否计入统计
+            pass
+
+    accuracy = num_correct / (num_correct + num_incorrect) if (num_correct + num_incorrect) > 0 else 0
+
+    return {
+        "training/accuracy": accuracy,
+    }
+
+def compute_mix_language_metrics(batch: DataProto, tokenizer_name_or_path: str) -> Dict[str, float]:
+    """
+    计算batch中mix语言的比率，以及score>0和score<0中mix的比率。
+
+    Args:
+        batch: DataProto对象，包含token_level_scores和responses等
+        tokenizer_name_or_path: 用于解码的tokenizer路径或名称
+
+    Returns:
+        dict，包含三个key:
+            - "mix_ratio": batch中mix语言样本占比
+            - "mix_ratio_score_pos": score>0样本中mix占比
+            - "mix_ratio_score_neg": score<0样本中mix占比
+    """
+    # 加载tokenizer
+    tokenizer = hf_tokenizer(tokenizer_name_or_path)
+
+    # 获取batch中token_level_scores的序列分数（sum）
+    sequence_scores = batch.batch["token_level_scores"].sum(-1).tolist()  # list[float]
+
+    # 获取batch中responses的tokenid，形状(batch_size, seq_len)
+    responses = batch.batch["responses"].tolist()
+
+    # 解码responses为文本
+    texts = [tokenizer.decode(resp, skip_special_tokens=True).strip() for resp in responses]
+
+    # 统计
+    total = len(texts)
+    if total == 0:
+        return {
+            "training/mix_ratio": 0.0,
+            "training/mix_ratio_score_pos": 0.0,
+            "training/mix_ratio_score_neg": 0.0,
+        }
+
+    mix_count = 0
+    mix_score_pos_count = 0
+    mix_score_neg_count = 0
+    score_pos_count = 0
+    score_neg_count = 0
+
+    for text, score in zip(texts, sequence_scores):
+        lang = detect_language(text)
+        is_mix = (lang == "mix")
+        if is_mix:
+            mix_count += 1
+        if score > 0:
+            score_pos_count += 1
+            if is_mix:
+                mix_score_pos_count += 1
+        elif score < 0:
+            score_neg_count += 1
+            if is_mix:
+                mix_score_neg_count += 1
+
+    mix_ratio = mix_count / total
+    mix_ratio_score_pos = mix_score_pos_count / score_pos_count if score_pos_count > 0 else 0.0
+    mix_ratio_score_neg = mix_score_neg_count / score_neg_count if score_neg_count > 0 else 0.0
+
+    return {
+        "training/mix_ratio": mix_ratio,
+        "training/mix_ratio_score_pos": mix_ratio_score_pos,
+        "training/mix_ratio_score_neg": mix_ratio_score_neg,
+    }

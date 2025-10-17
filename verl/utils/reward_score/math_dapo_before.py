@@ -15,7 +15,6 @@
 
 import re
 from typing import Optional
-from .language_detect import detect_language
 
 def last_boxed_only_string(string: str) -> Optional[str]:
     """Extract the last LaTeX boxed expression from a string.
@@ -176,18 +175,7 @@ def is_correct_minerva(solution_str: str, gt: str, gt_need_extract: bool = False
     """
     # Extract answer from solution
     match = re.findall(answer_pattern, solution_str)
-    # extracted_answer = match[-1] if match else "[INVALID]"
-    
-    if match:
-        extracted_answer = match[-1]
-    else:
-        # 如果匹配不到，则尝试匹配 \boxed{...}
-        boxed_str = last_boxed_only_string(solution_str)
-        if boxed_str is not None:
-            extracted_answer = remove_boxed(boxed_str)
-        else:
-            extracted_answer = "[INVALID]"
-    
+    extracted_answer = match[-1] if match else "[INVALID]"
     pred = normalize_final_answer(extracted_answer)
 
     # Process ground truth
@@ -261,36 +249,19 @@ def compute_score(
     Returns:
         Reward score (1.0 for correct, -1.0 for incorrect)
     """
-    lang = detect_language(solution_str)
     # Limit solution length for efficiency
     solution_str = solution_str[-300:]  # The longest answer in MATH-500 has 159 characters
 
     # Verify the solution
     correct, pred = verify(solution_str, ground_truth, strict_box_verify, pause_tokens_index)
-    
-    # if lang == 'mix':
-    #     # 如果是英文，直接惩罚
-    #     return {
-    #         "score": -1.0,
-    #         "acc": correct,
-    #         "pred": pred,
-    #     }
 
     reward = 1.0 if correct else -1.0
-    acc = correct
-    # if lang == 'mix':
-    #     if correct:
-    #         reward = 0.2
-    #     else:
-    #         reward = -1.0
-    # else:
-    #     if correct:
-    #         reward = 1.0
-    #     else:
-    #         reward = -0.8
+    # acc = 1.0 if correct else 0.0
+    if reward == 1.0:
+        acc = 1.0
+    elif reward == -1.0:
+        acc = 0.0
 
-    acc = correct
-    
     return {
         "score": reward,
         "acc": acc,

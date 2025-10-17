@@ -1,49 +1,65 @@
+pip install langdetect
+pip install math-verify sympy
 set -x
 
-# export dapo_train_path=${dapo_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k_dedup.parquet}
-# export aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8.parquet}
-export dapo_train_path=${dapo_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_dapo-math-17k_by_acc_0.2_0.7.parquet}
-export deepmath_train_path=${deepmath_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_deepmath_by_acc_0.2_0.7.parquet}
-export math7d5k_train_path=${math7d5k_train_path:-/afs/chatrl/users/hxh/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_math_train_by_acc_0_0.7.parquet}
+# export dapo_train_path=${dapo_train_path:-/afs/chatrl/users/kzl/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k_dedup.parquet}
+# export aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/kzl/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8.parquet}
+# export dapo_train_path=${dapo_train_path:-/afs/chatrl/users/kzl/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_dapo-math-17k_by_acc_0.2_0.7.parquet}
+# export deepmath_train_path=${deepmath_train_path:-/afs/chatrl/users/kzl/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_deepmath_by_acc_0.2_0.7.parquet}
+# export math7d5k_train_path=${math7d5k_train_path:-/afs/chatrl/users/kzl/data/rule_based_rl/filter_by_32b_cold_start_20250614/filtered_math_train_by_acc_0_0.7.parquet}
 
 export aime2024_test_path=${aime2024_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/dapo_aime2024_sample8_no_prompt.parquet}
 export aime2025_test_path=${aime2025_test_path:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2025/dapo_aime2025_sample8_no_prompt.parquet}
 
+# export aime2024_test_path_from_lyy=${aime2024_test_path_from_lyy:-/afs/chatrl/users/kzl/data/eval/aime2024_dapo_sample32_new.parquet}
+# export aime2025_test_path_from_lyy=${aime2025_test_path_from_lyy:-/afs/chatrl/users/lyy/data/eval/aime2025_dapo_sample32.parquet}
+
+export dapo_train_path=/afs/chatrl/users/hxh/data/math_data/dapo-math/rule_based_rl/dapo-math-17k_dedup_no_prompt_sft_0614_acc_0d1-0d7.parquet
+export math7d5k_train_path=/afs/chatrl/users/hxh/data/math_data/MATH_train/rule_based_rl/train_7d5k_math_verify_sft_0614_acc_0-0d7.parquet
+
+export math_zh=/afs/chatrl/users/kzl/code/awesome_scripts/math_zh_test/processed_data/0730-250627-0710_science_label_question_combined-12121_single_no_repeat_30.parquet
+
+export math_dapo_zh=/afs/chatrl/users/kzl/data/math_data/dapo-math/prompts/dapo-math-17k_zh.parquet
+export math_dapo_en=/afs/chatrl/users/kzl/data/math_data/dapo-math/prompts/dapo-math-17k_en.parquet
+# export train_files="['$math7d5k_train_path', '$dapo_train_path']"
+
+# export train_files="['$math7d5k_train_path', '$dapo_train_path']"
+export train_files="['$math_dapo_zh','$math_dapo_en']"
+
 # train_files="['$math7d5k_train_path', '$dapo_train_path', '$deepmath_train_path']"
+# export train_files=${train_files:-"['$math7d5k_train_path', '$dapo_train_path', '$deepmath_train_path']"}
 
-
-export train_files=${train_files:-"['$math7d5k_train_path', '$dapo_train_path', '$deepmath_train_path']"}
-
-# test_files="['$aime2024_test_path', '$aime2025_test_path']"
-export test_files=${test_files:-"['$aime2024_test_path', '$aime2025_test_path']"}
-
+# test_files="['$aime2024_test_path_from_lyy', '$aime2025_test_path_from_lyy']"
+test_files="['$aime2024_test_path', '$aime2025_test_path']"
 
 # resume config
 export resume_mode=${resume_mode:-auto}
 export resume_from_path=${resume_from_path:-null}
-export model_path=${model_path:-/afs/chatrl/public/models/Qwen2.5-32B}
+export model_path=/afs/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B
 export model_name=$(basename "$model_path")
 
+
 # project config
-export project_name=${project_name:-verl_dapo_math_grpo_dapo_req_sched}
+export project_name=${project_name:-verl_qwen_7b_dapo_req_sched_v0626}
 # train params
 export total_epochs=${total_epochs:-50}
-export vllm_tp=${vllm_tp:-4}
+export vllm_tp=${vllm_tp:-2}
 
-export train_prompt_batch_size=${train_prompt_batch_size:-512}
+export train_prompt_batch_size=${train_prompt_batch_size:-32}
 export grpo_rollout_n=${grpo_rollout_n:-16}
 # model params
 export max_response_length=${max_response_length:-20000}
-export prompt_key=${prompt_key:-prompt}
+export prompt_key=${prompt_key:-messages}
 export resume_type=${resume_type:-no_resume}
 # env config
 export nnode=${WORLD_SIZE:-1}
 
 export ulysses_sequence_parallel_size=${ulysses_sequence_parallel_size:-1}
 
-export filter_score_high=${filter_score_high:-null}
-export filter_score_low=${filter_score_low:-null}
-
+export filter_score_high=${filter_score_high:-1.1}
+export filter_score_low=${filter_score_low:--1}
+# export filter_score_high=${filter_score_high:-0.7}
+# export filter_score_low=${filter_score_low:-0.2}
 
 export save_freq=${save_freq:-20}
 export test_freq=${test_freq:-20}
@@ -58,7 +74,7 @@ clip_ratio_high=0.28
 
 loss_agg_mode="token-mean"
 
-enable_filter_groups=True
+enable_filter_groups=False
 filter_groups_metric=acc
 max_num_gen_batches=10
 
@@ -69,10 +85,9 @@ infer_micro_batch_size=null
 max_prompt_length=$((1024 * 2))
 
 export val_before_train=${val_before_train:-True}
-
 export trust_remote_code=${trust_remote_code:-False}
 
-export enable_overlong_buffer=${enable_overlong_buffer:-True}
+export enable_overlong_buffer=${enable_overlong_buffer:-False}
 export overlong_buffer_len=${overlong_buffer_len:-$((1024 * 4))}
 overlong_penalty_factor=1.0
 
@@ -83,7 +98,7 @@ real_train_batch_size=$((train_prompt_batch_size * grpo_rollout_n))
 ppo_mini_batch_size=32
 
 
-export lr=${lr:-1e-6}
+lr=1e-6
 
 # Algorithm
 export temperature=${temperature:-1.0}
@@ -98,8 +113,8 @@ gen_max_tokens=$((max_tokens * 2))
 log_prob_max_tokens=$((max_tokens * 2))
 
 
-export seq_dir=${seq_dir:-/afs/chatrl/users/hxh/data/req_sched_seq_dir/filter_by_32b_cold_start_20250614/init}
-export log_dir=${log_dir:-/afs/chatrl/users/hxh/data/req_sched_seq_dir/filter_by_32b_cold_start_20250614/log}
+export seq_dir=${seq_dir:-/afs/chatrl/users/kzl/data/req_sched_seq_dir/filter_by_32b_cold_start_20250614/init}
+export log_dir=${log_dir:-/afs/chatrl/users/kzl/data/req_sched_seq_dir/filter_by_32b_cold_start_20250614/log}
 
 cap_dataset_size=$((1024 * 80000))
 filter_overlong_prompts=False
@@ -112,7 +127,6 @@ filter_overlong_prompts=False
 export req_algo=${req_algo:-even_token}
 export agg=${agg:-max}
 
-
 export entropy_coeff=${entropy_coeff:-0}
 export entropy_max=${entropy_max:-null}
 
@@ -120,14 +134,14 @@ percentile=90
 export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 
 
-echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, req_algo = $req_algo, percentile = $percentile, agg = $agg"
+echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode, offload = $offload, max_tokens = $max_tokens, model = $model_name, vllm_tp = $vllm_tp, vllm_mem = $vllm_mem, seq_dir = $seq_dir, log_dir = $log_dir, cap_dataset_size = $cap_dataset_size, filter_overlong_prompts = $filter_overlong_prompts, max_prompt_length = $max_prompt_length, max_response_length = $max_response_length, req_algo = $req_algo, percentile = $percentile, agg = $agg"
 
 sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=${base_model_suffix}_dapo-${req_algo}-${agg}_${nnode}node_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_overlong_punish_${enable_overlong_buffer}_entropy_coeff_${entropy_coeff}${resume_type}
+export experiment_name=${model_name}-${base_model_suffix}_dapo-${req_algo}-${agg}_${nnode}node_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_overlong_punish_${enable_overlong_buffer}_all_dapo_trick_${resume_type}_dapo_mix_zh_en
 
 rm -rf /workspace/tmp_tensorboard/*
-export TENSORBOARD_DIR=/afs/chatrl/users/hxh/models/verl_rl_models/${project_name}/${experiment_name}
+export TENSORBOARD_DIR=/afs/chatrl/users/kzl/models/verl_rl_models/${project_name}/${experiment_name}
 
 #data.max_batch_size=${train_prompt_batch_size} \
 #python3 -u -m verl.trainer.main_ppo \
@@ -184,11 +198,12 @@ python3 -u -m  recipe.dapo.main_dapo \
     actor_rollout_ref.actor.fsdp_config.param_offload=${offload} \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=${offload} \
     actor_rollout_ref.actor.entropy_coeff=${entropy_coeff} \
+    actor_rollout_ref.actor.entropy_coeff=0 \
     actor_rollout_ref.actor.grad_clip=1.0 \
     actor_rollout_ref.actor.loss_agg_mode=${loss_agg_mode} \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${vllm_tp} \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
     actor_rollout_ref.rollout.enable_chunked_prefill=True \
     actor_rollout_ref.rollout.max_num_batched_tokens=${gen_max_tokens} \
     actor_rollout_ref.rollout.temperature=${temperature} \
@@ -208,7 +223,7 @@ python3 -u -m  recipe.dapo.main_dapo \
     trainer.resume_mode=${resume_mode} \
     trainer.resume_from_path=${resume_from_path} \
     trainer.logger=['tensorboard'] \
-    trainer.default_local_dir=/afs/chatrl/users/hxh/models/verl_rl_models/${project_name}/${experiment_name} \
+    trainer.default_local_dir=/afs/chatrl/users/kzl/models/verl_rl_models/${project_name}/${experiment_name} \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
     trainer.n_gpus_per_node=8 \
@@ -216,4 +231,4 @@ python3 -u -m  recipe.dapo.main_dapo \
     trainer.nnodes=${nnode} \
     trainer.save_freq=${save_freq} \
     trainer.test_freq=${test_freq} \
-    trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/hxh/code/verl/logs_sensecore/$experiment_name.log
+    trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/kzl/code/verlmix/logs_sensecore/$experiment_name.log

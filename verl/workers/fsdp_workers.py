@@ -22,6 +22,8 @@ import warnings
 from dataclasses import asdict
 from typing import Optional, Union
 import numpy as np
+from datetime import datetime
+
 import gc
 import psutil
 import torch
@@ -232,7 +234,10 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             torch_dtype = PrecisionType.to_dtype(torch_dtype)
 
         # override model kwargs
-        actor_model_config = AutoConfig.from_pretrained(local_path, trust_remote_code=trust_remote_code, attn_implementation="flash_attention_2")
+        actor_model_config = AutoConfig.from_pretrained(
+            local_path, trust_remote_code=trust_remote_code, 
+            attn_implementation="flash_attention_2"
+        )
 
         # patch for kimi-vl
         if getattr(actor_model_config, "model_type", None) == "kimi_vl":
@@ -857,7 +862,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 actual_max = np.max(actual_outlen)
                 actual_min = np.min(actual_outlen)
 
-                print(f"[GENTIME] {rank=}, {timing_generate['generate_sequences']:.2f}s; Sum: predict_totallens={predict_tsum}, pre_outlens={pre_osum}, insum={insum} ; Total: {predict_tlongest=}, {predict_tshortest=}, {predict_tavg=}, {predict_tstd=}; In: {inlongest=}, {inshortest=}, inavg={inavg:.0f}, instd={instd:.0f}; ACTUAL: {actual_sum=}, {actual_mean=}, {actual_max=}, {actual_min=}")
+                print(f"[GENTIME] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, {rank=}, {timing_generate['generate_sequences']:.2f}s; Sum: predict_totallens={predict_tsum}, pre_outlens={pre_osum}, insum={insum} ; Total: {predict_tlongest=}, {predict_tshortest=}, {predict_tavg=}, {predict_tstd=}; In: {inlongest=}, {inshortest=}, inavg={inavg:.0f}, instd={instd:.0f}; ACTUAL: {actual_sum=}, {actual_mean=}, {actual_max=}, {actual_min=}")
             output = self.rollout_sharding_manager.postprocess_data(output)
 
         timing_generate.update(self.rollout_sharding_manager.timing)
@@ -1613,6 +1618,7 @@ class RewardModelWorker(Worker, DistProfilerExtension):
             valid_response_ids = response_ids[:valid_response_length]
 
             # decode
+            # @xiaohui: debug for decode
             response = src_tokenizer.decode(valid_response_ids)
             # remove bos and eos
             response = response.replace(src_tokenizer.eos_token, "")
