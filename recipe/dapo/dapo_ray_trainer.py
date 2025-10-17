@@ -34,6 +34,9 @@ from verl.trainer.ppo.metric_utils import (
     compute_throughout_metrics,
     compute_timing_metrics,
     reduce_metrics,
+    compute_mix_metrics,
+    compute_acc_metrics,
+    compute_mix_language_metrics,
 )
 from verl.trainer.ppo.ray_trainer import AdvantageEstimator, RayPPOTrainer, apply_kl_penalty, compute_advantage, compute_response_mask
 from verl.utils.debug import marked_timer
@@ -459,6 +462,9 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                 # collect metrics
                 metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
+                metrics.update(compute_mix_metrics(batch=batch))
+                metrics.update(compute_acc_metrics(batch=batch))
+                metrics.update(compute_mix_language_metrics(batch=batch, tokenizer_name_or_path="/afs/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B"))
                 metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
                 # TODO: implement actual tflpo and theoretical tflpo
                 n_gpus = self.resource_pool_manager.get_n_gpus()

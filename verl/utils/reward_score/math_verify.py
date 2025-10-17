@@ -164,6 +164,23 @@ def compute_score(model_output: str, ground_truth: str) -> bool:
     # print(f"[format_correct] = {format_correct}, [answer_correct] = \n{answer_correct}")
     # print("--"*10)
     
+    # lang = detect_language(model_output) 
+    # if lang != 'mix' and answer_correct == 1.0:
+    #     reward = 1.0
+    # elif lang == 'mix' and answer_correct == 1.0:
+    #     reward = 0.2
+    # elif lang != 'mix' and answer_correct <= 0:
+    #     reward = -0.8
+    # else:  # lang == 'mix' and answer_correct <= 0
+    #     reward = -1.0
+
+    # correct = 0 if reward <= 0 else 1
+    # acc = correct
+    # return {
+    #     "score": reward,
+    #     "acc": acc,
+    #     "pred": "" if extracted_ans is None else extracted_ans,
+    # }
     
     # correct 在 -1,1 之间
     if format_correct < 0:
@@ -175,15 +192,13 @@ def compute_score(model_output: str, ground_truth: str) -> bool:
     # acc 在 0,1 之间
     correct = 0 if reward <= 0 else reward
     acc = correct
-
-    lang = detect_language(model_output) 
-    if lang == 'mix':
-        # 如果是英文，直接惩罚
-        return {
-            "score": -1.0,
-            "acc": acc,
-            "pred": "" if extracted_ans is None else extracted_ans,
-        } 
+    # if lang == 'mix':
+    #     # 如果是英文，直接惩罚
+    #     return {
+    #         "score": -1.0,
+    #         "acc": acc,
+    #         "pred": "" if extracted_ans is None else extracted_ans,
+    #     } 
     # print(reward, acc, extracted_ans) 
     return {
             "score": reward,

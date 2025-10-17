@@ -268,15 +268,27 @@ def compute_score(
     # Verify the solution
     correct, pred = verify(solution_str, ground_truth, strict_box_verify, pause_tokens_index)
     
-    if lang == 'mix':
-        # 如果是英文，直接惩罚
-        return {
-            "score": -1.0,
-            "acc": correct,
-            "pred": pred,
-        }
+    # if lang == 'mix':
+    #     # 如果是英文，直接惩罚
+    #     return {
+    #         "score": -1.0,
+    #         "acc": correct,
+    #         "pred": pred,
+    #     }
 
     reward = 1.0 if correct else -1.0
+    acc = correct
+    # if lang == 'mix':
+    #     if correct:
+    #         reward = 0.2
+    #     else:
+    #         reward = -1.0
+    # else:
+    #     if correct:
+    #         reward = 1.0
+    #     else:
+    #         reward = -0.8
+
     acc = correct
     
     return {

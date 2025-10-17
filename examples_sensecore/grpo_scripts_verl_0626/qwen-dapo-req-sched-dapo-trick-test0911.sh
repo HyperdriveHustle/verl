@@ -138,7 +138,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 
 sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=${model_name}-${base_model_suffix}_dapo-${req_algo}-${agg}_${nnode}node_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_overlong_punish_${enable_overlong_buffer}_all_dapo_trick_${resume_type}_dapo_mix_zh_en
+export experiment_name=${model_name}-${base_model_suffix}_dapo-${req_algo}-${agg}_${nnode}node_rollout${grpo_rollout_n}_bs${train_prompt_batch_size}_minibatch${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_tp${vllm_tp}_maxlen${max_response_length}_overlong_punish_${enable_overlong_buffer}_all_dapo_trick_${resume_type}_dapo_zh_en_0929
 
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=/afs/chatrl/users/kzl/models/verl_rl_models/${project_name}/${experiment_name}
@@ -231,4 +231,4 @@ python3 -u -m  recipe.dapo.main_dapo \
     trainer.nnodes=${nnode} \
     trainer.save_freq=${save_freq} \
     trainer.test_freq=${test_freq} \
-    trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/kzl/code/verlmix/logs_sensecore/$experiment_name.log
+    trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/kzl/code/verlmix0923/logs_sensecore/$experiment_name.log
