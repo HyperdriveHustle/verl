@@ -577,10 +577,13 @@ class RayPPOTrainer:
         except Exception as e:
             print(f"Warning: Could not set total_training_steps in config. Structure missing? Error: {e}")
 
-    def _dump_generations(self, inputs, outputs, scores, reward_extra_infos_dict, dump_path):
+    def _dump_generations(self, inputs, outputs, scores, reward_extra_infos_dict, dump_path, dump_file_path=None):
         """Dump rollout/validation samples as JSONL."""
-        os.makedirs(dump_path, exist_ok=True)
-        filename = os.path.join(dump_path, f"{self.global_steps}.jsonl")
+        if dump_file_path is not None:
+            filename = dump_file_path
+        else:
+            os.makedirs(dump_path, exist_ok=True)
+            filename = os.path.join(dump_path, f"{self.global_steps}.jsonl")
 
         n = len(inputs)
         base_data = {
@@ -776,7 +779,17 @@ class RayPPOTrainer:
         reward_extra_infos_dict["format_reward"] = format_reward
         reward_extra_infos_dict["progress_reward"] = progress_reward
 
-        if val_data_dir:
+        val_only_data_dir = self.config.trainer.get("val_only_data_dir", None)
+        if val_only_data_dir is not None:
+            self._dump_generations(
+                inputs=sample_inputs,
+                outputs=sample_outputs,
+                scores=sample_scores,
+                reward_extra_infos_dict=reward_extra_infos_dict,
+                dump_path=val_data_dir,
+                dump_file_path=val_only_data_dir,
+            )
+        elif val_data_dir:
             self._dump_generations(
                 inputs=sample_inputs,
                 outputs=sample_outputs,
@@ -1141,6 +1154,18 @@ class RayPPOTrainer:
             assert val_metrics, f"{val_metrics=}"
             pprint(f"Initial validation metrics: {val_metrics}")
             logger.log(data=val_metrics, step=self.global_steps)
+            if self.config.trainer.get("save_val_metric", False):
+                val_only_metric_dir = self.config.trainer.get("val_only_metric_dir", None)
+                if val_only_metric_dir is not None:
+                    with open(val_only_metric_dir, "w") as f:
+                        json.dump(val_metrics, f, indent=4)
+                else:
+                    val_data_dir = self.config.trainer.get("validation_data_dir", None)
+                    if val_data_dir is not None:
+                        filename = os.path.join(val_data_dir, f"val_metric_{self.global_steps}.json")
+                        with open(filename, "w") as f:
+                            json.dump(val_metrics, f, indent=4)
+                    
             if self.config.trainer.get("val_only", False):
                 return
 
