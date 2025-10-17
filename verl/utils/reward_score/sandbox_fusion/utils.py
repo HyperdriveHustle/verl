@@ -13,6 +13,7 @@
 # limitations under the License.
 import concurrent.futures  # <-- Import concurrent.futures
 import json
+import yaml
 import logging
 import os
 import ray
@@ -30,87 +31,7 @@ MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1
 API_TIMEOUT = 10
 
-PY_IMPORTS = """import heapq
-import itertools
-import random
-import functools
-import collections
-import string
-import math
-import datetime
-import json 
-import traceback 
-from typing import *
-from functools import *
-from collections import *
-from itertools import *
-from heapq import *
-from bisect import *
-from string import *
-from operator import *
-from math import *
-
-inf = float('inf')
-
-class ListNode:
-    def __init__(self, val=0, next=None):
-        self.val = val
-        self.next = next
-
-def list_node(values: list):
-    if not values:
-        return None
-    head = ListNode(values[0])
-    p = head
-    for val in values[1:]:
-        node = ListNode(val)
-        p.next = node
-        p = node
-    return head
-
-def is_same_list(p1, p2):
-    if p1 is None and p2 is None:
-        return True
-    if not p1 or not p2:
-        return False
-    return p1.val == p2.val and is_same_list(p1.next, p2.next)
-
-class TreeNode:
-    def __init__(self, val=0, left=None, right=None):
-        self.val = val
-        self.left = left
-        self.right = right
-
-def tree_node(values: list):
-    if not values:
-        return None
-    root = TreeNode(values[0])
-    i = 1
-    queue = deque()
-    queue.append(root)
-    while queue:
-        node = queue.popleft()
-        if i < len(values) and values[i] is not None:
-            node.left = TreeNode(values[i])
-            queue.append(node.left)
-            i += 1
-        if i < len(values) and values[i] is not None:
-            node.right = TreeNode(values[i])
-            queue.append(node.right)
-            i += 1
-    return root
-
-def is_same_tree(p, q):
-    if not p and not q:
-        return True
-    elif not p or not q:
-        return False
-    elif p.val != q.val:
-        return False
-    else:
-        return is_same_tree(p.left, q.left) and is_same_tree(p.right, q.right)
-
-"""
+PY_IMPORTS = yaml.safe_load(open("recipe/async_dapo_tool/deps/header.yaml"))['python']
 
 logger = logging.getLogger(__name__)
 
@@ -415,103 +336,7 @@ def _process_single_case(
 
     if fn_name and language == "python":
         # Wrapper assumes stdin_data is a JSON string for function arguments.
-        wrapper_code = f"""
-import traceback
-from string import *
-from re import *
-from datetime import *
-from collections import *
-from heapq import *
-from bisect import *
-from copy import *
-from math import *
-from random import *
-from statistics import *
-from itertools import *
-from functools import *
-from operator import *
-from io import *
-from sys import *
-from json import *
-from builtins import *
-from typing import *
-import string
-import re
-import datetime
-import collections
-import heapq
-import bisect
-import copy
-import math
-import random
-import statistics
-import itertools
-import functools
-import operator
-import io
-import sys
-import json
-
-# === User's Original Code START ===
-{generation}
-# === User's Original Code END ===
-
-_SANDBOX_FN_NAME = "{fn_name}"
-
-def _execute_user_function():
-    # --- Input Parsing ---
-    _raw_input_str = sys.stdin.read()
-    _args = []
-    if _raw_input_str.strip(): # If there's input
-        try:
-            _args = [json.loads(line) for line in _raw_input_str.split('\\n')]
-        except json.JSONDecodeError as _je:
-            sys.stderr.write(f"WrapperError: Invalid JSON input for '{{_SANDBOX_FN_NAME}}': {{_je}}\\nInput was: "
-                              f"{{_raw_input_str[:200]}}\\n")
-            return None, True # result, error_occurred
-
-    # --- Function Location and Execution ---
-    try:
-        _target_callable = None
-        # Try global scope first
-        if _SANDBOX_FN_NAME in globals():
-            _target_callable = globals()[_SANDBOX_FN_NAME]
-        # Else, if 'Solution' class exists, try to get its method
-        elif 'Solution' in globals():
-            _Solution_class = globals()['Solution']
-            # Attempt to instantiate and get method.
-            # Errors (e.g., Solution not a class, instantiation fails, method missing)
-            # will be caught by the broad except block below.
-            _solution_instance = _Solution_class()
-            _target_callable = getattr(_solution_instance, _SANDBOX_FN_NAME)
-
-        if not _target_callable:
-            sys.stderr.write(f"WrapperError: Function or method '{{_SANDBOX_FN_NAME}}' not found.\\n")
-            return None, True # result, error_occurred
-
-        _fn_result = _target_callable(*_args)
-        return _fn_result, False # result, no_error
-    except Exception: # Catches errors from Solution instantiation, getattr, or function call
-        sys.stderr.write(f"Error during setup or execution of '{{_SANDBOX_FN_NAME}}':\\n{{traceback.format_exc()}}\\n")
-        return None, True # result, error_occurred
-
-if __name__ == '__main__':
-    _result, _error_occurred = _execute_user_function()
-
-    if not _error_occurred:
-        # Serialize result to stdout
-        if isinstance(_result, (dict, list, tuple)) or _result is None or isinstance(_result, bool):
-            print(json.dumps(_result))
-        elif isinstance(_result, (int, float, str)):
-            print(str(_result)) # Ensure string conversion for print
-        else:
-            # For other types, default to string representation.
-            print(str(_result))
-    # Optional: To explicitly exit with an error code if the sandbox relies on it
-    # else:
-    #    sys.exit(1)
-"""
-        current_generation_code = wrapper_code
+        current_generation_code = yaml.safe_load(open("recipe/async_dapo_tool/deps/wrapper.yaml"))['python']
     stdin = None if stdin_data is None else str(stdin_data)
     if local_run:
         api_response, error_msg = call_local_sandbox_api(
