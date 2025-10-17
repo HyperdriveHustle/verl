@@ -114,6 +114,7 @@ class AgentLoopMetrics(BaseModel):
     tool_calls: float = 0.0
     timeout: int = 0
     success_at_turn: int = 0
+    pass_rate: float = 0.0
     answer_reward: float = 0.0
     format_reward: float = 0.0
     timeout_reward: float = 0.0
@@ -466,7 +467,7 @@ class AgentLoopWorker:
         #breakpoint()
         metrics = [input.metrics.model_dump() for input in inputs]
         code_rewards = np.array([input.reward for input in inputs])
-        code_scores = np.array([max(metrics[i]['answer_reward'], 0.) for i in range(len(metrics))])
+        code_scores = np.array([max(metrics[i]['pass_rate'], 0.) for i in range(len(metrics))])
         tool_call_response = [input.extra_info.get('tool_call_response', None) for input in inputs]
         extracted_code = [input.extra_info.get('extracted_code', None) for input in inputs]
         response_length_lst = [input.extra_info.get('response_length', -1) for input in inputs]

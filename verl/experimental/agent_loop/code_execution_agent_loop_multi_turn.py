@@ -173,7 +173,7 @@ Code execution timeout, please reflect your answer and answer again to slove the
 ```
 """
                         else:
-                            match_test_pass_rate = re.search(r"Test cases pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
+                            match_test_pass_rate = re.search(r"pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
                             pre_pass_rate = pass_rate
                             pass_rate = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 0.0
                             final_pass_rate = pass_rate
@@ -240,6 +240,7 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
 
         #timeout_reward = metrics["timeout"] * TIMEOUTDECAY
         progress_reward = 0.6 * final_pass_rate if answer_reward == 0 else 0
+        metrics['pass_rate'] = final_pass_rate
         metrics["answer_reward"] = answer_reward #+ progress_reward
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward
