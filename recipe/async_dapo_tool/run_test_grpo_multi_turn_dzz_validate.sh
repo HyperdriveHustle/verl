@@ -16,13 +16,13 @@ lcbv5_lyy_test=/afs/chatrl/users/lyy/data/code/livecodebench/sp_none_prompt_none
 codeforces=/afs/chatrl/users/lyy/data/code_test/DeepCoder-Preview-Dataset_wlw/codeforces
 leetcode2k_test=/afs/chatrl/users/lyy/data/code_test/leetcode2k_wlw
 
-model_path=/afs/chatrl/public/models/Qwen3-8B
+model_path=/afs/chatrl/users/wlw/models/Qwen3-8B-Digrpo-400
 # model_path=/model/Qwen2.5-3B
 #/afs/chatrl/public/models/
 #/afs/chatrl/users/wlw/models/
 # model_path=/model/Qwen25-32B-Instruct
 train_files="['$taco']"
-test_files="['$codeforces']"
+test_files="['$lcbv5_lyy_test']"
 
 # tool
 tool_config_path=$DATA_ROOT/recipe/async_dapo_tool/sandbox_fusion_tool_config.yaml
@@ -38,7 +38,7 @@ export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 #experiment_name=wlw_multi_turn_Qwen3-8B-16k_TISfalse_reward_v3_grpo_bs32_minibs32_overlongfilter_2025-09-21_15-23-32
 
 # ================= algorithm =================
-adv_estimator=d_gigpo_ungrouped
+adv_estimator=grpo
 
 
 use_kl_in_reward=False
@@ -62,7 +62,7 @@ actor_lr=1e-6
 train_batch_size=32
 ppo_mini_batch_size=32
 n_resp_per_prompt=10 ## adjust to 10 for sample test
-n_resp_per_prompt_val=1
+n_resp_per_prompt_val=8
 
 # ================= perfomance =================
 infer_tp=1 # vllm
@@ -72,8 +72,8 @@ offload=True
 actor_max_token_len_per_gpu=$(( (max_prompt_length + max_response_length) * 1 ))
 log_prob_max_token_len_per_gpu=$(( actor_max_token_len_per_gpu * 4 ))
 
-experiment_name=${project_name}_Qwen3-8B-$(( max_response_length / 1024 ))k_TIS${tis_imp_ratio_cap}_reward_01reward_${adv_estimator}xiangtongT_bs${train_batch_size}_minibs${ppo_mini_batch_size}_overlongfilter${overlong_filter}_n${n_resp_per_prompt}_${TIMESTAMP}
-#experiment_name=wlw_multi_turn_Qwen3-8B-16k_TIS-1_reward_01reward_d_gigpo_ungroupedxiangtongT_bs32_minibs32_overlongfilterFalse_n10_2025-10-18_17-40-57
+experiment_name=test_${project_name}_Qwen3-8B-$(( max_response_length / 1024 ))k_TIS${tis_imp_ratio_cap}_reward_01reward_${adv_estimator}xiangtongT_bs${train_batch_size}_minibs${ppo_mini_batch_size}_overlongfilter${overlong_filter}_n${n_resp_per_prompt}_${TIMESTAMP}
+#experiment_name=wlw_multi_turn_Qwen3-8B-16k_TIS-1_reward_01reward_d_gigpo_ungroupedxiangtongT_bs32_minibs32_overlongfilterFalse_n10_2025-10-08_09-39-31
 default_local_dir=/afs/chatrl/users/wlw/ckpt/$experiment_name
 export TENSORBOARD_DIR=/afs/chatrl/users/wlw/worklog/tensorboard_log/${project_name}/${experiment_name}
 export VERL_LOGGING_LEVEL=INFO
@@ -86,7 +86,7 @@ python3 -m verl.trainer.main_ppo \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
     data.return_raw_chat=True \
-    data.val_batch_size=null \
+    data.val_batch_size=64 \
     data.train_batch_size=$train_batch_size \
     data.max_prompt_length=$max_prompt_length \
     data.max_response_length=$max_response_length \
@@ -128,18 +128,19 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
     actor_rollout_ref.rollout.val_kwargs.top_k=20 \
-    actor_rollout_ref.rollout.val_kwargs.enable_avg_k=False \
+    actor_rollout_ref.rollout.val_kwargs.top_k=20 \
+    actor_rollout_ref.rollout.val_kwargs.enable_avg_k=True \
     actor_rollout_ref.rollout.val_kwargs.enable_pass_k=True \
-    actor_rollout_ref.rollout.val_kwargs.pass_k_values=[1] \
+    actor_rollout_ref.rollout.val_kwargs.pass_k_values=[1,8] \
     trainer.logger=['console, tensorboard'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=8 \
-    trainer.val_before_train=False \
-    trainer.val_only=False\
+    trainer.n_gpus_per_node=4 \
+    trainer.val_before_train=True \
+    trainer.val_only=True\
     trainer.log_val_generations=100 \
     trainer.nnodes=1 \
-    trainer.save_freq=58 \
+    trainer.save_freq=50 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=10 \
     trainer.total_epochs=3 $@ 2>&1 | tee -a /afs/chatrl/users/wlw/worklog/log/agent_multi_turn/$experiment_name.log

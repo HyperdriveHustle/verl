@@ -162,7 +162,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                     try:
                         instance_id = await self.code_tool.create()
                         response, score, meta_data = await self.code_tool.execute(instance_id=instance_id, parameters={"code": extracted_code_w_test, "ground_truth": ground_truth})
-                        tool_pass_fail_lists.append(meta_data.get("pass_fail_list", [0] * len(ground_truth["inputs"])))
+                        tool_pass_fail_lists.append(meta_data.get("pass_fail_list", [0] * len(ground_truth.get("inputs",[]))))
                         if meta_data["status"] == "timeout":
                             metrics["timeout"] = 1
                             error_message = f"""
@@ -177,7 +177,7 @@ Code execution timeout, please reflect your answer and answer again to slove the
                         else:
                             match_test_pass_rate = re.search(r"Test cases pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
                             pre_pass_rate = pass_rate
-                            pass_rate = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 0.0
+                            pass_rate = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 1.0
                             final_pass_rate = pass_rate
                             if score.lower() == "success" and pass_rate == 1.0:
                                 answer_reward = 1

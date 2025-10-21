@@ -34,6 +34,7 @@ import numpy as np
 import ray
 import torch
 from omegaconf import OmegaConf, open_dict
+from scipy.special import comb
 from torch.utils.data import Dataset, Sampler
 from torchdata.stateful_dataloader import StatefulDataLoader
 from tqdm import tqdm
@@ -651,6 +652,7 @@ class RayPPOTrainer:
         sample_outputs = []
         sample_scores = []
         sample_turns = []
+        all_raw_metrics = []
 
         for test_data in self.val_dataloader:
             test_batch = DataProto.from_single_dict(test_data)
@@ -724,6 +726,7 @@ class RayPPOTrainer:
                 raw_metrics = padded_raw_metrics[:-pad_size]
                 local_logger.info(f"Removed {pad_size} padded raw_metrics, now {len(raw_metrics)} remain.")
             print("validation generation end")
+            all_raw_metrics.extend(raw_metrics)
             #breakpoint()
             # Store generated outputs
             output_ids = test_output_gen_batch.batch["responses"]
@@ -766,6 +769,9 @@ class RayPPOTrainer:
         mean_format_reward = 0.0
         total_no_code_extracted = 0
 
+        
+        raw_metrics = all_raw_metrics
+        metric_dict = {}
         if raw_metrics:
             assert len(raw_metrics) == total_count, \
                 f"Metrics count ({len(raw_metrics)}) mismatches sample count ({total_count})"
@@ -780,6 +786,66 @@ class RayPPOTrainer:
             total_no_code_extracted = No_code_extracted_count.sum()
             pass_at_1 = (np.sum(success_at_turn == 1) / len(success_at_turn)).item() if len(success_at_turn) else 0.0
 
+            metric_dict = {
+                "val-core/code/pass@1": pass_at_1,
+                "val-core/code/correct_count": pass_count,
+                "val-core/code/total_count": total_count,
+                "val-core/code/mean_reward": np.mean(sample_scores) if sample_scores else 0.0,
+                "val-core/code/max_score": max(sample_scores) if sample_scores else 0.0,
+                "val-core/code/min_score": min(sample_scores) if sample_scores else 0.0,
+                "val-core/code/mean_answer_reward": mean_answer_reward,
+                "val-core/code/mean_format_reward": mean_format_reward,
+                "val-core/No_code_extracted_count": total_no_code_extracted,
+            }
+            val_kwargs = self.config.actor_rollout_ref.rollout.val_kwargs
+            n = val_kwargs.n
+            success_array = (success_at_turn > 0).astype(int)
+
+            if n > 0 and total_count > 0 and total_count % n == 0:
+                num_problems = total_count // n
+                success_matrix = success_array.reshape(num_problems, n)
+                advanced_metrics = {} # Create a temporary dict for new metrics
+
+                # --- avg@k Metric ---
+                if val_kwargs.enable_avg_k:
+                    k_avg = min(n, val_kwargs.get("avg_k", n))  # default to n if not specified
+                    avg_at_k_per_problem = success_matrix[:, :k_avg].mean(axis=1)
+                    avg_at_k_score = avg_at_k_per_problem.mean().item()
+                    advanced_metrics[f"val-core/code/avg@{k_avg}"] = avg_at_k_score
+                    
+                # --- pass@k Metric ---
+                if val_kwargs.enable_pass_k and num_problems > 0:
+                    correct_counts = success_matrix.sum(axis=1)
+                    pass_k_values = val_kwargs.pass_k_values
+
+                    for k in pass_k_values:
+                        if n < k:
+                            local_logger.warning(f"Cannot calculate pass@{k} because n({n}) < k({k}). Skipping.")
+                            continue
+
+                        def _pass_at_k_unbiased(n_total, c_correct, k_sample):
+                            if c_correct == 0:
+                                return 0.0
+                            if c_correct >= n_total:
+                                return 1.0
+                            try:
+                                # Use exact=False to avoid overflow for large n
+                                prob_fail = comb(n_total - c_correct, k_sample, exact=False) / comb(n_total, k_sample, exact=False)
+                            except (ValueError, OverflowError, ZeroDivisionError):
+                                prob_fail = 0.0
+                            return 1.0 - prob_fail
+                        
+                        pass_at_k_scores = [
+                            _pass_at_k_unbiased(n, int(c), k) for c in correct_counts
+                        ]
+                        pass_at_k_score = np.mean(pass_at_k_scores).item()
+                        advanced_metrics[f"val-core/code/pass@{k}"] = pass_at_k_score
+                
+                # Now, merge the advanced metrics into the main dictionary
+                metric_dict.update(advanced_metrics)
+
+            elif total_count > 0:
+                local_logger.warning("Total sample count is not divisible by n. Skipping avg@k and pass@k calculations.")
         # dump generations
         val_data_dir = self.config.trainer.get("validation_data_dir", None)
         if val_data_dir:
@@ -794,44 +860,9 @@ class RayPPOTrainer:
         for key_info, lst in reward_extra_infos_dict.items():
             assert len(lst) == 0 or len(lst) == len(sample_scores), f"{key_info}: {len(lst)=}, {len(sample_scores)=}"
 
-        #data_sources = np.concatenate(data_source_lst, axis=0)
 
-        # data_src2var2metric2val = process_validation_metrics(data_sources, sample_inputs, reward_extra_infos_dict)
-        # metric_dict = {}
-        # for data_source, var2metric2val in data_src2var2metric2val.items():
-        #     core_var = "acc" if "acc" in var2metric2val else "reward"
-        #     for var_name, metric2val in var2metric2val.items():
-        #         n_max = max([int(name.split("@")[-1].split("/")[0]) for name in metric2val.keys()])
-        #         for metric_name, metric_val in metric2val.items():
-        #             if (
-        #                 (var_name == core_var)
-        #                 and any(metric_name.startswith(pfx) for pfx in ["mean", "maj", "best"])
-        #                 and (f"@{n_max}" in metric_name)
-        #             ):
-        #                 metric_sec = "val-core"
-        #             else:
-        #                 metric_sec = "val-aux"
-        #             pfx = f"{metric_sec}/{data_source}/{var_name}/{metric_name}"
-        #             metric_dict[pfx] = metric_val
-
-        # if len(sample_turns) > 0:
-        #     sample_turns = np.concatenate(sample_turns)
-        #     metric_dict["val-aux/num_turns/min"] = sample_turns.min()
-        #     metric_dict["val-aux/num_turns/max"] = sample_turns.max()
-        #     metric_dict["val-aux/num_turns/mean"] = sample_turns.mean()
-        metric_dict = {
-            "val-core/code/pass@1": pass_at_1,
-            "val-core/code/correct_count": pass_count,
-            "val-core/code/total_count": total_count,
-            "val-core/code/mean_reward": np.mean(sample_scores) if sample_scores else 0.0,
-            "val-core/code/max_score": max(sample_scores) if sample_scores else 0.0,
-            "val-core/code/min_score": min(sample_scores) if sample_scores else 0.0,
-            "val-core/code/mean_answer_reward": mean_answer_reward,
-            "val-core/code/mean_format_reward": mean_format_reward,
-            "val-core/No_code_extracted_count": total_no_code_extracted,
-
-        }
-
+        val_kwargs = self.config.actor_rollout_ref.rollout.val_kwargs
+        n = val_kwargs.n
         local_logger.info(metric_dict)
         return metric_dict
 

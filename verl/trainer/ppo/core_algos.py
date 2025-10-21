@@ -485,7 +485,7 @@ def compute_d_gigpo_ungrouped_advantage(
             for (batch_idx, t), raw_advantage in group_step_scores_with_keys:
                 # 使用全局的 mean 和 std 进行归一化
                 if global_std_adv > epsilon:
-                    normalized_advantage = (raw_advantage - global_mean_adv)
+                    normalized_advantage = (raw_advantage - global_mean_adv) #/ global_std_adv
                 else:
                     normalized_advantage = torch.tensor(0.0, device=token_level_rewards.device)
 

@@ -144,7 +144,7 @@ class CustomSandboxFusionTool(SandboxFusionTool):
 
 answer_format = """\nThe answer format must be: \\boxed{'The final answer goes here.'}"""
 
-supported_datasets = ["leetcode2k", "lcbv5", "primeintellect", "taco", "codeforce"]
+supported_datasets = ["leetcode", "lcbv5", "primeintellect", "taco", "codeforce", "codeforces", "livecodebench"]
 class CustomRLHFDataset(RLHFDataset):
     """Custom dataset class to process Maxwell-Jia/AIME_2024, yentinglin/aime_2025 datasets."""
     def _read_files_and_tokenize(self):
@@ -152,10 +152,10 @@ class CustomRLHFDataset(RLHFDataset):
         for parquet_file in self.data_files:
             # read parquet files and cache
             data_source = "/".join(parquet_file.split("/")[-3:])
-            if "train" in data_source:
-                dataframe = datasets.load_dataset(parquet_file)["train"]
-            elif "test" in data_source:
+            try:
                 dataframe = datasets.load_dataset(parquet_file)["test"]
+            except:
+                dataframe = datasets.load_dataset(parquet_file)["train"]
             print(dataframe)
             if any(keyword in data_source for keyword in supported_datasets):
                 dataframe = dataframe.map(self.map_fn2, num_proc=16)
