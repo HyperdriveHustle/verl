@@ -50,7 +50,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             logger.warning("CodeExecutionAgentLoop initialized, but no reward tool was found in the config.")
         else:
             cls.code_tool = next(iter(cls.tools.values()))
-            print(f"Initialized reward tool: {cls.code_tool.name}")
+            #print(f"Initialized reward tool: {cls.code_tool.name}")
 
         cls.response_length = config.actor_rollout_ref.rollout.response_length
         cls.tool_parser = ToolParser.get_tool_parser(config.actor_rollout_ref.rollout.multi_turn.format, cls.tokenizer)
@@ -101,6 +101,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
 
         assert isinstance(ground_truth, dict), f"ground_truth should be a dict, but got {type(ground_truth)}"
         response_mask, response_logprobs = [], []
+        tool_pass_fail_lists= []
         turns = 0
         assistant_turns = 0
 
@@ -131,6 +132,12 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             if output.log_probs:
                 response_logprobs += output.log_probs
             assistant_turns += 1
+
+            if len(response_mask) >= self.response_length:
+                answer_reward = 0.0
+                tool_pass_fail_lists.append([0]*len(ground_truth.get("inputs",[])))
+                break
+
             solution_text = self.tokenizer.decode(response_ids, skip_special_tokens=False)
 
             format_ok_turns += 1 if self.validate_response_structure(solution_text) else 0
@@ -160,7 +167,7 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
                         response, score, meta_data = await self.code_tool.execute(instance_id=instance_id, parameters={"code": extracted_code_w_test, "ground_truth": ground_truth})
                         meta_data['success'] = True
                         extra_info['tool_call_response'] = json.dumps(meta_data, ensure_ascii=False)
-                        #breakpoint()
+                        tool_pass_fail_lists.append(meta_data.get("pass_fail_list", [0] * len(ground_truth.get("inputs",[]))))
                         if meta_data["status"] == "timeout":
                             metrics["timeout"] = 1
                             error_message = f"""
@@ -175,10 +182,10 @@ Code execution timeout, please reflect your answer and answer again to slove the
                         else:
                             match_test_pass_rate = re.search(r"pass rate: \*\*(.*?)\*\*", meta_data["stdout"])
                             pre_pass_rate = pass_rate
-                            pass_rate = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 0.0
+                            pass_rate = float(match_test_pass_rate.group(1)) if match_test_pass_rate else 1.0
                             final_pass_rate = pass_rate
                             if score.lower() == "success" and pass_rate == 1.0:
-                                answer_reward = SUCCESS_FLOOR  + DECAYING_BONUS_SCALE  * (REWARD_DECAY_FACTOR ** (turns - 1)) #wlw 9.12
+                                answer_reward = 1
                                 metrics["success_at_turn"] = turns
                                 break
                             else:
@@ -195,11 +202,11 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
 
 """
                     except Exception as e:
-                        #breakpoint()
                         logger.error(f"Error during reward calculation: {e}")
                         extra_info['tool_call_response'] = json.dumps({"success": False, "error": repr(e)})
                         metrics["tool_call_error_count"] = 1
                         answer_reward = 0
+                        tool_pass_fail_lists.append([0]*len(ground_truth.get("inputs",[])))
                         break
                     finally:
                         if instance_id:
@@ -230,6 +237,8 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
                 metrics["No_code_extracted_count"] = 1
                 extra_info['tool_call_response'] = None
                 answer_reward = 0
+                num_test_cases = len(ground_truth.get("inputs", []))
+                tool_pass_fail_lists.append([0] * num_test_cases)
                 final_pass_rate = 0
                 break
 
@@ -238,21 +247,18 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
         prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
         format_reward = FORMAT_REARD * format_ok_turns / turns
 
-        #timeout_reward = metrics["timeout"] * TIMEOUTDECAY
-        progress_reward = 0.6 * final_pass_rate if answer_reward == 0 else 0
         metrics['pass_rate'] = final_pass_rate
-        metrics["answer_reward"] = answer_reward #+ progress_reward
+        metrics["answer_reward"] = answer_reward 
         metrics["format_reward"] = format_reward
         metrics["timeout_reward"] = timeout_reward
         metrics["extra_fields"]= {"progress_reward": progress_reward}
-        reward = answer_reward + format_reward + timeout_reward + progress_reward
-        if "inputs" in ground_truth and "outputs" in ground_truth:
-            breakpoint()
-        
+        reward = answer_reward + format_reward + timeout_reward
+
         if self.overlong_filter and len(response_ids) > self.response_length:
            reward = 0
            response_mask = [0] * len(response_mask)
-
+        extra_fields = extra_info
+        extra_fields["tool_pass_fail_lists"] = tool_pass_fail_lists
         output = AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids[: self.response_length],
@@ -261,6 +267,6 @@ Code test failed.\n\nPlease reflect your answer and asnwer again to slove the pr
             metrics=metrics,
             reward=reward,
             response_logprobs=response_logprobs[: self.response_length] if response_logprobs else None,
-            extra_info=extra_info
+            extra_fields=extra_fields
         )
         return output

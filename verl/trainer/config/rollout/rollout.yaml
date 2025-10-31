@@ -116,6 +116,13 @@ val_kwargs:
   # Whether to sample during training rollout. False uses greedy sampling.
   do_sample: False
 
+  # Whether to enable avg@k metric during validation
+  enable_avg_k: False
+
+  # Whether to enable pass@k metric during validation
+  enable_pass_k: False
+  pass_k_values: []
+
 # Multi-turn interaction config for tools or chat.
 multi_turn:
 

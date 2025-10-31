@@ -69,7 +69,7 @@ SUPPORTED_LANGUAGES = [
 ]
 def _set_memory_limit(mb_limit: int):
     if mb_limit > 0:
-        limit_in_bytes = mb_limit * 5 * 1024 * 1024
+        limit_in_bytes = mb_limit * 4 * 1024 * 1024
         resource.setrlimit(resource.RLIMIT_AS, (limit_in_bytes, limit_in_bytes))
 
 def call_local_sandbox_api(
@@ -165,8 +165,6 @@ def call_local_sandbox_api(
                     result["status"] = "Failed"
                     run_result["status"] = "MemoryLimitExceeded" 
                     run_result["stderr"] = f"Process was killed by signal {signal_num} ({signal_name}). This is often caused by exceeding a memory limit."
-                    print(run_result["stderr"])
-                    logger.error(run_result["stderr"])
                 else:
                     result["status"] = "Failed"
                     run_result["status"] = "Finished"
@@ -458,11 +456,15 @@ def _process_single_case(
                     metadata["run_status"] == "TimeLimitExceeded"
                     or metadata["run_status"] == "Error"
                     or (metadata["run_status"] == "Finished" and run_result.get("return_code") != 0)
+                    or metadata["run_status"] == "MemoryLimitExceeded"
                 )
                 if is_runtime_error:
                     if metadata["run_status"] == "TimeLimitExceeded":
                         metadata["status"] = "timeout"  # Runtime timeout
                         result_status = -3
+                    elif metadata["run_status"] == "MemoryLimitExceeded":
+                        metadata["status"] = "memory_limit_exceeded"  # Memory limit exceeded
+                        result_status = -2
                     else:  # Includes Error and Finished with non-zero return_code
                         metadata["status"] = "runtime_error"
                         result_status = -2

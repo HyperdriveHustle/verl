@@ -19,7 +19,7 @@ implement PPO-like algorithms.
 """
 
 __all__ = ["register_adv_est", "get_adv_estimator_fn", "AdvantageEstimator"]
-
+import logging
 from collections import defaultdict
 from enum import Enum
 from typing import Any, Callable, Optional
@@ -43,7 +43,7 @@ PolicyLossFn = Callable[
     ],
     tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
 ]
-
+logger = logging.getLogger(__name__)
 POLICY_LOSS_REGISTRY: dict[str, PolicyLossFn] = {}
 
 
@@ -100,6 +100,7 @@ class AdvantageEstimator(str, Enum):
     OPO = "opo"
     GRPO_PASSK = "grpo_passk"
     GPG = "gpg"
+    D_GIGPO_UNGROUPED = "d_gigpo_ungrouped"
 
 
 ADV_ESTIMATOR_REGISTRY: dict[str, Any] = {}
@@ -321,6 +322,216 @@ def compute_grpo_outcome_advantage(
 
     return scores, scores
 
+
+@register_adv_est(AdvantageEstimator.D_GIGPO_UNGROUPED)
+def compute_d_gigpo_ungrouped_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    tool_pass_fail_lists: list[list[list[int]]],
+    epsilon: float = 1e-8,
+    config: Optional[AlgoConfig] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Computes a step-centric, grouping-free D-GiGPO advantage.
+
+    - Macro Advantage (A^E): Based on the final trajectory outcome (0/1 success), using standard GRPO.
+    - Micro Advantage (A^S): Based on a dynamically weighted decomposed reward,
+      normalized across all steps in the batch.
+    """
+    bsz = token_level_rewards.shape[0]
+    gamma = config.d_gigpo.gamma if config and hasattr(config, "d_gigpo") else 0
+    omega = config.d_gigpo.omega if config and hasattr(config, "d_gigpo") else 1.0
+    efficiency_decay_rate = config.d_gigpo.efficiency_decay_rate if config and hasattr(config, "d_gigpo") else 0.95
+    with torch.no_grad():
+        final_scores = token_level_rewards.sum(dim=-1)
+        num_steps_per_trajectory = [len(p) for p in tool_pass_fail_lists]
+
+        num_steps_tensor = torch.tensor(num_steps_per_trajectory, device=final_scores.device, dtype=torch.float32)
+        decay_tensor = efficiency_decay_rate ** num_steps_tensor
+        decay_tensor = torch.clamp(decay_tensor, min=0.7)
+        shaped_scores = final_scores * decay_tensor
+        final_scores = shaped_scores # decayed final scores, testing only
+
+        id2score_macro = defaultdict(list)
+        id2mean_macro = {}
+        id2std_macro = {}
+        
+        for i in range(bsz):
+            id2score_macro[index[i]].append(final_scores[i])
+
+        for idx in id2score_macro:
+            group_scores = torch.tensor(id2score_macro[idx], device=token_level_rewards.device)
+            if len(group_scores) > 1:
+                id2mean_macro[idx] = torch.mean(group_scores)
+                id2std_macro[idx] = torch.std(group_scores)
+            else:
+                id2mean_macro[idx] = torch.tensor(0.0, device=token_level_rewards.device)
+                id2std_macro[idx] = torch.tensor(1.0, device=token_level_rewards.device)
+        
+        advantages_macro_trajectory = torch.zeros_like(final_scores)
+        for i in range(bsz):
+            mean = id2mean_macro[index[i]]
+            std = id2std_macro[index[i]]
+            advantages_macro_trajectory[i] = (final_scores[i] - mean) 
+
+        advantages_macro = advantages_macro_trajectory.unsqueeze(-1) * response_mask
+        
+        id2pass_lists = defaultdict(list)
+        id2batch_indices = defaultdict(list)
+        breakpoint()
+        for i in range(bsz):
+            idx = index[i]
+            id2pass_lists[idx].append(tool_pass_fail_lists[i])
+            id2batch_indices[idx].append(i)
+        
+        step_advantages_micro_map = {} # key: (batch_idx, turn_idx), value: advantage_score
+
+        for idx in id2pass_lists:
+            group_pass_fail_lists = id2pass_lists[idx] 
+            group_batch_indices = id2batch_indices[idx] 
+            N_group = len(group_pass_fail_lists)
+
+            test_case_counts_in_group = defaultdict(int)
+            total_steps_in_group = 0
+            all_test_cases_in_group = set()
+
+            for trajectory_pass_fail_lists in group_pass_fail_lists:
+                for pass_fail_list in trajectory_pass_fail_lists:
+                    total_steps_in_group += 1
+                    for test_id, status in enumerate(pass_fail_list):
+                        if status == 1:
+                            test_case_counts_in_group[test_id] += 1
+                        all_test_cases_in_group.add(test_id)
+
+            
+            test_case_list = sorted(list(all_test_cases_in_group))
+            id_to_idx_map = {test_id: i for i, test_id in enumerate(test_case_list)}
+            pass_rates = torch.tensor(
+                [test_case_counts_in_group.get(j, 0) / total_steps_in_group for j in test_case_list],
+                device=token_level_rewards.device,
+                dtype=torch.float32
+            )
+
+            alpha = config.d_gigpo.alpha if config and hasattr(config, "d_gigpo") else 2.0
+            weights_j = torch.exp(-alpha * pass_rates)
+
+
+            pairwise_dist_sq = (pass_rates.unsqueeze(1) - pass_rates.unsqueeze(0)) ** 2
+
+            sigma = config.d_gigpo.density_sigma if config and hasattr(config, "d_gigpo") else None
+            if sigma is None:
+                pass_rates_std = torch.std(pass_rates)
+                auto_sigma_factor = config.d_gigpo.auto_sigma_factor if config and hasattr(config, "d_gigpo") else 0.5
+                sigma = auto_sigma_factor * pass_rates_std + epsilon
+
+
+            kernel_matrix = torch.exp(-pairwise_dist_sq / (2 * sigma**2))
+            rho_j = torch.sum(kernel_matrix, dim=1)
+            
+
+            weights_prime_j = weights_j / (rho_j + epsilon)
+            
+
+            final_weights_map = {test_id: weights_prime_j[i] for i, test_id in enumerate(test_case_list)}
+
+
+            group_step_scores_with_keys = []
+            step_info_list = [] 
+            for i in range(N_group):
+                trajectory_pass_fail_lists = group_pass_fail_lists[i]
+                num_actual_turns = len(trajectory_pass_fail_lists)
+                batch_idx = group_batch_indices[i]
+                
+                step_rewards_d = []
+                for t in range(num_actual_turns):
+                    current_pass_list = trajectory_pass_fail_lists[t]
+                    
+                    reward_d_t = 0.
+                    for test_id, status in enumerate(current_pass_list):
+                        if status == 1:
+                            reward_d_t += final_weights_map.get(test_id, 0)
+
+                    step_rewards_d.append(reward_d_t)
+
+                for t in range(num_actual_turns):
+                    future_return = 0.
+                    for k in range(t, num_actual_turns):
+                        future_return += (gamma ** (k - t)) * step_rewards_d[k]
+                    # 存储元组 (原始 batch 索引, 时间步, 该步骤的回报)
+                    group_step_scores_with_keys.append(((batch_idx, t), future_return))
+            
+
+            all_step_scores = torch.tensor(
+                [score for _, score in group_step_scores_with_keys], 
+                device=token_level_rewards.device
+            )
+            global_mean_adv = torch.mean(all_step_scores)
+            global_std_adv = torch.std(all_step_scores)
+
+
+            for (batch_idx, t), raw_advantage in group_step_scores_with_keys:
+
+                if global_std_adv > epsilon:
+                    normalized_advantage = (raw_advantage - global_mean_adv) #/ global_std_adv
+                else:
+                    normalized_advantage = torch.tensor(0.0, device=token_level_rewards.device)
+
+                step_advantages_micro_map[(batch_idx, t)] = normalized_advantage
+
+        advantages_micro = torch.zeros_like(token_level_rewards)
+        advantages_micro_mask= torch.zeros_like(token_level_rewards)
+        for i in range(bsz):
+            num_actual_turns = len(tool_pass_fail_lists[i])
+            if num_actual_turns == 0: continue
+
+            is_llm_token = (response_mask[i] > 0).bool()
+            
+            start_indices = [0] if is_llm_token[0] else []
+            turn_starts = (is_llm_token[1:] & (~is_llm_token[:-1])).nonzero(as_tuple=True)[0] + 1
+            start_indices.extend(turn_starts.tolist())
+            
+
+            for turn_count, start_idx in enumerate(start_indices):
+                if turn_count >= num_actual_turns:
+                    logger.error(f"start_indices: {start_indices}")
+                    raise ValueError(f"More LLM turns than expected in batch {i}: found {turn_count+1}, expected {num_actual_turns}")
+
+
+                end_idx = start_idx
+                while end_idx < len(is_llm_token) and is_llm_token[end_idx]:
+                    end_idx += 1
+                
+                try:
+                    step_advantage = step_advantages_micro_map[(i, turn_count)]
+                except KeyError:
+                    raise KeyError(f"Missing advantage for batch {i}, turn {turn_count}")
+                
+                advantages_micro[i, start_idx:end_idx] = step_advantage
+                advantages_micro_mask[i, start_idx:end_idx] = 1.0
+
+        active_mask = response_mask > 0
+        if not torch.equal(advantages_micro_mask, response_mask):
+            logger.error(f"Macro active shape: {advantages_micro_mask.shape}")
+            logger.error(f"Micro active shape: {response_mask.shape}")
+            logger.error(f"Macro active sum: {advantages_micro_mask.sum()}")
+            logger.error(f"Micro active sum: {response_mask.sum()}")
+            raise ValueError("Advantage masks for macro and micro are not identical!")
+        
+        advantages_total = advantages_macro + omega * advantages_micro
+        returns = advantages_total
+        active_advantages = advantages_total[active_mask]
+        # batch_mean = active_advantages.mean()
+        # batch_std = active_advantages.std()
+        
+
+        # normalized_advantages = (advantages_total - batch_mean) / (batch_std + epsilon)
+        # final_advantages = normalized_advantages * response_mask
+        # returns = final_advantages
+        # logger.debug(f"Using D-GiGPO ungrouped with omega={omega}, gamma={gamma}, efficiency_decay_rate={efficiency_decay_rate}, alpha={alpha}, density_sigma={sigma}, auto_sigma_factor={auto_sigma_factor}")
+        
+        return advantages_total, returns
 
 @register_adv_est(AdvantageEstimator.GRPO_PASSK)  # or simply: @register_adv_est("grpo_passk")
 def compute_grpo_passk_outcome_advantage(

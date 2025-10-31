@@ -34,6 +34,7 @@ import numpy as np
 import ray
 import torch
 from omegaconf import OmegaConf, open_dict
+from scipy.special import comb
 from torch.utils.data import Dataset, Sampler
 from torchdata.stateful_dataloader import StatefulDataLoader
 from tqdm import tqdm
@@ -273,6 +274,19 @@ def compute_advantage(
             index=data.non_tensor_batch["uid"],
             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
         )
+        data.batch["advantages"] = advantages
+        data.batch["returns"] = returns
+    elif adv_estimator == AdvantageEstimator.D_GIGPO_UNGROUPED:
+        adv_kwargs = {
+            "token_level_rewards": data.batch["token_level_rewards"],
+            "response_mask": data.batch["response_mask"],
+            "index": data.non_tensor_batch["uid"],
+            "tool_pass_fail_lists": data.non_tensor_batch["tool_pass_fail_lists"].tolist(),
+            "config": config,
+        }
+        adv_estimator_fn = core_algos.get_adv_estimator_fn(adv_estimator)
+        breakpoint()
+        advantages, returns = adv_estimator_fn(**adv_kwargs)
         data.batch["advantages"] = advantages
         data.batch["returns"] = returns
     else:
@@ -642,6 +656,7 @@ class RayPPOTrainer:
         sample_lens = []
         sample_scores = []
         sample_turns = []
+        all_raw_metrics = []
 
         for test_data in self.val_dataloader:
             test_batch = DataProto.from_single_dict(test_data)
@@ -722,6 +737,7 @@ class RayPPOTrainer:
                 sample_lens.extend(test_output_gen_batch.meta_info["response_length"][:-pad_size])
                 reward_extra_infos_dict['response_length'].extend(test_output_gen_batch.meta_info["response_length"][:-pad_size])
             print("validation generation end")
+            all_raw_metrics.extend(raw_metrics)
             #breakpoint()
             # Store generated outputs
             output_ids = test_output_gen_batch.batch["responses"]
@@ -759,6 +775,16 @@ class RayPPOTrainer:
 
         self._maybe_log_val_generations(inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores)
         
+        pass_count = 0
+        total_count = len(sample_scores)  # Use the actual number of samples as the total count
+        pass_rate = 0.0
+        mean_answer_reward = 0.0
+        mean_format_reward = 0.0
+        total_no_code_extracted = 0
+
+        
+        raw_metrics = all_raw_metrics
+        metric_dict = {}
         if raw_metrics:
             total_count = len(sample_scores)  # Use the actual number of samples as the total count
             assert len(raw_metrics) == total_count, \
@@ -766,18 +792,82 @@ class RayPPOTrainer:
             success_at_turn = np.array([m["success_at_turn"] for m in raw_metrics])
             answer_reward = np.array([m["answer_reward"] for m in raw_metrics])
             format_reward = np.array([m["format_reward"] for m in raw_metrics])
-            progress_reward = np.array([m['extra_fields'].get("progress_reward", 0.) for m in raw_metrics])
-            no_code_extracted_count = np.array([m["No_code_extracted_count"] for m in raw_metrics])
+            No_code_extracted_count = np.array([m["No_code_extracted_count"] for m in raw_metrics])
+            
+            pass_count = np.sum(success_at_turn > 0).item()
+            mean_answer_reward = answer_reward.mean() if len(answer_reward) > 0 else 0.0
+            mean_format_reward = format_reward.mean() if len(format_reward) > 0 else 0.0
+            total_no_code_extracted = No_code_extracted_count.sum()
+            pass_at_1 = (np.sum(success_at_turn == 1) / len(success_at_turn)).item() if len(success_at_turn) else 0.0
             tool_call_error_count = np.array([m["tool_call_error_count"] for m in raw_metrics])
             tool_timeout = np.array([m["timeout"] for m in raw_metrics])
 
+            metric_dict = {
+                "val-core/code/pass@1": pass_at_1,
+                "val-core/code/correct_count": pass_count,
+                "val-core/code/total_count": total_count,
+                "val-core/code/mean_reward": np.mean(sample_scores) if sample_scores else 0.0,
+                "val-core/code/max_score": max(sample_scores) if sample_scores else 0.0,
+                "val-core/code/min_score": min(sample_scores) if sample_scores else 0.0,
+                "val-core/code/mean_answer_reward": mean_answer_reward,
+                "val-core/code/mean_format_reward": mean_format_reward,
+                "val-core/No_code_extracted_count": total_no_code_extracted,
+            }
+            val_kwargs = self.config.actor_rollout_ref.rollout.val_kwargs
+            n = val_kwargs.n
+            success_array = (success_at_turn > 0).astype(int)
+
+            if n > 0 and total_count > 0 and total_count % n == 0:
+                num_problems = total_count // n
+                success_matrix = success_array.reshape(num_problems, n)
+                advanced_metrics = {} # Create a temporary dict for new metrics
+
+                # --- avg@k Metric ---
+                if val_kwargs.enable_avg_k:
+                    k_avg = min(n, val_kwargs.get("avg_k", n))  # default to n if not specified
+                    avg_at_k_per_problem = success_matrix[:, :k_avg].mean(axis=1)
+                    avg_at_k_score = avg_at_k_per_problem.mean().item()
+                    advanced_metrics[f"val-core/code/avg@{k_avg}"] = avg_at_k_score
+                    
+                # --- pass@k Metric ---
+                if val_kwargs.enable_pass_k and num_problems > 0:
+                    correct_counts = success_matrix.sum(axis=1)
+                    pass_k_values = val_kwargs.pass_k_values
+
+                    for k in pass_k_values:
+                        if n < k:
+                            local_logger.warning(f"Cannot calculate pass@{k} because n({n}) < k({k}). Skipping.")
+                            continue
+
+                        def _pass_at_k_unbiased(n_total, c_correct, k_sample):
+                            if c_correct == 0:
+                                return 0.0
+                            if c_correct >= n_total:
+                                return 1.0
+                            try:
+                                # Use exact=False to avoid overflow for large n
+                                prob_fail = comb(n_total - c_correct, k_sample, exact=False) / comb(n_total, k_sample, exact=False)
+                            except (ValueError, OverflowError, ZeroDivisionError):
+                                prob_fail = 0.0
+                            return 1.0 - prob_fail
+                        
+                        pass_at_k_scores = [
+                            _pass_at_k_unbiased(n, int(c), k) for c in correct_counts
+                        ]
+                        pass_at_k_score = np.mean(pass_at_k_scores).item()
+                        advanced_metrics[f"val-core/code/pass@{k}"] = pass_at_k_score
+                
+                # Now, merge the advanced metrics into the main dictionary
+                metric_dict.update(advanced_metrics)
+
+            elif total_count > 0:
+                local_logger.warning("Total sample count is not divisible by n. Skipping avg@k and pass@k calculations.")
         # dump generations
         val_data_dir = self.config.trainer.get("validation_data_dir", None)
         reward_extra_infos_dict["question_id"] = test_batch.non_tensor_batch.get("question_id", ["unknown"] * result.shape[0])
         reward_extra_infos_dict["data_source"] = test_batch.non_tensor_batch.get("data_source", ["unknown"] * result.shape[0])
         reward_extra_infos_dict["answer_reward"] = answer_reward
         reward_extra_infos_dict["format_reward"] = format_reward
-        reward_extra_infos_dict["progress_reward"] = progress_reward
 
         val_only_data_dir = self.config.trainer.get("val_only_data_dir", None)
         if val_only_data_dir is not None:
@@ -801,66 +891,40 @@ class RayPPOTrainer:
         for key_info, lst in reward_extra_infos_dict.items():
             assert len(lst) == 0 or len(lst) == len(sample_scores), f"{key_info}: {len(lst)=}, {len(sample_scores)=}"
 
-        #data_sources = np.concatenate(data_source_lst, axis=0)
-
-        # data_src2var2metric2val = process_validation_metrics(data_sources, sample_inputs, reward_extra_infos_dict)
+        # data_source_lst = np.array(data_source_lst)
+        # sample_scores = np.array(sample_scores)
+        # uniq_source, inv = np.unique(data_source_lst, return_inverse=True)
+        # sample_lens = np.array(sample_lens)
         # metric_dict = {}
-        # for data_source, var2metric2val in data_src2var2metric2val.items():
-        #     core_var = "acc" if "acc" in var2metric2val else "reward"
-        #     for var_name, metric2val in var2metric2val.items():
-        #         n_max = max([int(name.split("@")[-1].split("/")[0]) for name in metric2val.keys()])
-        #         for metric_name, metric_val in metric2val.items():
-        #             if (
-        #                 (var_name == core_var)
-        #                 and any(metric_name.startswith(pfx) for pfx in ["mean", "maj", "best"])
-        #                 and (f"@{n_max}" in metric_name)
-        #             ):
-        #                 metric_sec = "val-core"
-        #             else:
-        #                 metric_sec = "val-aux"
-        #             pfx = f"{metric_sec}/{data_source}/{var_name}/{metric_name}"
-        #             metric_dict[pfx] = metric_val
+        # result = {}
+        # for idx, _source in enumerate(uniq_source):
+        #     vals = sample_scores[inv == idx]
+        #     metric_dict[f"val-core/{_source}/pass@1"] = (np.sum(vals == 1) / len(vals)).item() if len(vals) else 0.0
+        #     metric_dict[f"val-core/{_source}/strict_correct_count"] = np.sum(vals == 1).item()
+        #     metric_dict[f"val-core/{_source}/pass_count"] = np.sum(vals > 0).item()
+        #     metric_dict[f"val-core/{_source}/total_count"] = len(vals)
+        #     metric_dict[f"val-core/{_source}/mean_score"] = vals.mean().item() if len(vals) else 0.0
+        #     metric_dict[f"val-core/{_source}/max_score"] = vals.max().item() if len(vals) else 0.0
+        #     metric_dict[f"val-core/{_source}/min_score"] = vals.min().item() if len(vals) else 0.0
+        #     metric_dict[f"val-core/{_source}/min_score"] = vals.min().item() if len(vals) else 0.0
 
-        # if len(sample_turns) > 0:
-        #     sample_turns = np.concatenate(sample_turns)
-        #     metric_dict["val-aux/num_turns/min"] = sample_turns.min()
-        #     metric_dict["val-aux/num_turns/max"] = sample_turns.max()
-        #     metric_dict["val-aux/num_turns/mean"] = sample_turns.mean()
-
-        data_source_lst = np.array(data_source_lst)
-        sample_scores = np.array(sample_scores)
-        uniq_source, inv = np.unique(data_source_lst, return_inverse=True)
-        sample_lens = np.array(sample_lens)
-        metric_dict = {}
-        result = {}
-        for idx, _source in enumerate(uniq_source):
-            vals = sample_scores[inv == idx]
-            metric_dict[f"val-core/{_source}/pass@1"] = (np.sum(vals == 1) / len(vals)).item() if len(vals) else 0.0
-            metric_dict[f"val-core/{_source}/strict_correct_count"] = np.sum(vals == 1).item()
-            metric_dict[f"val-core/{_source}/pass_count"] = np.sum(vals > 0).item()
-            metric_dict[f"val-core/{_source}/total_count"] = len(vals)
-            metric_dict[f"val-core/{_source}/mean_score"] = vals.mean().item() if len(vals) else 0.0
-            metric_dict[f"val-core/{_source}/max_score"] = vals.max().item() if len(vals) else 0.0
-            metric_dict[f"val-core/{_source}/min_score"] = vals.min().item() if len(vals) else 0.0
-            metric_dict[f"val-core/{_source}/min_score"] = vals.min().item() if len(vals) else 0.0
-
-            len_vals = sample_lens[inv == idx]
-            metric_dict[f"val-core/{_source}/mean_response_length"] = len_vals.mean().item() if len(len_vals) else 0.0
-            metric_dict[f"val-core/{_source}/max_response_length"] = len_vals.max().item() if len(len_vals) else 0.0
-            metric_dict[f"val-core/{_source}/min_response_length"] = len_vals.min().item() if len(len_vals) else 0.0
-            if raw_metrics:
-                _answer_reward = answer_reward[inv == idx]
-                _format_reward = format_reward[inv == idx]
-                _no_code_extracted_count = no_code_extracted_count[inv == idx]
-                _tool_call_error_count = tool_call_error_count[inv == idx]
-                _success_at_turn = success_at_turn[inv == idx]
-                _tool_timeout = tool_timeout[inv == idx]
-                metric_dict[f"val-core/{_source}/mean_answer_reward"] = _answer_reward.mean().item() if len(_answer_reward) else 0.0
-                metric_dict[f"val-core/{_source}/mean_format_reward"] = _format_reward.mean().item() if len(_format_reward) else 0.0
-                metric_dict[f"val-core/{_source}/no_code_extracted_ratio"] = _no_code_extracted_count.sum().item() / len(vals) if len(vals) else 0.0
-                metric_dict[f"val-core/{_source}/tool_call_error_ratio"] = _tool_call_error_count.sum().item() / len(vals) if len(vals) else 0.0
-                metric_dict[f"val-core/{_source}/tool_timeout_ratio"] = _tool_timeout.sum().item() / len(vals) if len(vals) else 0.0
-                metric_dict[f"val-core/{_source}/mean_success_at_turn"] = _success_at_turn.mean().item() if len(_success_at_turn) else 0.0
+        #     len_vals = sample_lens[inv == idx]
+        #     metric_dict[f"val-core/{_source}/mean_response_length"] = len_vals.mean().item() if len(len_vals) else 0.0
+        #     metric_dict[f"val-core/{_source}/max_response_length"] = len_vals.max().item() if len(len_vals) else 0.0
+        #     metric_dict[f"val-core/{_source}/min_response_length"] = len_vals.min().item() if len(len_vals) else 0.0
+        #     if raw_metrics:
+        #         _answer_reward = answer_reward[inv == idx]
+        #         _format_reward = format_reward[inv == idx]
+        #         #_no_code_extracted_count = no_code_extracted_count[inv == idx]
+        #         _tool_call_error_count = tool_call_error_count[inv == idx]
+        #         _success_at_turn = success_at_turn[inv == idx]
+        #         _tool_timeout = tool_timeout[inv == idx]
+        #         metric_dict[f"val-core/{_source}/mean_answer_reward"] = _answer_reward.mean().item() if len(_answer_reward) else 0.0
+        #         metric_dict[f"val-core/{_source}/mean_format_reward"] = _format_reward.mean().item() if len(_format_reward) else 0.0
+        #         #metric_dict[f"val-core/{_source}/no_code_extracted_ratio"] = _no_code_extracted_count.sum().item() / len(vals) if len(vals) else 0.0
+        #         metric_dict[f"val-core/{_source}/tool_call_error_ratio"] = _tool_call_error_count.sum().item() / len(vals) if len(vals) else 0.0
+        #         metric_dict[f"val-core/{_source}/tool_timeout_ratio"] = _tool_timeout.sum().item() / len(vals) if len(vals) else 0.0
+        #         metric_dict[f"val-core/{_source}/mean_success_at_turn"] = _success_at_turn.mean().item() if len(_success_at_turn) else 0.0
 
         local_logger.info(metric_dict)
         return metric_dict
@@ -1235,7 +1299,6 @@ class RayPPOTrainer:
 
                         timing_raw.update(gen_batch_output.meta_info["timing"])
                         gen_batch_output.meta_info.pop("timing", None)
-
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         if self.reward_fn is None:
                             raise ValueError("A reward_fn is required for REMAX advantage estimation.")
@@ -1261,9 +1324,12 @@ class RayPPOTrainer:
                         [str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object
                     )
                     # repeat to align with repeated responses in rollout
+                    breakpoint()
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
-
+                    if "tool_pass_fail_lists" in batch.meta_info:
+                        tpf = batch.meta_info.pop("tool_pass_fail_lists")
+                        batch.non_tensor_batch["tool_pass_fail_lists"] = np.array(tpf, dtype=object)
                     if "response_mask" not in batch.batch.keys():
                         batch.batch["response_mask"] = compute_response_mask(batch)
                     # Balance the number of valid tokens across DP ranks.

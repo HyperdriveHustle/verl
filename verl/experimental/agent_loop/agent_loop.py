@@ -140,9 +140,8 @@ class AgentLoopOutput(BaseModel):
     """Reward for the agent loop, can be used for reinforcement learning."""
     response_logprobs: Optional[list[float]] = None
     """Log probabilities for the response tokens."""
-    extra_info: dict[str, Any] = {}
-    """Extra info for the agent loop, can be used for logging or debugging."""
-    
+    extra_fields: dict[str, Any] = {}
+    """Extra fields for dynamic addition."""
 class _InternalAgentLoopOutput(AgentLoopOutput):
     """Internal agent loop output with padded sequences."""
 
@@ -158,6 +157,8 @@ class _InternalAgentLoopOutput(AgentLoopOutput):
     """Padded attention mask."""
     response_logprobs: Optional[torch.Tensor] = None
     """Padded log probabilities for the response tokens."""
+    extra_fields: dict[str, Any] = {}
+    """Extra fields for dynamic addition."""
 
 # make hydra.utils.instantiate happy
 class _DummyConfig:
@@ -424,7 +425,7 @@ class AgentLoopWorker:
                 response_logprobs=response_logprobs,
                 metrics=output.metrics,
                 reward=output.reward,
-                extra_info=output.extra_info
+                extra_fields=output.extra_fields
             )
 
     def _postprocess(self, inputs: list[_InternalAgentLoopOutput]) -> DataProto:
@@ -468,25 +469,28 @@ class AgentLoopWorker:
         metrics = [input.metrics.model_dump() for input in inputs]
         code_rewards = np.array([input.reward for input in inputs])
         code_scores = np.array([max(metrics[i]['pass_rate'], 0.) for i in range(len(metrics))])
-        tool_call_response = [input.extra_info.get('tool_call_response', None) for input in inputs]
-        extracted_code = [input.extra_info.get('extracted_code', None) for input in inputs]
-        response_length_lst = [input.extra_info.get('response_length', -1) for input in inputs]
+        tool_call_response = [input.extra_fields.get('tool_call_response', None) for input in inputs]
+        extracted_code = [input.extra_fields.get('extracted_code', None) for input in inputs]
+        response_length_lst = [input.extra_fields.get('response_length', -1) for input in inputs]
         non_tensor_batch ={
             "__num_turns__": num_turns,
             "code_rewards":code_rewards,
             "code_scores": code_scores
         }
-        for key, value in reward_extra_info.items():
-            non_tensor_batch[key] = np.array(value)
-        return DataProto(
-            batch=batch, 
-            non_tensor_batch=non_tensor_batch, 
-            meta_info={
+        meta_info={
                 "metrics": metrics,
                 "tool_call_response": tool_call_response,
                 "extracted_code": extracted_code,
                 "response_length": response_length_lst
-            })
+        }
+        if inputs and hasattr(inputs[0], 'extra_fields') and "tool_pass_fail_lists" in inputs[0].extra_fields:
+            tool_pass_fail_lists = [input.extra_fields["tool_pass_fail_lists"] for input in inputs]
+            meta_info["tool_pass_fail_lists"] = tool_pass_fail_lists
+
+        for key, value in reward_extra_info.items():
+            non_tensor_batch[key] = np.array(value)
+        
+        return DataProto(batch=batch, non_tensor_batch=non_tensor_batch, meta_info=meta_info)
 
 
 async def get_trajectory_info(step, index, validate):
@@ -605,6 +609,11 @@ class AgentLoopManager:
                 for worker, chunk in zip(self.agent_loop_workers, chunkes, strict=True)
             ]
         )
+        all_tool_pass_fail_lists = []
+        for worker_output in outputs:
+            worker_tool_pass_fail_lists = worker_output.meta_info.get("tool_pass_fail_lists", [])
+            all_tool_pass_fail_lists.extend(worker_tool_pass_fail_lists)
+        breakpoint()
         output = DataProto.concat(outputs)
         if self.config.actor_rollout_ref.rollout.free_cache_engine:
             self.sleep()
@@ -626,7 +635,9 @@ class AgentLoopManager:
                             "raw_metrics": all_raw_metrics,
                             "tool_call_response": tool_call_response,
                             "extracted_code": extracted_code,
-                            "response_length": response_length_lst}
+                            "response_length": response_length_lst,
+                            "tool_pass_fail_lists": all_tool_pass_fail_lists
+                            }
 
         return output
 
