@@ -1351,6 +1351,7 @@ class RayPPOTrainer:
 
                         if "code_rewards" in batch.non_tensor_batch.keys():
                             batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+                            reward_extra_infos_dict = {}
                         elif self.config.reward_model.launch_reward_fn_async:
                             future_reward = compute_reward_async.remote(data=batch, reward_fn=self.reward_fn)
                         else:
@@ -1457,6 +1458,14 @@ class RayPPOTrainer:
                                     "request_id",
                                     batch.non_tensor_batch["request_id"].tolist(),
                                 )
+                            reward_extra_infos_dict.setdefault(
+                                "question_id",
+                                batch.non_tensor_batch.get("question_id", ["unknown"] * len(inputs)),
+                            )
+                            reward_extra_infos_dict.setdefault(
+                                "data_source",
+                                batch.non_tensor_batch.get("data_source", ["unknown"] * len(inputs)),
+                            )
                             self._dump_generations(
                                 inputs=inputs,
                                 outputs=outputs,
