@@ -147,10 +147,10 @@ class CodeExecutionAgentLoop_Multi_turn(AgentLoopBase):
             if not extracted_code:
                 try:
                     think_end_tag = "</think>"
-                    search_start_index = solution_text.rindex(think_end_tag) + len(think_end_tag)
-                    search_area = solution_text[search_start_index:]
-                    
-                    code_match = re.search(r"```(?:python\n)?(.*?)```", search_area, re.DOTALL)
+                    if think_end_tag in solution_text:
+                        search_start_index = solution_text.rindex(think_end_tag) + len(think_end_tag)
+                        solution_text = solution_text[search_start_index:]
+                    code_match = re.search(r"```(?:python\n)?(.*?)```", solution_text, re.DOTALL)
                     extracted_code = code_match.group(1).strip() if code_match else None
                 except ValueError:
                     extracted_code = None
