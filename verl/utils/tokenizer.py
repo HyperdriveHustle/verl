@@ -57,7 +57,18 @@ def hf_tokenizer(name_or_path, correct_pad_token=True, correct_gemma2=True, **kw
         )
         kwargs["eos_token"] = "<end_of_turn>"
         kwargs["eos_token_id"] = 107
-    tokenizer = AutoTokenizer.from_pretrained(name_or_path, **kwargs)
+    max_tries = 5
+    current_try = 0
+    while current_try < max_tries:
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(name_or_path, **kwargs)
+            break
+        except Exception as e:
+            current_try += 1
+            if current_try >= max_tries:
+                raise e
+            warnings.warn(f"Failed to create tokenizer: {e}. Retrying {current_try} / {max_tries}", stacklevel=1)
+    
     if correct_pad_token:
         set_pad_token_id(tokenizer)
     return tokenizer
@@ -75,7 +86,18 @@ def hf_processor(name_or_path, **kwargs):
     from transformers import AutoProcessor
 
     try:
-        processor = AutoProcessor.from_pretrained(name_or_path, **kwargs)
+        max_tries = 5
+        current_try = 0
+        while current_try < max_tries:
+            try:
+                processor = AutoProcessor.from_pretrained(name_or_path, **kwargs)
+                break
+            except Exception as e:
+                current_try += 1
+                if current_try >= max_tries:
+                    raise e
+                warnings.warn(f"Failed to create tokenizer: {e}. Retrying {current_try} / {max_tries}", stacklevel=1)
+   
     except Exception as e:
         processor = None
         # TODO(haibin.lin): try-catch should be removed after adding transformer version req to setup.py to avoid

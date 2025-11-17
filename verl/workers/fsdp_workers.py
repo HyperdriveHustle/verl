@@ -373,13 +373,22 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 else:
                     actor_module_class = AutoModel
 
-            actor_module = actor_module_class.from_pretrained(
-                pretrained_model_name_or_path=local_path,
-                torch_dtype=torch_dtype,
-                config=actor_model_config,
-                trust_remote_code=trust_remote_code,
-            )
-
+            max_tries, current_try = 5, 0
+            while current_try < max_tries:
+                try:
+                    actor_module = actor_module_class.from_pretrained(
+                        pretrained_model_name_or_path=local_path,
+                        torch_dtype=torch_dtype,
+                        config=actor_model_config,
+                        trust_remote_code=trust_remote_code,
+                    )
+                    break
+                except Exception as e:
+                    current_try += 1
+                    if current_try >= max_tries:
+                        raise e
+                    warnings.warn(f"Failed to actor_module_class.from_pretrained: {e}. Retrying {current_try} / {max_tries}", stacklevel=1)
+   
             # Apply Liger kernel to the model if use_liger is set to True
             if use_liger:
                 from liger_kernel.transformers.monkey_patch import _apply_liger_kernel_to_instance
