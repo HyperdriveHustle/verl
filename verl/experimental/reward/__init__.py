@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .remote_reward_manager import RewardManagerWorker
+from .reward_manager import RewardManagerWorker
 from .reward_model import RewardModelManager
 from .remote_reward_manager import RemoteRewardManagerWorker
 from .remote_reward_model import RemoteRewardModelManager
