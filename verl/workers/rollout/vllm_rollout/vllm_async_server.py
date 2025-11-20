@@ -54,6 +54,7 @@ from verl.workers.rollout.vllm_rollout.utils import (
     get_vllm_max_lora_rank,
 )
 
+import cloudpickle
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
 
@@ -100,16 +101,16 @@ class ExternalZeroMQDistributedExecutor(Executor):
         if isinstance(method, str):
             sent_method = method
         else:
-            sent_method = pickle.dumps(method)
+            sent_method = cloudpickle.dumps(method)
         del method
 
-        message = pickle.dumps((sent_method, args, kwargs or {}))
+        message = cloudpickle.dumps((sent_method, args, kwargs or {}))
         for socket in self.sockets:
             socket.send(message, zmq.DONTWAIT)
 
         outputs = []
         for socket in self.sockets:
-            outputs.append(pickle.loads(socket.recv()))
+            outputs.append(cloudpickle.loads(socket.recv()))
 
         for output in outputs:
             if isinstance(output, Exception):
@@ -246,6 +247,7 @@ class vLLMHttpServerBase:
                     served_model_name = served_model_name.split("/")[-1]
                 args["served_model_name"] = served_model_name
 
+        print(f"✅ vLLM server args: {args}")
         if self.config.expert_parallel_size > 1:
             assert self.gpus_per_node % self.config.tensor_model_parallel_size == 0, (
                 "gpus_per_node should be divisible by tensor_model_parallel_size"

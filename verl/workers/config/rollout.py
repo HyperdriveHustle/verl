@@ -131,6 +131,7 @@ class RolloutConfig(BaseConfig):
 
     dtype: str = "bfloat16"
     gpu_memory_utilization: float = 0.5
+    trust_remote_code: bool = False
     ignore_eos: bool = False
     enforce_eager: bool = True
     cudagraph_capture_sizes: Optional[list] = None
