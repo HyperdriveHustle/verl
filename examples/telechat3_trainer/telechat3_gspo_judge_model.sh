@@ -105,7 +105,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 sleep 1
 export root_dir=${root_dir:-/afs/chatrl/users/hxh/models/verl_rl_models_telechat3}
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=GSPO-judge-${base_model_suffix}_${nnode}node_tp${vllm_tp}rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}
+export experiment_name=GSPO-judge-verl061-${base_model_suffix}_${nnode}node_tp${vllm_tp}rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}
 
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=${root_dir}/${project_name}/${experiment_name}
@@ -126,7 +126,7 @@ else
 fi
 
 
-cd /afs/chatrl/users/hxh/code/verl_gspo/verl_remote
+cd /afs/chatrl/users/hxh/code/verl_gspo/verl
 
 export HYDRA_FULL_ERROR=1
 

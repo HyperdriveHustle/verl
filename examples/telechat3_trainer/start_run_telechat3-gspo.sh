@@ -8,7 +8,7 @@ echo "MASTER_PORT = ${MASTER_PORT}"
 echo "RANK = ${RANK}"
 
 # 进入项目目录
-cd /afs/chatrl/users/hxh/code/verl_gspo/verl_remote
+cd /afs/chatrl/users/hxh/code/verl_gspo/verl
 
 pip install re -i https://mirrors.aliyun.com/pypi/simple/
 pip install math_verify -i https://mirrors.aliyun.com/pypi/simple/
