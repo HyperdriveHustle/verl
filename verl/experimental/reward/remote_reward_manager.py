@@ -193,7 +193,7 @@ class RemoteRewardManagerWorker:
         reward_extra_info = {
             "acc": 1.0 if answer_correct == 1.0 else 0.0,  # acc为1.0表示正确，0.0表示错误
             "reward_scores": float(reward),
-            "ground_truth": float(ground_truth),
+            "ground_truth": ground_truth,
             "pred": "" if pred is None else pred,
             "reward_type": "judge_llm_remote"
         }
