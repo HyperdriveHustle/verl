@@ -105,7 +105,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 sleep 1
 export root_dir=${root_dir:-/afs/chatrl/users/hxh/models/verl_rl_models_telechat3}
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=GSPO-judge-verl061-${base_model_suffix}_${nnode}node_tp${vllm_tp}rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}
+export experiment_name=GSPO-judge-verl061-${base_model_suffix}_${resume_type}${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}
 
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=${root_dir}/${project_name}/${experiment_name}
@@ -207,5 +207,5 @@ python3 -u -m verl.trainer.main_ppo \
     trainer.save_freq=${save_freq} \
     trainer.test_freq=${test_freq} \
     trainer.val_before_train=${val_before_train} \
-    trainer.rollout_data_dir=${rollout_data_dir}  \
     trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/hxh/logs/verl_logs/${project_name}-${experiment_name}.log
+    # trainer.rollout_data_dir=${rollout_data_dir}  \
