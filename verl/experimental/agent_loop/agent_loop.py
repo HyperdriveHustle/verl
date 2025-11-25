@@ -15,6 +15,7 @@ import asyncio
 import heapq
 import logging
 import os
+import json
 import random
 from abc import ABC, abstractmethod
 from typing import Any, Optional
@@ -359,6 +360,8 @@ class AgentLoopWorkerBase:
         tasks = []
         for i in range(len(batch)):
             kwargs = {k: v[i] for k, v in batch.non_tensor_batch.items()}
+            if isinstance(kwargs['reward_model']["ground_truth"], str):
+                kwargs["reward_model"]['ground_truth'] = json.loads(kwargs['reward_model']["ground_truth"])
             tasks.append(asyncio.create_task(self._run_agent_loop(sampling_params, trajectory_info[i], **kwargs)))
         outputs = await asyncio.gather(*tasks)
 
@@ -392,6 +395,7 @@ class AgentLoopWorkerBase:
                 tokenizer=self.tokenizer,
                 processor=self.processor,
             )
+            kwargs['validate'] = trajectory["validate"]
             output: AgentLoopOutput = await agent_loop.run(sampling_params, **kwargs)
 
             # Some AgentLoop may have already computed the reward score, e.g SWE-agent.

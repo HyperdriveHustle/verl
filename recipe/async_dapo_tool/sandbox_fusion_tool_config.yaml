@@ -1,0 +1,25 @@
+tools:
+- class_name: recipe.async_dapo_tool.custom_unit_multi_turn.CustomSandboxFusionTool
+  config:
+    default_language: python
+    default_timeout: 30
+    enable_global_rate_limit: true
+    local_run: false
+    memory_limit_mb: 128
+    num_workers: 32
+    rate_limit: 32
+    sandbox_fusion_url: http://10.119.17.72:8080/run_code_with_log
+    type: native
+  tool_schema:
+    function:
+      description: A tool for executing code.
+      name: code_interpreter
+      parameters:
+        properties:
+          code:
+            description: The code to execute.
+            type: string
+        required:
+        - code
+        type: object
+    type: function

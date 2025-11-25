@@ -136,6 +136,8 @@ class SandboxFusionTool(BaseTool):
         self.default_timeout = config.get("default_timeout", 30)
         self.default_language = config.get("default_language", "python")
         self.enable_global_rate_limit = config.get("enable_global_rate_limit", True)
+        # self.local_run = config.get("local_run", False)
+        self.local_run = False
         self.execution_pool = init_execution_pool(
             num_workers=self.num_workers,
             enable_global_rate_limit=self.enable_global_rate_limit,

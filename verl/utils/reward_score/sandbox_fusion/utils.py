@@ -13,9 +13,13 @@
 # limitations under the License.
 import concurrent.futures  # <-- Import concurrent.futures
 import json
+import yaml
 import logging
 import os
 import threading
+import shutil
+import subprocess
+import tempfile
 import time
 import traceback
 import uuid
@@ -63,6 +67,134 @@ SUPPORTED_LANGUAGES = [
     "racket",
 ]
 
+PY_IMPORTS = yaml.safe_load(open("recipe/async_dapo_tool/deps/header.yaml"))['python']
+
+def call_local_sandbox_api(
+    code: str,
+    stdin: Optional[str],
+    compile_timeout: int,
+    run_timeout: int,
+    memory_limit_mb: int,
+    language: str = "python",
+) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    request_id = str(uuid.uuid4())
+    log_prefix = f"[Request ID: {request_id}] "
+
+    if language not in SUPPORTED_LANGUAGES:
+        error_msg = f"{log_prefix}Unsupported language: {language}"
+        logger.error(error_msg)
+        return None, error_msg
+    
+    try:
+        # 创建临时工作目录
+        parent_dir = "/tmp/firejail_code/verl"
+        os.makedirs(parent_dir, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="verl_fj_", dir=parent_dir) as workdir:
+            full_code = PY_IMPORTS + code
+            
+            script_path = os.path.join(workdir, "main.py")
+            
+            result = {
+                "status": "unknown",
+                "run_status": "unknown", 
+                "run_result": None
+            }
+            
+            logger.info(f"{log_prefix}Writing code to {script_path}")
+            with open(script_path, "w", encoding="utf-8") as f:
+                f.write(full_code)
+
+            cmd = [
+                "firejail",
+                f"--private={workdir}",              # 独立的工作目录
+                "--rlimit-fsize=2m",                # 文件大小限制
+                "--rlimit-nproc=32",
+                "--rlimit-nofile=32",
+                "--quiet",                          # 静默模式
+                f"--timeout=00:00:{run_timeout}",   # 超时设置
+                f"--whitelist={workdir}",           # 白名单工作目录
+                language,                           # 语言（实际上是 python）
+                "main.py",                          # 要执行的脚本
+            ]
+
+            logger.info(f"{log_prefix}Executing with firejail: {' '.join(cmd)}")
+            
+            # 执行代码
+            run_result = {}
+            start_time = time.monotonic()
+            env = os.environ.copy()
+            #env["OPENBLAS_NUM_THREADS"] = "1"
+            if "PYTHONPATH" in env:
+                del env["PYTHONPATH"] # avoid importing wrong stuff
+            try:
+                proc = subprocess.run(
+                    cmd, 
+                    cwd=workdir, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE,
+                    timeout=run_timeout + 5, 
+                    env=env,
+                    input=stdin.encode() if stdin else None,
+                    check=False,
+                    preexec_fn=lambda: _set_memory_limit(memory_limit_mb)
+                )
+                duration = time.monotonic() - start_time
+                #print(duration)
+
+                run_result["stdout"] = proc.stdout.decode().strip()
+                run_result["stderr"] = proc.stderr.decode().strip()
+                run_result["return_code"] = proc.returncode
+                run_result["execution_time"] = duration
+                if proc.returncode == 0:
+                    result["status"] = "Success"
+                    run_result["status"] = "Finished"
+                elif proc.returncode < 0:
+                    import signal
+                    signal_num = -proc.returncode
+                    signal_name = signal.Signals(signal_num).name
+
+                    result["status"] = "Failed"
+                    run_result["status"] = "MemoryLimitExceeded" 
+                    run_result["stderr"] = f"Process was killed by signal {signal_num} ({signal_name}). This is often caused by exceeding a memory limit."
+                else:
+                    result["status"] = "Failed"
+                    run_result["status"] = "Finished"
+
+                result["run_result"] = run_result
+                
+                logger.info(f"{log_prefix}Local sandbox execution completed successfully")
+                return result, None
+            except subprocess.TimeoutExpired:
+                duration = time.monotonic() - start_time
+                #logger.warning(f"{log_prefix}Process timed out after {duration:.2f}s")
+                
+                result["status"] = "Failed"
+                run_result["status"] = "TimeLimitExceeded"
+                run_result["stderr"] = "TimeLimitExceeded"
+                run_result["execution_time"] = duration
+                run_result["stdout"] = ""
+                run_result["return_code"] = -1
+                result["run_result"] = run_result
+                
+                return result, None
+            
+
+
+    except Exception as e:
+        error_msg = f"{log_prefix}Unexpected error during local sandbox execution: {e}"
+        logger.error(error_msg)
+        result = {
+            "status": "Failed",
+            "run_status": "Error",
+            "run_result": {
+                "status": "Error",
+                "stderr": f"An unexpected internal error occurred: {e}",
+                "stdout": "",
+                "return_code": -1,
+                "execution_time": 0
+            }
+        }
+        return result, None
 
 def call_sandbox_api(
     sandbox_fusion_url: str,
@@ -180,6 +312,7 @@ def _process_single_case(
     timeout: int,
     memory_limit_mb: int,
     language: str,
+    local_run: bool = False,
     concurrent_semaphore: Optional[threading.Semaphore] = None,
     fn_name: Optional[str] = None,
 ) -> tuple[int, dict[str, Any]]:
@@ -291,11 +424,32 @@ if __name__ == '__main__':
         current_generation_code = wrapper_code
 
     stdin = None if stdin_data is None else str(stdin_data)
-    try:
-        if concurrent_semaphore:
-            # logger.debug(f"Case {case_index + 1}: Attempting to acquire semaphore.")
-            with concurrent_semaphore:
-                # logger.debug(f"Case {case_index + 1}: Semaphore acquired. Calling API.")
+    if local_run:
+        api_response, error_msg = call_local_sandbox_api(
+            code=current_generation_code,
+            stdin=stdin,
+            compile_timeout=timeout,
+            run_timeout=timeout,
+            memory_limit_mb=memory_limit_mb,
+            language=language,
+        )
+    else:
+        try:
+            if concurrent_semaphore:
+                # logger.debug(f"Case {case_index + 1}: Attempting to acquire semaphore.")
+                with concurrent_semaphore:
+                    # logger.debug(f"Case {case_index + 1}: Semaphore acquired. Calling API.")
+                    api_response, error_msg = call_sandbox_api(
+                        sandbox_fusion_url=sandbox_fusion_url,
+                        code=current_generation_code,
+                        stdin=stdin,
+                        compile_timeout=timeout,
+                        run_timeout=timeout,
+                        memory_limit_mb=memory_limit_mb,
+                        language=language,
+                    )
+                # logger.debug(f"Case {case_index + 1}: Semaphore released.")
+            else:
                 api_response, error_msg = call_sandbox_api(
                     sandbox_fusion_url=sandbox_fusion_url,
                     code=current_generation_code,
@@ -305,21 +459,10 @@ if __name__ == '__main__':
                     memory_limit_mb=memory_limit_mb,
                     language=language,
                 )
-            # logger.debug(f"Case {case_index + 1}: Semaphore released.")
-        else:
-            api_response, error_msg = call_sandbox_api(
-                sandbox_fusion_url=sandbox_fusion_url,
-                code=current_generation_code,
-                stdin=stdin,
-                compile_timeout=timeout,
-                run_timeout=timeout,
-                memory_limit_mb=memory_limit_mb,
-                language=language,
-            )
-    except Exception as e:
-        error_msg = f"API Request Exception during check_correctness for case {case_index + 1}: {e}"
-        logger.error(f"Case {case_index + 1}: {error_msg}")
-        traceback.print_exc()
+        except Exception as e:
+            error_msg = f"API Request Exception during check_correctness for case {case_index + 1}: {e}"
+            logger.error(f"Case {case_index + 1}: {error_msg}")
+            traceback.print_exc()
 
     metadata = {
         "case_index": case_index,
