@@ -729,13 +729,14 @@ class RayPPOTrainer:
             if pad_size > 0:
                 raw_metrics = padded_raw_metrics[:-pad_size]
                 local_logger.info(f"Removed {pad_size} padded raw_metrics, now {len(raw_metrics)} remain.")
+            slice_end = -pad_size if pad_size > 0 else None
             if "tool_call_response" in test_output_gen_batch.meta_info:
-                reward_extra_infos_dict['tool_call_response'].extend(test_output_gen_batch.meta_info["tool_call_response"][:-pad_size])
+                reward_extra_infos_dict['tool_call_response'].extend(test_output_gen_batch.meta_info["tool_call_response"][:slice_end])
             if "extracted_code" in test_output_gen_batch.meta_info:
-                reward_extra_infos_dict['extracted_code'].extend(test_output_gen_batch.meta_info["extracted_code"][:-pad_size])
+                reward_extra_infos_dict['extracted_code'].extend(test_output_gen_batch.meta_info["extracted_code"][:slice_end])
             if "response_length" in test_output_gen_batch.meta_info:
-                sample_lens.extend(test_output_gen_batch.meta_info["response_length"][:-pad_size])
-                reward_extra_infos_dict['response_length'].extend(test_output_gen_batch.meta_info["response_length"][:-pad_size])
+                sample_lens.extend(test_output_gen_batch.meta_info["response_length"][:slice_end])
+                reward_extra_infos_dict['response_length'].extend(test_output_gen_batch.meta_info["response_length"][:slice_end])
             print("validation generation end")
             all_raw_metrics.extend(raw_metrics)
             #breakpoint()
