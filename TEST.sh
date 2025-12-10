@@ -9,24 +9,11 @@ if [ "$rollout_mode" = "async" ]; then
 fi
 
 # 2. 原有数据路径与模型配置（保持不变）
-export aops_difficulty_1_15_dapo_verify=${aops_difficulty_1_15_dapo_verify:-/afs/chatrl/users/hwq/data/expert/aops/numinamath1.5_aops_forum_format_with_16.parquet}
-export aops_with_expert_cot=${aops_with_expert_cot:-/afs/chatrl/users/hwq/data/numina_cot/aops_forum_sky_with_solution_cot_fuzzy_filtered_acc_Distill-7B_16_prompt_format_filtered_add_answer_tag.parquet}
-export dapo_math_17k=${dapo_math_17k:-/afs/chatrl/users/hxh/data/rule_based_rl/DAPO-Math-17k/data/dapo-math-17k_dedup.parquet}
 
-export aime2024_test_path_from_lyy=${aime2024_test_path_from_lyy:-/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/data/aime-2024.parquet}
-export aime2025_test_path_from_lyy=${aime2025_test_path_from_lyy:-/afs/chatrl/users/hwq/data/aime/aime2025_dapo_sample64.parquet}
-
-export aime2024_with_math_verify_boxed_path=${aime2024_with_math_verify_boxed_path:-/afs/chatrl/users/hwq/data/sky_work_data/aime_from_lyy/aime2024_math_verify_boxed_sample32.parquet}
-export aime2025_with_math_verify_boxed_path=${aime2025_with_math_verify_boxed_path:-/afs/chatrl/users/hwq/data/sky_work_data/aime_from_lyy/aime2025_math_verify_boxed_sample32.parquet}
-export math500_with_math_verify_boxed_path=${math500_with_math_verify_boxed_path:-/afs/chatrl/users/hwq/data/math500/math500_test_converted_int_idx.parquet}
-
-
-# export dapo_math_17k=/afs/chatrl/users/hxh/data/math_data/dapo-math/prompts/dapo-math-17k_dedup_no_prompt_math_verify.parquet
-# export aime2024_test_path_from_lyy=/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/math_verify_aime2024_sample32_no_prompt.parquet
-
+export dapo_math_17k=/afs/chatrl/users/hxh/data/math_data/dapo-math/prompts/dapo-math-17k_dedup_no_prompt_math_verify.parquet
+export aime2024_test_path=/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/math_verify_aime2024_sample32_no_prompt.parquet
 export train_files=${train_files:-"['$dapo_math_17k']"}
-train_data=${train_data:-dapo_17k}
-test_files="['$aime2024_test_path_from_lyy']"
+export  test_files="['$aime2024_test_path']"
 
 # 3. 原有 resume、模型、项目配置（保持不变）
 export resume_mode=${resume_mode:-auto}
@@ -34,14 +21,17 @@ export resume_from_path=${resume_from_path:-null}
 export model_path=${model_path:-/afs/chatrl/public/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1___5B}
 export model_name=$(basename "$model_path")
 
-export project_name=${project_name:-verl_expert}
+export project_name=${project_name:-verl_remote_judge_debug}
+
 export total_epochs=${total_epochs:-50}
-export vllm_tp=${vllm_tp:-1}
+export vllm_tp=${vllm_tp:-2}
+
 export train_prompt_batch_size=${train_prompt_batch_size:-32}
+ppo_mini_batch_size=32
 export grpo_rollout_n=${grpo_rollout_n:-8}
 
 export max_response_length=${max_response_length:-16384}
-export prompt_key=${prompt_key:-prompt}
+export prompt_key=${prompt_key:-messages}
 export resume_type=${resume_type:-no_resume}
 export nnode=${WORLD_SIZE:-1}
 export ulysses_sequence_parallel_size=${ulysses_sequence_parallel_size:-1}
@@ -57,7 +47,6 @@ loss_agg_mode="seq-mean-token-mean"
 
 enable_filter_groups=False
 filter_groups_metric=acc
-max_num_gen_batches=10
 
 use_dynamic_bsz=True
 infer_micro_batch_size=null
@@ -82,9 +71,6 @@ max_tokens=$((max_prompt_length  + max_response_length))
 gen_max_tokens=$((max_tokens * 2))
 log_prob_max_tokens=$((max_tokens * 2))
 
-export seq_dir=${seq_dir:-/afs/chatrl/users/zhr/log/gspo/init}
-export log_dir=${log_dir:-/afs/chatrl/users/zhr/log/gspo/log}
-
 cap_dataset_size=$((1024 * 80000))
 filter_overlong_prompts=False
 export req_algo=${req_algo:-even_token}
@@ -105,8 +91,33 @@ export experiment_name=GSPO-Async-test_${TIMESTAMP}
 
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=/afs/chatrl/users/zhr/models/verl_rl_models/${project_name}/${experiment_name}
+# 如果路径不存在，则创建（-p 会自动逐级创建）
+if [ ! -d "$TENSORBOARD_DIR" ]; then
+    mkdir -p "$TENSORBOARD_DIR"
+    echo "Created directory: $TENSORBOARD_DIR"
+else
+    echo "Directory already exists: $TENSORBOARD_DIR"
+fi
+# 定义存储 rollout 数据的目录
+export rollout_data_dir=/afs/chatrl/users/zhr/models/verl_rl_models/${project_name}/${experiment_name}/rollout_data_dir
+if [ ! -d "$rollout_data_dir" ]; then
+    mkdir -p "$rollout_data_dir"
+    echo "Created directory: $rollout_data_dir"
+else
+    echo "Directory already exists: $rollout_data_dir"
+fi
 
-cd /afs/chatrl/users/zhr/code/verl_copy
+# 定义存储概率提取结果的目录和文件
+export probability_output_dir=/afs/chatrl/users/zhr/models/verl_rl_models/verl_expert/${experiment_name}/probability_data
+if [ ! -d "$probability_output_dir" ]; then
+    mkdir -p "$probability_output_dir"
+    echo "Created directory: $probability_output_dir"
+else
+    echo "Directory already exists: $probability_output_dir"
+fi
+export probability_output_file=${probability_output_dir}/token_probabilities.jsonl
+
+cd /afs/chatrl/users/zhr/code/verl
 
 export HYDRA_FULL_ERROR=1
 
@@ -119,7 +130,7 @@ python3 -u -m verl.trainer.main_ppo \
     data.prompt_key=${prompt_key}  \
     data.train_batch_size=${train_prompt_batch_size} \
     data.return_raw_chat=$return_raw_chat \
-    data.shuffle=True \
+    data.shuffle=False \
     data.filter_overlong_prompts=${filter_overlong_prompts} \
     data.max_prompt_length=${max_prompt_length} \
     data.max_response_length=${max_response_length} \
@@ -162,13 +173,13 @@ python3 -u -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.top_k=${top_k} \
     actor_rollout_ref.rollout.n=${grpo_rollout_n} \
     actor_rollout_ref.rollout.multi_turn.format=hermes \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
+    actor_rollout_ref.rollout.val_kwargs.temperature=1.0 \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
     actor_rollout_ref.rollout.val_kwargs.top_k=${top_k} \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
-    actor_rollout_ref.rollout.skip_dump_dir=/afs/chatrl/users/zhr/log/rollout_cache \
-    actor_rollout_ref.rollout.skip_rollout=False \
+    +actor_rollout_ref.actor.probability_output_file=${probability_output_file} \
+    +actor_rollout_ref.rollout.probability_output_file=${probability_output_file} \
     reward_model.reward_manager=${reward_manager} \
     +reward_model.reward_kwargs.overlong_buffer_cfg.enable=${enable_overlong_buffer} \
     +reward_model.reward_kwargs.overlong_buffer_cfg.len=${overlong_buffer_len} \
@@ -184,6 +195,6 @@ python3 -u -m verl.trainer.main_ppo \
     trainer.nnodes=${nnode} \
     trainer.save_freq=6 \
     trainer.test_freq=3 \
-    trainer.val_before_train=True \
-    trainer.rollout_data_dir=/afs/chatrl/users/zhr/log/rollout_data \
+    trainer.val_before_train=False \
+    trainer.rollout_data_dir=${rollout_data_dir}  \
     trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/zhr/log/verl/logs_sensecore/${experiment_name}.log

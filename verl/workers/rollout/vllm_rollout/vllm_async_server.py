@@ -43,6 +43,7 @@ from vllm.v1.executor.abstract import Executor
 
 from verl.single_controller.ray import RayClassWithInitArgs
 from verl.utils.config import omega_conf_to_dataclass
+from verl.utils.probability_extraction import ProbabilityLogger
 from verl.workers.config import HFModelConfig, RewardModelConfig, RolloutConfig
 from verl.workers.rollout.replica import RolloutMode, RolloutReplica, TokenOutput
 from verl.workers.rollout.utils import get_free_port, is_valid_ipv6_address, run_unvicorn
@@ -165,6 +166,12 @@ class vLLMHttpServerBase:
         if self.rollout_mode != RolloutMode.HYBRID and self.config.load_format == "dummy":
             logger.warning(f"rollout mode is {self.rollout_mode}, load_format is dummy, set to auto")
             self.config.load_format = "auto"
+        
+        # Initialize probability logger if output file is configured
+        self.probability_output_file = self.config.get("probability_output_file", None)
+        self.probability_logger = None
+        if self.probability_output_file and self.replica_rank == 0 and self.node_rank == 0:
+            self.probability_logger = ProbabilityLogger(self.probability_output_file)
 
         # used for http server
         self._server_address = ray.util.get_node_ip_address().strip("[]")
@@ -382,7 +389,7 @@ class vLLMHttpServerBase:
         """Generate sequence with token-in-token-out."""
         # TODO(@wuxibin): switch to `/generate` http endpoint once multi-modal support ready.
         max_tokens = self.config.max_model_len - len(prompt_ids)
-        sampling_params["logprobs"] = 0 if sampling_params.pop("logprobs", False) else None
+        sampling_params["logprobs"] = 1 if sampling_params.pop("logprobs", False) else None
         sampling_params.setdefault("repetition_penalty", self.config.get("repetition_penalty", 1.0))
         sampling_params = SamplingParams(max_tokens=max_tokens, **sampling_params)
         prompt_ids = _qwen2_5_vl_dedup_image_tokens(prompt_ids, self.model_config.processor)
@@ -413,7 +420,38 @@ class vLLMHttpServerBase:
         token_ids = final_res.outputs[0].token_ids
         log_probs = None
         if sampling_params.logprobs is not None:
-            log_probs = [logprobs[token_ids[i]].logprob for i, logprobs in enumerate(final_res.outputs[0].logprobs)]
+            log_probs = []
+            logprob_entries_list = final_res.outputs[0].logprobs
+            for i, token_id in enumerate(token_ids):
+                lp = None
+                if logprob_entries_list is not None and i < len(logprob_entries_list):
+                    entry = logprob_entries_list[i]
+                    val = None
+                    try:
+                        if isinstance(entry, dict):
+                            if token_id in entry:
+                                val = entry[token_id]
+                            elif str(token_id) in entry:
+                                val = entry[str(token_id)]
+                            else:
+                                val = None
+                        else:
+                            if hasattr(entry, "__getitem__"):
+                                val = entry[token_id]
+                    except Exception:
+                        val = None
+                    if val is None and hasattr(entry, "logprob"):
+                        val = entry
+                    if val is not None:
+                        if hasattr(val, "logprob"):
+                            lp = float(val.logprob)
+                        else:
+                            try:
+                                lp = float(val)
+                            except Exception:
+                                lp = None
+                log_probs.append(lp if lp is not None else float("nan"))
+        
         return TokenOutput(token_ids=token_ids, log_probs=log_probs)
 
     async def wake_up(self):

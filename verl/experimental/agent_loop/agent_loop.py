@@ -333,7 +333,7 @@ class AgentLoopWorkerBase:
             temperature=config.temperature,
             top_p=config.top_p,
             repetition_penalty=1.0,
-            logprobs=config.calculate_log_probs,
+            logprobs=(config.calculate_log_probs or (config.get("probability_output_file", None) is not None)),
         )
 
         # override sampling params for validation
@@ -551,6 +551,11 @@ class AgentLoopWorkerBase:
         optional_outputs = {}
         if inputs[0].response_logprobs is not None:
             optional_outputs["rollout_log_probs"] = torch.cat([input.response_logprobs for input in inputs], dim=0)
+            try:
+                # Derive inference_probs from response_logprobs via exp(), pad already handled upstream
+                optional_outputs["inference_probs"] = torch.exp(optional_outputs["rollout_log_probs"]).to(torch.float32)
+            except Exception:
+                pass
 
         batch = TensorDict(
             {

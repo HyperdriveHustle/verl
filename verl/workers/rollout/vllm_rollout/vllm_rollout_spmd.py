@@ -38,6 +38,7 @@ from types import MethodType
 from typing import Any, Generator
 
 import cloudpickle as pickle
+import math
 import numpy as np
 import ray
 import torch
@@ -259,6 +260,10 @@ class vLLMRollout(BaseRollout):
             repetition_penalty=config.get("repetition_penalty", 1.0),
         )
 
+        self._enable_probability_logging = self.config.get("probability_output_file", None) is not None
+        if self._enable_probability_logging:
+            kwargs["logprobs"] = max(kwargs.get("logprobs", 0), 1)
+
         kwargs["detokenize"] = False
 
         # supporting adding any sampling params from the config file
@@ -392,15 +397,74 @@ class vLLMRollout(BaseRollout):
 
             response = []
             rollout_log_probs = []
+            inference_probabilities = [] if self._enable_probability_logging else None
             for output in outputs:
                 for sample_id in range(len(output.outputs)):
                     response_ids = output.outputs[sample_id].token_ids
                     response.append(response_ids)
                     if self.config.calculate_log_probs:
                         curr_log_prob = []
-                        for i, logprob in enumerate(output.outputs[sample_id].logprobs):
-                            curr_log_prob.append(logprob[response_ids[i]].logprob)
+                        logprob_entries = output.outputs[sample_id].logprobs
+                        for i, token_id in enumerate(response_ids):
+                            lp = None
+                            if logprob_entries is not None and i < len(logprob_entries):
+                                entry = logprob_entries[i]
+                                try:
+                                    if isinstance(entry, dict):
+                                        if token_id in entry:
+                                            val = entry[token_id]
+                                        elif str(token_id) in entry:
+                                            val = entry[str(token_id)]
+                                        else:
+                                            val = None
+                                    else:
+                                        # Some versions expose a mapping-like object
+                                        val = entry[token_id] if hasattr(entry, "__getitem__") else None
+                                except Exception:
+                                    val = None
+                                if val is None and hasattr(entry, "logprob"):
+                                    val = entry
+                                if val is not None:
+                                    if hasattr(val, "logprob"):
+                                        lp = float(val.logprob)
+                                    else:
+                                        try:
+                                            lp = float(val)
+                                        except Exception:
+                                            lp = None
+                            curr_log_prob.append(lp if lp is not None else float("nan"))
                         rollout_log_probs.append(curr_log_prob)
+                    if self._enable_probability_logging:
+                        curr_inf_probs = []
+                        logprob_entries = output.outputs[sample_id].logprobs
+                        for i, token_id in enumerate(response_ids):
+                            prob = 0.0
+                            if logprob_entries is not None and i < len(logprob_entries):
+                                entry = logprob_entries[i]
+                                val = None
+                                try:
+                                    if isinstance(entry, dict):
+                                        if token_id in entry:
+                                            val = entry[token_id]
+                                        elif str(token_id) in entry:
+                                            val = entry[str(token_id)]
+                                    else:
+                                        if hasattr(entry, "__getitem__"):
+                                            val = entry[token_id]
+                                except Exception:
+                                    val = None
+                                if val is None and hasattr(entry, "logprob"):
+                                    val = entry
+                                if val is not None:
+                                    if hasattr(val, "logprob"):
+                                        prob = math.exp(val.logprob)
+                                    else:
+                                        try:
+                                            prob = math.exp(float(val))
+                                        except Exception:
+                                            prob = 0.0
+                            curr_inf_probs.append(prob)
+                        inference_probabilities.append(curr_inf_probs)
 
             response = pad_2d_list_to_length(response, self.pad_token_id, max_length=self.config.response_length).to(
                 idx.device
@@ -444,6 +508,12 @@ class vLLMRollout(BaseRollout):
         if self.config.calculate_log_probs:
             # we will recompute old log prob with actor
             batch["rollout_log_probs"] = rollout_log_probs
+        
+        if self._enable_probability_logging and inference_probabilities:
+            inference_probs_tensor = pad_2d_list_to_length(
+                inference_probabilities, 0.0, max_length=self.config.response_length
+            ).to(idx.device)
+            batch["inference_probs"] = inference_probs_tensor
 
         return DataProto(batch=batch, non_tensor_batch=non_tensor_batch)
 

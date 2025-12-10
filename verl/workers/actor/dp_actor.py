@@ -32,6 +32,7 @@ from verl.utils.attention_utils import index_first_axis, pad_input, rearrange, u
 from verl.utils.device import get_device_id, get_device_name
 from verl.utils.fsdp_utils import FSDPModule, fsdp2_clip_grad_norm_
 from verl.utils.profiler import GPUMemoryLogger
+from verl.utils.probability_extraction import ProbabilityLogger, extract_token_probability
 from verl.utils.py_functional import append_to_dict
 from verl.utils.seqlen_balancing import prepare_dynamic_batch, restore_dynamic_batch
 from verl.utils.torch_dtypes import PrecisionType
@@ -90,6 +91,12 @@ class DataParallelPPOActor(BasePPOActor):
             self.scaler = ShardedGradScaler(growth_interval=400)
         else:
             self.scaler = None
+        
+        # Initialize probability logger if output file is configured
+        self.probability_output_file = self.config.get("probability_output_file", None)
+        self.probability_logger = None
+        if self.probability_output_file and torch.distributed.get_rank() == 0:
+            self.probability_logger = ProbabilityLogger(self.probability_output_file)
 
     def _forward_micro_batch(
         self, micro_batch, temperature, calculate_entropy=False
@@ -100,6 +107,8 @@ class DataParallelPPOActor(BasePPOActor):
             log_probs: # (bs, response_len)
         """
         response_length = micro_batch["responses"].size(-1)
+        response_mask = micro_batch.get("response_mask", None)
+        inference_probs = micro_batch.get("inference_probs", None)
         multi_modal_inputs = {}
         if "multi_modal_inputs" in micro_batch.keys():
             from verl.utils.model import extract_multi_modal_inputs
@@ -112,6 +121,7 @@ class DataParallelPPOActor(BasePPOActor):
             attention_mask = micro_batch["attention_mask"]
             position_ids = micro_batch["position_ids"]
             entropy = None
+            logits = None
             if position_ids.dim() == 3:  # qwen2vl mrope
                 position_ids = position_ids.transpose(0, 1)  # (bsz, 4, seqlen) -> (4, bsz, seqlen)
 
@@ -202,6 +212,10 @@ class DataParallelPPOActor(BasePPOActor):
                         inplace_backward=inplace_backward,
                     )
 
+                    # Extract and save training probabilities if logger is configured
+                    # Note: For remove_padding case, we need to handle the response part after padding back
+                    # We'll extract probabilities after padding back to ensure correct token correspondence
+
                     # compute entropy
                     if calculate_entropy:
                         if not self.config.entropy_checkpointing:
@@ -241,11 +255,31 @@ class DataParallelPPOActor(BasePPOActor):
                     batch=batch_size,
                     seqlen=seqlen,
                 )
+                
+                # Avoid reconstructing full logits to reduce overhead; use full_log_probs instead
 
                 # only return response part:
                 if calculate_entropy:
                     entropy = full_entropy.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
+                
+                if response_mask is not None and self.probability_logger is not None:
+                    training_probs = torch.exp(full_log_probs.squeeze(-1)[:, -response_length - 1 : -1])  # (bsz, response_length)
+                    inference = (
+                        inference_probs[:, :response_length]
+                        if inference_probs is not None
+                        else (
+                            torch.exp(micro_batch.get("rollout_log_probs")).to(torch.float32)[:, :response_length]
+                            if micro_batch.get("rollout_log_probs") is not None
+                            else None
+                        )
+                    )
+                    self._save_probabilities_batch(
+                        training_probs=training_probs,
+                        inference_probs=inference,
+                        responses=micro_batch["responses"],
+                        response_mask=response_mask,
+                    )
 
             else:  # not using rmpad and no ulysses sp
                 extra_args = {}
@@ -272,13 +306,37 @@ class DataParallelPPOActor(BasePPOActor):
                     logits.div_(temperature)
                     logits = logits[:, -response_length - 1 : -1, :]  # (bsz, response_length, vocab_size)
                     log_probs = logprobs_from_logits(logits, micro_batch["responses"])
+                    
                     if calculate_entropy:
                         if not self.config.entropy_checkpointing:
                             entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
                         else:
                             entropy = torch.utils.checkpoint.checkpoint(verl_F.entropy_from_logits, logits)
 
-            return entropy, log_probs
+        if (
+            response_mask is not None
+            and self.probability_logger is not None
+            and not self.use_fused_kernels
+            and not self.use_remove_padding
+        ):
+            training_probs = torch.exp(log_probs)  # (bsz, response_length)
+            inference = (
+                inference_probs[:, :response_length]
+                if inference_probs is not None
+                else (
+                    torch.exp(micro_batch.get("rollout_log_probs")).to(torch.float32)[:, :response_length]
+                    if micro_batch.get("rollout_log_probs") is not None
+                    else None
+                )
+            )
+            self._save_probabilities_batch(
+                training_probs=training_probs,
+                inference_probs=inference,
+                responses=micro_batch["responses"],
+                response_mask=response_mask,
+            )
+
+        return entropy, log_probs
 
     def _optimizer_step(self):
         assert self.config.grad_clip is not None
@@ -393,6 +451,9 @@ class DataParallelPPOActor(BasePPOActor):
         # Include rollout_log_probs for computing rollout_corr metrics in bypass mode
         if "rollout_log_probs" in data.batch.keys():
             select_keys.append("rollout_log_probs")
+        # Include inference_probs for probability logging
+        if "inference_probs" in data.batch.keys():
+            select_keys.append("inference_probs")
 
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
@@ -527,3 +588,81 @@ class DataParallelPPOActor(BasePPOActor):
                 append_to_dict(metrics, mini_batch_metrics)
         self.actor_optimizer.zero_grad()
         return metrics
+    
+    def _extract_and_save_training_probabilities(
+        self,
+        logits: torch.Tensor,
+        responses: torch.Tensor,
+        response_mask: torch.Tensor | None = None,
+        inference_probs: torch.Tensor | None = None,
+    ):
+        """Extract probabilities from logits for response tokens and save them."""
+        if self.probability_logger is None:
+            return
+
+        # logits shape: (batch_size, response_length, vocab_size)
+        # responses shape: (batch_size, response_length)
+        logits = logits.detach().to(torch.float32)
+        responses = responses.detach().cpu()
+        mask = (
+            response_mask.detach().cpu().to(torch.bool)
+            if response_mask is not None
+            else torch.ones_like(responses, dtype=torch.bool)
+        )
+        inference = inference_probs.detach().cpu() if inference_probs is not None else None
+
+        batch_size, response_length = responses.shape
+        for batch_idx in range(batch_size):
+            for token_idx in range(response_length):
+                if not mask[batch_idx, token_idx]:
+                    continue
+
+                token_id = responses[batch_idx, token_idx].item()
+                if token_id < 0:
+                    continue
+
+                # Extract probability for this specific token from logits
+                # logits[batch_idx, token_idx, :] is the logits for this position
+                position_logits = logits[batch_idx, token_idx, :].cpu()  # (vocab_size,)
+                prob = extract_token_probability(position_logits, token_id)
+                
+                inf_prob = (
+                    round(inference[batch_idx, token_idx].item(), 8) if inference is not None else 0.0
+                )
+                self.probability_logger.log_probability(
+                    training_probability=prob,
+                    inference_probability=inf_prob,
+                    token_index=token_idx,
+                )
+
+    def _save_probabilities_batch(
+        self,
+        training_probs: torch.Tensor,
+        inference_probs: torch.Tensor | None,
+        responses: torch.Tensor,
+        response_mask: torch.Tensor,
+    ):
+        if self.probability_logger is None:
+            return
+        tp = training_probs.detach().cpu().to(torch.float32)
+        mask = response_mask.detach().cpu().to(torch.bool)
+        inf = inference_probs.detach().cpu().to(torch.float32) if inference_probs is not None else None
+        batch_size, response_length = responses.shape
+        for batch_idx in range(batch_size):
+            token_indices = []
+            train_list = []
+            inf_list = []
+            for token_idx in range(response_length):
+                if not mask[batch_idx, token_idx]:
+                    continue
+                token_indices.append(token_idx)
+                train_list.append(round(tp[batch_idx, token_idx].item(), 8))
+                inf_list.append(
+                    round(inf[batch_idx, token_idx].item(), 8) if inf is not None else 0.0
+                )
+            if token_indices:
+                self.probability_logger.log_batch_probabilities(
+                    training_probabilities=train_list,
+                    inference_probabilities=inf_list,
+                    token_indices=token_indices,
+                )

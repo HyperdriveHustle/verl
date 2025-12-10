@@ -198,6 +198,7 @@ class RolloutConfig(BaseConfig):
     limit_images: Optional[int] = None
 
     skip_tokenizer_init: bool = False
+    probability_output_file: Optional[str] = None
 
     def __post_init__(self):
         """Validate the rollout config"""

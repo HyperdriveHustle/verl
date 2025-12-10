@@ -19,7 +19,7 @@ export  test_files="['$aime2024_test_path']"
 # 3. 原有 resume、模型、项目配置（保持不变）
 export resume_mode=${resume_mode:-auto}
 export resume_from_path=${resume_from_path:-null}
-export model_path=${model_path:-/afs/chatrl/public/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1___5B}
+export model_path=${model_path:-/afs/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B}
 export model_name=$(basename "$model_path")
 
 export project_name=${project_name:-verl_remote_judge_debug}
@@ -92,9 +92,8 @@ sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
 export experiment_name=GSPO-Async-test_${TIMESTAMP}
 
-export root_dir=/afs/chatrl/users/hxh/models/verl_rl_models_qwen1.5b
 rm -rf /workspace/tmp_tensorboard/*
-export TENSORBOARD_DIR=${root_dir}/${project_name}/${experiment_name}
+export TENSORBOARD_DIR=/afs/chatrl/users/zhr/models/verl_rl_models/${project_name}/${experiment_name}
 # 如果路径不存在，则创建（-p 会自动逐级创建）
 if [ ! -d "$TENSORBOARD_DIR" ]; then
     mkdir -p "$TENSORBOARD_DIR"
@@ -103,7 +102,7 @@ else
     echo "Directory already exists: $TENSORBOARD_DIR"
 fi
 # 定义存储 rollout 数据的目录
-export rollout_data_dir=${root_dir}/${project_name}/${experiment_name}/rollout_data_dir
+export rollout_data_dir=/afs/chatrl/users/zhr/models/verl_rl_models/${project_name}/${experiment_name}/rollout_data_dir
 if [ ! -d "$rollout_data_dir" ]; then
     mkdir -p "$rollout_data_dir"
     echo "Created directory: $rollout_data_dir"
@@ -111,8 +110,17 @@ else
     echo "Directory already exists: $rollout_data_dir"
 fi
 
+# 定义存储概率提取结果的目录和文件
+export probability_output_dir=/afs/chatrl/users/zhr/models/verl_rl_models/verl_expert/${experiment_name}/probability_data
+if [ ! -d "$probability_output_dir" ]; then
+    mkdir -p "$probability_output_dir"
+    echo "Created directory: $probability_output_dir"
+else
+    echo "Directory already exists: $probability_output_dir"
+fi
+export probability_output_file=${probability_output_dir}/token_probabilities.jsonl
 
-cd /afs/chatrl/users/hxh/code/verl_gspo/verl_remote
+cd /afs/chatrl/users/zhr/code/verl
 
 export HYDRA_FULL_ERROR=1
 
@@ -173,6 +181,8 @@ python3 -u -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.val_kwargs.top_k=${top_k} \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
+    +actor_rollout_ref.actor.probability_output_file=${probability_output_file} \
+    +actor_rollout_ref.rollout.probability_output_file=${probability_output_file} \
     reward_model.reward_manager=${reward_manager} \
     +reward_model.reward_kwargs.overlong_buffer_cfg.enable=${enable_overlong_buffer} \
     +reward_model.reward_kwargs.overlong_buffer_cfg.len=${overlong_buffer_len} \
@@ -181,13 +191,13 @@ python3 -u -m verl.trainer.main_ppo \
     trainer.resume_mode=${resume_mode} \
     trainer.resume_from_path=${resume_from_path} \
     trainer.logger=['tensorboard'] \
-    trainer.default_local_dir=${root_dir}/${project_name}/${experiment_name} \
+    trainer.default_local_dir=/afs/chatrl/users/zhr/models/verl_rl_models/${project_name}/${experiment_name} \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
-    trainer.n_gpus_per_node=2 \
+    trainer.n_gpus_per_node=8 \
     trainer.nnodes=${nnode} \
     trainer.save_freq=6 \
     trainer.test_freq=3 \
     trainer.val_before_train=False \
     trainer.rollout_data_dir=${rollout_data_dir}  \
-    trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/hxh/logs/verl_logs/${project_name}-${experiment_name}.log
+    trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/zhr/log/verl/logs_sensecore/${experiment_name}.log
