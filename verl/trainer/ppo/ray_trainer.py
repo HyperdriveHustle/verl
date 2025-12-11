@@ -285,7 +285,7 @@ def compute_advantage(
             "config": config,
         }
         adv_estimator_fn = core_algos.get_adv_estimator_fn(adv_estimator)
-        breakpoint()
+        # breakpoint()
         advantages, returns = adv_estimator_fn(**adv_kwargs)
         data.batch["advantages"] = advantages
         data.batch["returns"] = returns
@@ -1327,7 +1327,7 @@ class RayPPOTrainer:
                         [str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object
                     )
                     # repeat to align with repeated responses in rollout
-                    breakpoint()
+                    # breakpoint()
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
                     if "tool_pass_fail_lists" in batch.meta_info:
@@ -1452,7 +1452,6 @@ class RayPPOTrainer:
                     # Log rollout generations if enabled
                     rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
                     if rollout_data_dir:
-                        print(f"[taro_debug]{repr(batch.non_tensor_batch.keys())}")
                         with marked_timer("dump_rollout_generations", timing_raw, color="green"):
                             inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
                             outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=True)
@@ -1470,6 +1469,27 @@ class RayPPOTrainer:
                                 "data_source",
                                 batch.non_tensor_batch.get("data_source", ["unknown"] * len(inputs)),
                             )
+                            for kk in ["code_rewards", "code_scores", "score", "__num_turns__"]:
+                                if kk in batch.non_tensor_batch:
+                                    if kk == "score":
+                                        reward_extra_infos_dict.setdefault(
+                                            "meta_score",
+                                            batch.non_tensor_batch[kk].tolist(),
+                                        )
+                                    else:
+                                        reward_extra_infos_dict.setdefault(
+                                            kk,
+                                            batch.non_tensor_batch[kk].tolist(),
+                                        )
+
+                            if "raw_metrics" in batch.meta_info:
+                                raw_metrics = batch.meta_info['raw_metrics']
+                                meta_info_keep_keys = ['pass_rate', 'answer_reward', 'format_reward', 'timeout_reward', 'No_code_extracted_count', 'tool_call_error_count']
+                                for kk in meta_info_keep_keys:
+                                    reward_extra_infos_dict.setdefault(kk, [])
+                                for metric_item in raw_metrics:
+                                    for kk in meta_info_keep_keys:
+                                        reward_extra_infos_dict[kk].append(metric_item.get(kk, "unknown"))
                             self._dump_generations(
                                 inputs=inputs,
                                 outputs=outputs,
