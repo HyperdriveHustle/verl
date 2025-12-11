@@ -31,7 +31,7 @@ logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 # LLM-as-a-Judge 配置常量
-BASE_URL = os.getenv("REWARD_MODEL_BASE_URL", os.getenv("base_url", "http://app-2abf503c001748c4967f6b495c322ffc.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1"))
+BASE_URL = os.getenv("REWARD_MODEL_BASE_URL", os.getenv("base_url", "http://app-a069b3b91a5c4a20b78abad4ef0644c6.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1"))
 API_KEY = os.getenv("REWARD_MODEL_API_KEY", os.getenv("api_key", "EMPTY"))
 MODEL_NAME = os.getenv("REWARD_MODEL_NAME", os.getenv("judge_model_name", "Qwen3-30B-A3B"))
 MAX_WORKERS = int(os.getenv("REWARD_MODEL_MAX_WORKERS", os.getenv("JUDGE_MAX_WORKERS", "32")))

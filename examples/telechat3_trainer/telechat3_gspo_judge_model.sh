@@ -61,6 +61,15 @@ clip_ratio_low=0.0003
 clip_ratio_high=0.0004
 loss_agg_mode="seq-mean-token-mean"
 
+# algorithm:
+#   rollout_correction:
+#     rollout_is: token
+#     rollout_is_threshold: 2.0
+#     rollout_rs: null  # No rejection sampling
+rollout_is=${rollout_is:-token}
+rollout_is_threshold=${rollout_is_threshold:-2.0}
+rollout_rs=${rollout_rs:-null}
+
 enable_filter_groups=False
 filter_groups_metric=acc
 
@@ -88,11 +97,13 @@ gen_max_tokens=$((max_tokens * 2))
 log_prob_max_tokens=$((max_tokens * 2))
 
 cap_dataset_size=$((1024 * 80000))
-filter_overlong_prompts=False
+
+filter_overlong_prompts=True
+
 export req_algo=${req_algo:-even_token}
 export agg=${agg:-max}
 
-export base_url=${base_url:-http://app-2abf503c001748c4967f6b495c322ffc.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1}
+export base_url=${base_url:-http://app-a069b3b91a5c4a20b78abad4ef0644c6.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1}
 export api_key=${api_key:-EMPTY}
 export judge_model_name=${judge_model_name:-Qwen3-30B-A3B}
 percentile=90
@@ -105,7 +116,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 sleep 1
 export root_dir=${root_dir:-/afs/chatrl/users/hxh/models/verl_rl_models_telechat3}
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=GSPO-judge-verl061-${base_model_suffix}_${resume_type}${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}
+export experiment_name=GSPO-judge-verl061-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}
 
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=${root_dir}/${project_name}/${experiment_name}
@@ -148,6 +159,9 @@ python3 -u -m verl.trainer.main_ppo \
     actor_rollout_ref.model.trust_remote_code=${trust_remote_code} \
     algorithm.use_kl_in_reward=${use_kl_in_reward} \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
+    algorithm.rollout_correction.rollout_is=${rollout_is} \
+    algorithm.rollout_correction.rollout_is_threshold=${rollout_is_threshold} \
+    algorithm.rollout_correction.rollout_rs=${rollout_rs} \
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \

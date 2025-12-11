@@ -326,7 +326,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 break
             except Exception as e:
                 current_try += 1
-                print(f"Failed to create config: {e}. Retrying {current_try} / {max_tries}", stacklevel=1)
+                print(f"Failed to create config: {e}. Retrying {current_try} / {max_tries}")
                 if current_try >= max_tries:
                     raise e
     
@@ -399,7 +399,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                     current_try += 1
                     if current_try >= max_tries:
                         raise e
-                    warnings.warn(f"Failed to actor_module_class.from_pretrained: {e}. Retrying {current_try} / {max_tries}", stacklevel=1)
+                    print(f"Failed to actor_module_class.from_pretrained: {e}. Retrying {current_try} / {max_tries}")
    
             # Apply Liger kernel to the model if use_liger is set to True
             if use_liger:

@@ -12,26 +12,29 @@ fi
 
 export dapo_math_17k=/afs/chatrl/users/hxh/data/math_data/dapo-math/prompts/dapo-math-17k_dedup_no_prompt_math_verify.parquet
 export aime2024_test_path=/afs/chatrl/users/hxh/data/rule_based_rl/AIME-2024/math_verify_aime2024_sample32_no_prompt.parquet
+
 export train_files=${train_files:-"['$dapo_math_17k']"}
 export  test_files="['$aime2024_test_path']"
 
+export root_dir=${root_dir:-/afs/chatrl/users/hxh/models/verl_rl_models_qwen7b}
 
 # 3. 原有 resume、模型、项目配置（保持不变）
 export resume_mode=${resume_mode:-auto}
 export resume_from_path=${resume_from_path:-null}
-export model_path=${model_path:-/afs/chatrl/public/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1___5B}
+export model_path=${model_path:-/afs/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B}
 export model_name=$(basename "$model_path")
 
-export project_name=${project_name:-verl_remote_judge_debug}
+export project_name=${project_name:-verl_qwen7b_remote_judge}
 
 export total_epochs=${total_epochs:-50}
 export vllm_tp=${vllm_tp:-2}
 
 export train_prompt_batch_size=${train_prompt_batch_size:-32}
-ppo_mini_batch_size=32
+export ppo_mini_batch_size=${ppo_mini_batch_size:-32}
+
 export grpo_rollout_n=${grpo_rollout_n:-8}
 
-export max_response_length=${max_response_length:-10000}
+export max_response_length=${max_response_length:-16384}
 export prompt_key=${prompt_key:-messages}
 
 export resume_type=${resume_type:-no_resume}
@@ -70,16 +73,21 @@ top_k=-1
 shuffle=False
 offload=False
 
+
+rollout_is=${rollout_is:-token}
+rollout_is_threshold=${rollout_is_threshold:-2.0}
+rollout_rs=${rollout_rs:-null}
+
 max_tokens=$((max_prompt_length  + max_response_length))
 gen_max_tokens=$((max_tokens * 2))
 log_prob_max_tokens=$((max_tokens * 2))
 
 cap_dataset_size=$((1024 * 80000))
-filter_overlong_prompts=False
+filter_overlong_prompts=True
 export req_algo=${req_algo:-even_token}
 export agg=${agg:-max}
 
-export base_url=${base_url:-http://app-2abf503c001748c4967f6b495c322ffc.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1}
+export base_url=${base_url:-http://app-a069b3b91a5c4a20b78abad4ef0644c6.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1}
 export api_key=${api_key:-EMPTY}
 export judge_model_name=${judge_model_name:-Qwen3-30B-A3B}
 percentile=90
@@ -89,10 +97,9 @@ reward_manager=${reward_manager:-dapo}
 echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = $train_prompt_batch_size, nnode = $nnode"
 
 sleep 1
-export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=GSPO-verl061_judge_model_${base_model_suffix}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}
+export base_model_suffix=${base_model_suffix:-qwen7b}
+export experiment_name=GSPO-judge-verl061-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}
 
-export root_dir=/afs/chatrl/users/hxh/models/verl_rl_models_qwen7b
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=${root_dir}/${project_name}/${experiment_name}
 # 如果路径不存在，则创建（-p 会自动逐级创建）
@@ -164,6 +171,9 @@ python3 -u -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.enable_chunked_prefill=True \
     actor_rollout_ref.rollout.max_num_batched_tokens=${gen_max_tokens} \
     actor_rollout_ref.rollout.temperature=${temperature} \
+    algorithm.rollout_correction.rollout_is=${rollout_is} \
+    algorithm.rollout_correction.rollout_is_threshold=${rollout_is_threshold} \
+    algorithm.rollout_correction.rollout_rs=${rollout_rs} \
     actor_rollout_ref.rollout.top_p=${top_p} \
     actor_rollout_ref.rollout.top_k=${top_k} \
     actor_rollout_ref.rollout.n=${grpo_rollout_n} \

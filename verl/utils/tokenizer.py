@@ -67,7 +67,7 @@ def hf_tokenizer(name_or_path, correct_pad_token=True, correct_gemma2=True, **kw
             current_try += 1
             if current_try >= max_tries:
                 raise e
-            warnings.warn(f"Failed to create tokenizer: {e}. Retrying {current_try} / {max_tries}", stacklevel=1)
+            print(f"Failed to create tokenizer: {e}. Retrying {current_try} / {max_tries}")
     
     if correct_pad_token:
         set_pad_token_id(tokenizer)
@@ -96,7 +96,7 @@ def hf_processor(name_or_path, **kwargs):
                 current_try += 1
                 if current_try >= max_tries:
                     raise e
-                warnings.warn(f"Failed to create tokenizer: {e}. Retrying {current_try} / {max_tries}", stacklevel=1)
+                print(f"Failed to create tokenizer: {e}. Retrying {current_try} / {max_tries}")
     except Exception as e:
         processor = None
         # TODO(haibin.lin): try-catch should be removed after adding transformer version req to setup.py to avoid

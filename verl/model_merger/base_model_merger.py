@@ -68,6 +68,9 @@ def parse_args():
     merge_parser.add_argument(
         "--private", action="store_true", help="Whether to upload the model to a private Hugging Face repository"
     )
+    merge_parser.add_argument(
+        "--trust_remote_code", action="store_true", help="Whether to trust remote code when loading the model"
+    )
 
     test_parser = subparsers.add_parser(
         "test", parents=[base_op_parser], help="Test merged model against a reference Hugging Face model"
@@ -133,7 +136,7 @@ def generate_config_from_args(args: argparse.Namespace) -> ModelMergerConfig:
         "is_value_model": args.is_value_model,
         "local_dir": args.local_dir,
         "hf_model_config_path": os.path.join(args.local_dir, "huggingface"),
-        "use_cpu_initialization": args.use_cpu_initialization,
+        "use_cpu_initialization": args.use_cpu_initialization
     }
 
     if args.operation == "merge":
@@ -142,7 +145,7 @@ def generate_config_from_args(args: argparse.Namespace) -> ModelMergerConfig:
             target_dir=args.target_dir,
             hf_upload_path=args.hf_upload_path,
             private=args.private,
-            test_hf_dir=None,
+            test_hf_dir=None
         )
         os.makedirs(config.target_dir, exist_ok=True)
     elif args.operation == "test":
