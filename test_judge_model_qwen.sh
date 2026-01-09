@@ -19,22 +19,19 @@ export  test_files="['$aime2024_test_path']"
 # 3. 原有 resume、模型、项目配置（保持不变）
 export resume_mode=${resume_mode:-auto}
 export resume_from_path=${resume_from_path:-null}
-
-# export resume_mode=${resume_mode:-resume_path}
-# export resume_from_path=${resume_from_path:-/afs/chatrl/users/zhr/models/test_rm/verl_remote_judge_debug/GSPO-1_5B-Async-test_2025-12-10_05-43-16_judgemodel/global_step_42}
-export model_path=${model_path:-/afs/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B}
+export model_path=${model_path:-/afs/chatrl/public/models/Qwen2.5-Math-7B}
 export model_name=$(basename "$model_path")
 
-export project_name=${project_name:-verl_tis_test}
+export project_name=${project_name:-verl_remote_judge_debug}
 
 export total_epochs=${total_epochs:-50}
 export vllm_tp=${vllm_tp:-2}
 
-export train_prompt_batch_size=${train_prompt_batch_size:-256}
+export train_prompt_batch_size=${train_prompt_batch_size:-32}
 ppo_mini_batch_size=32
 export grpo_rollout_n=${grpo_rollout_n:-8}
 
-export max_response_length=${max_response_length:-16384}
+export max_response_length=${max_response_length:-10000}
 export prompt_key=${prompt_key:-messages}
 
 export resume_type=${resume_type:-no_resume}
@@ -83,6 +80,7 @@ export req_algo=${req_algo:-even_token}
 export agg=${agg:-max}
 
 export base_url=${base_url:-http://app-a069b3b91a5c4a20b78abad4ef0644c6.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1}
+export api_key=${api_key:-EMPTY}
 export judge_model_name=${judge_model_name:-Qwen3-30B-A3B}
 percentile=90
 export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
@@ -92,11 +90,10 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 
 sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=TIS-Baseline-7B-Async-test-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}_${TIMESTAMP}
+export experiment_name=GSPO-Qwen-Async-test-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}_${TIMESTAMP}
 
-export root_dir=/afs/chatrl/users/zhr/models/test_rm
 rm -rf /workspace/tmp_tensorboard/*
-export TENSORBOARD_DIR=${root_dir}/${project_name}/${experiment_name}
+export TENSORBOARD_DIR=/afs/chatrl/users/zhr/models/verl_rl_models/${project_name}/${experiment_name}
 # 如果路径不存在，则创建（-p 会自动逐级创建）
 if [ ! -d "$TENSORBOARD_DIR" ]; then
     mkdir -p "$TENSORBOARD_DIR"
@@ -105,13 +102,14 @@ else
     echo "Directory already exists: $TENSORBOARD_DIR"
 fi
 # 定义存储 rollout 数据的目录
-export rollout_data_dir=${root_dir}/${project_name}/${experiment_name}/rollout_data_dir
+export rollout_data_dir=/afs/chatrl/users/zhr/models/verl_rl_models/${project_name}/${experiment_name}/rollout_data_dir
 if [ ! -d "$rollout_data_dir" ]; then
     mkdir -p "$rollout_data_dir"
     echo "Created directory: $rollout_data_dir"
 else
     echo "Directory already exists: $rollout_data_dir"
 fi
+
 # 定义存储概率提取结果的目录和文件
 export probability_output_dir=${root_dir}/${project_name}/${experiment_name}/probability_data
 if [ ! -d "$probability_output_dir" ]; then
@@ -178,6 +176,7 @@ python3 -u -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.top_k=${top_k} \
     actor_rollout_ref.rollout.n=${grpo_rollout_n} \
     actor_rollout_ref.rollout.multi_turn.format=hermes \
+    actor_rollout_ref.actor.ppo_max_token_len_per_gpu=${max_tokens} \
     actor_rollout_ref.rollout.val_kwargs.temperature=1.0 \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
     actor_rollout_ref.rollout.val_kwargs.top_k=${top_k} \
@@ -190,11 +189,10 @@ python3 -u -m verl.trainer.main_ppo \
     +reward_model.reward_kwargs.overlong_buffer_cfg.len=${overlong_buffer_len} \
     +reward_model.reward_kwargs.overlong_buffer_cfg.penalty_factor=${overlong_penalty_factor} \
     +reward_model.reward_kwargs.max_resp_len=${max_response_length} \
-    actor_rollout_ref.rollout.calculate_log_probs=True \
     trainer.resume_mode=${resume_mode} \
     trainer.resume_from_path=${resume_from_path} \
     trainer.logger=['tensorboard'] \
-    trainer.default_local_dir=${root_dir}/${project_name}/${experiment_name} \
+    trainer.default_local_dir=/afs/chatrl/users/zhr/models/verl_rl_models/${project_name}/${experiment_name} \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
     trainer.n_gpus_per_node=8 \

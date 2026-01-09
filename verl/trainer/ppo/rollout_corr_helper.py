@@ -321,6 +321,7 @@ def compute_rollout_correction_weights(
     rollout_is: str = "token",
     rollout_is_threshold: float = 2.0,
     rollout_is_batch_normalize: bool = False,
+    entropys: Optional[torch.Tensor] = None,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Compute importance sampling weights to correct for off-policy distribution shifts.
 
@@ -332,6 +333,7 @@ def compute_rollout_correction_weights(
     - Truncation of extreme weights (TIS: Truncated Importance Sampling)
     - Optional batch normalization (normalize to mean=1.0)
     - Metrics tracking for weight distribution analysis
+    - Optional entropy monitoring for TIS-affected tokens
 
     Args:
         log_ratio: Log ratio of training policy probability to rollout policy probability,
@@ -345,6 +347,8 @@ def compute_rollout_correction_weights(
             default 2.0.
         rollout_is_batch_normalize: Whether to normalize IS weights to have mean=1.0 per batch,
             default False.
+        entropys: Entropy of the training policy, shape (batch_size, seq_length).
+            Used to monitor entropy of tokens affected by TIS. Default: None.
 
     Returns:
         Tuple containing:
@@ -355,6 +359,7 @@ def compute_rollout_correction_weights(
                 - rollout_is_eff_sample_size: Effective sample size (ESS)
                 - rollout_is_seq_*: Sequence-level weight statistics
                 - rollout_is_batch_norm_factor: Normalization factor (only if batch_normalize=True)
+                - rollout_is_entropy_*: Entropy metrics (if entropys is provided)
     """
     # Validate input parameters
     valid_is_levels = {"token", "sequence"}
@@ -393,6 +398,7 @@ def compute_rollout_correction_weights(
         response_mask=response_mask,
         rollout_is=rollout_is,
         rollout_is_threshold=rollout_is_threshold,
+        entropys=entropys,
     )
 
     # Truncate extreme weights (TIS: Truncated Importance Sampling)
@@ -427,12 +433,36 @@ def compute_rollout_correction_weights(
     return rollout_is_weights, metrics
 
 
+def compute_group_stats(values: torch.Tensor, mask: torch.Tensor, prefix: str) -> dict[str, float]:
+    """Compute mean, max, min, std statistics for masked values."""
+    stats = {}
+    if not mask.any():
+        stats[f"{prefix}_mean"] = 0.0
+        stats[f"{prefix}_max"] = 0.0
+        stats[f"{prefix}_min"] = 0.0
+        stats[f"{prefix}_std"] = 0.0
+        return stats
+
+    # Mask values (set invalid to NaN to ignore in min/max/std if using nan-safe ops,
+    # but torch doesn't have nanmax easily available for all versions.
+    # Instead, we select valid values using boolean indexing).
+    valid_values = values[mask.bool()]
+
+    stats[f"{prefix}_mean"] = valid_values.mean().item()
+    stats[f"{prefix}_max"] = valid_values.max().item()
+    stats[f"{prefix}_min"] = valid_values.min().item()
+    stats[f"{prefix}_std"] = valid_values.std().item() if valid_values.numel() > 1 else 0.0
+
+    return stats
+
+
 def compute_is_metrics(
     rollout_is_weights: torch.Tensor,
     log_ratio_for_metrics: torch.Tensor,
     response_mask: torch.Tensor,
     rollout_is: str,
     rollout_is_threshold: float,
+    entropys: Optional[torch.Tensor] = None,
 ) -> dict[str, float]:
     """Compute comprehensive metrics for truncated importance sampling weights.
 
@@ -448,6 +478,8 @@ def compute_is_metrics(
             shape (batch_size, seq_length).
         rollout_is: IS weight aggregation level (matches compute_rollout_correction_weights).
         rollout_is_threshold: Upper threshold for truncated IS weights.
+        entropys: Entropy of the training policy, shape (batch_size, seq_length).
+            Used to monitor entropy of tokens affected by TIS.
 
     Returns:
         Dictionary of IS weight metrics (all scalars).
@@ -463,6 +495,21 @@ def compute_is_metrics(
     # Precompute log thresholds for accurate checks
     log_threshold_upper: torch.Tensor = torch.log(torch.tensor(rollout_is_threshold, device=device))
     log_threshold_lower: torch.Tensor = torch.log(torch.tensor(rollout_is_threshold_lower, device=device))
+
+    # Compute entropy metrics if provided
+    if entropys is not None:
+        # 1. Entropy of all tokens (Before TIS)
+        metrics.update(compute_group_stats(entropys, response_mask, "rollout_is_entropy_all"))
+
+        # 2. Entropy of clipped tokens (raw_weight > threshold)
+        # Note: rollout_is_weights here is UNTRUNCATED (except for safety bounds)
+        is_clipped_mask = (rollout_is_weights > rollout_is_threshold) & response_mask.bool()
+        metrics.update(compute_group_stats(entropys, is_clipped_mask, "rollout_is_entropy_clipped"))
+
+        # 3. Entropy of unclipped tokens (raw_weight <= threshold)
+        # Use logical NOT of clipped, AND with response_mask to ensure perfect partition
+        is_unclipped_mask = (~is_clipped_mask) & response_mask.bool()
+        metrics.update(compute_group_stats(entropys, is_unclipped_mask, "rollout_is_entropy_unclipped"))
 
     # Compute metrics based on aggregation level
     if rollout_is == "sequence":
@@ -553,6 +600,7 @@ def compute_rollout_correction_and_rejection_mask(
     rollout_rs_threshold_lower: Optional[float] = None,
     rollout_token_veto_threshold: Optional[float] = None,
     rollout_is_batch_normalize: bool = False,
+    entropys: Optional[torch.Tensor] = None,
 ) -> tuple[Optional[DataProto], torch.Tensor, dict[str, float]]:
     """Unified interface for computing IS weights and rejection masks.
 
@@ -564,6 +612,7 @@ def compute_rollout_correction_and_rejection_mask(
     - Separation of IS weights (for variance reduction) and rejection masks (for sample filtering)
     - Veto mechanism for catastrophic sequences (applied independently of other modes)
     - Comprehensive metrics tracking for mismatch diagnosis
+    - Entropy monitoring for TIS-affected tokens (high/low weights)
 
     Args:
         old_log_prob: Log probabilities from the training policy (e.g., FSDP FP32),
@@ -586,6 +635,8 @@ def compute_rollout_correction_and_rejection_mask(
             any token below this threshold are fully rejected. Set to None to disable veto.
         rollout_is_batch_normalize: Whether to normalize IS weights to have mean=1.0 per batch.
             Default: False.
+        entropys: Entropy of the training policy, shape (batch_size, seq_length).
+            Used to monitor entropy of tokens affected by TIS. Default: None.
 
     Returns:
         Tuple containing:
@@ -598,6 +649,7 @@ def compute_rollout_correction_and_rejection_mask(
                 - Rejection sampling rates
                 - Veto statistics
                 - Policy mismatch metrics (KL, PPL, etc.)
+                - Entropy metrics (if entropys is provided)
     """
     # Validate input masks
     if not response_mask.any():
@@ -625,6 +677,7 @@ def compute_rollout_correction_and_rejection_mask(
             rollout_is=rollout_is,
             rollout_is_threshold=rollout_is_threshold,
             rollout_is_batch_normalize=rollout_is_batch_normalize,
+            entropys=entropys,
         )
         metrics.update(is_metrics)
 
@@ -806,7 +859,9 @@ def compute_offpolicy_metrics(
 
 
 def compute_rollout_correction_and_add_to_batch(
-    batch: DataProto, rollout_corr_config: RolloutCorrectionConfig
+    batch: DataProto,
+    rollout_corr_config: RolloutCorrectionConfig,
+    entropys: Optional[torch.Tensor] = None,
 ) -> tuple[DataProto, dict]:
     """Compute rollout correction weights and apply rejection sampling.
 
@@ -824,6 +879,9 @@ def compute_rollout_correction_and_add_to_batch(
 
     Args:
         batch: DataProto with old_log_probs, rollout_log_probs, response_mask
+        rollout_corr_config: Configuration for rollout correction
+        entropys: Entropy tensor from training policy (batch_size, seq_length).
+            Used for entropy monitoring of TIS-affected tokens.
 
     Returns:
         Tuple of (updated_batch, metrics):
@@ -854,6 +912,7 @@ def compute_rollout_correction_and_add_to_batch(
         rollout_rs_threshold_lower=rollout_rs_threshold_lower,
         rollout_token_veto_threshold=rollout_token_veto_threshold,
         rollout_is_batch_normalize=rollout_is_batch_normalize,
+        entropys=entropys,
     )
 
     # ALWAYS update response_mask with rejection applied
@@ -937,6 +996,9 @@ def apply_rollout_correction(
     batch.batch["old_log_probs"] = batch.batch["rollout_log_probs"]
 
     # Always pass rollout_correction config to actor for metrics computation
+    from omegaconf import OmegaConf, DictConfig
+    if isinstance(policy_loss_config, DictConfig):
+        OmegaConf.set_struct(policy_loss_config, False)
     policy_loss_config["rollout_correction"] = rollout_corr_config
 
     # Check if policy gradient loss mode is enabled

@@ -431,7 +431,7 @@ class DataParallelPPOActor(BasePPOActor):
         # make sure we are in training mode
         self.actor_module.train()
 
-        temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
+        temperature = data.meta_info.get("temperature", 1.0)  # temperature must be in the data.meta_info to avoid silent error
 
         select_keys = [
             "responses",
@@ -666,3 +666,8 @@ class DataParallelPPOActor(BasePPOActor):
                     inference_probabilities=inf_list,
                     token_indices=token_indices,
                 )
+
+
+
+
+

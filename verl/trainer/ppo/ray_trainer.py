@@ -1126,7 +1126,8 @@ class RayPPOTrainer:
                             )
                             old_log_prob_metrics = {"actor/entropy": entropy_agg.detach().item()}
                             metrics.update(old_log_prob_metrics)
-                            old_log_prob.batch.pop("entropys")
+                            # Do not pop entropys yet, we need it for rollout correction metrics
+                            # old_log_prob.batch.pop("entropys")
                             batch = batch.union(old_log_prob)
                             if "rollout_log_probs" in batch.batch.keys():
                                 # TODO: we may want to add diff of probs too.
@@ -1180,10 +1181,20 @@ class RayPPOTrainer:
                         ):
                             from verl.trainer.ppo.rollout_corr_helper import compute_rollout_correction_and_add_to_batch
 
+                            # Extract entropys if available (computed in old_log_prob block)
+                            # Note: entropys might be None if bypass_recomputing_logprobs=True (but we are in else branch)
+                            current_entropys = batch.batch.get("entropys", None)
+
                             # Compute IS weights, apply rejection sampling, compute metrics
-                            batch, is_metrics = compute_rollout_correction_and_add_to_batch(batch, rollout_corr_config)
+                            batch, is_metrics = compute_rollout_correction_and_add_to_batch(
+                                batch, rollout_corr_config, entropys=current_entropys
+                            )
                             # IS and off-policy metrics already have rollout_corr/ prefix
                             metrics.update(is_metrics)
+
+                        # Clean up entropys from batch if it exists (was preserved for rollout correction)
+                        if "entropys" in batch.batch.keys():
+                            batch.batch.pop("entropys")
 
                         # compute advantages, executed on the driver process
                         norm_adv_by_std_in_grpo = self.config.algorithm.get(

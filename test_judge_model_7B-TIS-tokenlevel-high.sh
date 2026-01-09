@@ -19,15 +19,18 @@ export  test_files="['$aime2024_test_path']"
 # 3. 原有 resume、模型、项目配置（保持不变）
 export resume_mode=${resume_mode:-auto}
 export resume_from_path=${resume_from_path:-null}
-export model_path=${model_path:-/afs/chatrl/public/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1___5B}
+
+# export resume_mode=${resume_mode:-resume_path}
+# export resume_from_path=${resume_from_path:-/afs/chatrl/users/zhr/models/test_rm/verl_remote_judge_debug/GSPO-1_5B-Async-test_2025-12-10_05-43-16_judgemodel/global_step_42}
+export model_path=${model_path:-/afs/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B}
 export model_name=$(basename "$model_path")
 
-export project_name=${project_name:-verl_remote_judge_debug}
+export project_name=${project_name:-verl_tis_test}
 
 export total_epochs=${total_epochs:-50}
 export vllm_tp=${vllm_tp:-2}
 
-export train_prompt_batch_size=${train_prompt_batch_size:-32}
+export train_prompt_batch_size=${train_prompt_batch_size:-256}
 ppo_mini_batch_size=32
 export grpo_rollout_n=${grpo_rollout_n:-8}
 
@@ -78,9 +81,9 @@ cap_dataset_size=$((1024 * 80000))
 filter_overlong_prompts=False
 export req_algo=${req_algo:-even_token}
 export agg=${agg:-max}
+export rollout_is_threshold=${rollout_is_threshold:-5.0} # 1.5 - 5.0
 
-export base_url=${base_url:-http://app-2abf503c001748c4967f6b495c322ffc.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1}
-export api_key=${api_key:-EMPTY}
+export base_url=${base_url:-http://app-a069b3b91a5c4a20b78abad4ef0644c6.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1}
 export judge_model_name=${judge_model_name:-Qwen3-30B-A3B}
 percentile=90
 export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
@@ -90,9 +93,9 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 
 sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=GSPO-Async-test_${TIMESTAMP}
+export experiment_name=TIS-Token-7B-${rollout_is_threshold}_Async-test-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}_${TIMESTAMP}
 
-export root_dir=/afs/chatrl/users/hxh/models/verl_rl_models_qwen1.5b
+export root_dir=/afs/chatrl/users/zhr/models/test_rm
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=${root_dir}/${project_name}/${experiment_name}
 # 如果路径不存在，则创建（-p 会自动逐级创建）
@@ -110,9 +113,17 @@ if [ ! -d "$rollout_data_dir" ]; then
 else
     echo "Directory already exists: $rollout_data_dir"
 fi
+# 定义存储概率提取结果的目录和文件
+export probability_output_dir=${root_dir}/${project_name}/${experiment_name}/probability_data
+if [ ! -d "$probability_output_dir" ]; then
+    mkdir -p "$probability_output_dir"
+    echo "Created directory: $probability_output_dir"
+else
+    echo "Directory already exists: $probability_output_dir"
+fi
+export probability_output_file=${probability_output_dir}/token_probabilities.jsonl
 
-
-cd /afs/chatrl/users/hxh/code/verl_gspo/verl_remote
+cd /afs/chatrl/users/zhr/code/verl2
 
 export HYDRA_FULL_ERROR=1
 
@@ -173,21 +184,29 @@ python3 -u -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.val_kwargs.top_k=${top_k} \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
+    +actor_rollout_ref.actor.probability_output_file=${probability_output_file} \
+    +actor_rollout_ref.rollout.probability_output_file=${probability_output_file} \
     reward_model.reward_manager=${reward_manager} \
     +reward_model.reward_kwargs.overlong_buffer_cfg.enable=${enable_overlong_buffer} \
     +reward_model.reward_kwargs.overlong_buffer_cfg.len=${overlong_buffer_len} \
     +reward_model.reward_kwargs.overlong_buffer_cfg.penalty_factor=${overlong_penalty_factor} \
     +reward_model.reward_kwargs.max_resp_len=${max_response_length} \
+    actor_rollout_ref.rollout.calculate_log_probs=True \
+    algorithm.rollout_correction.rollout_is="token" \
+    algorithm.rollout_correction.rollout_is_threshold=${rollout_is_threshold} \
+    algorithm.rollout_correction.rollout_is_batch_normalize=True \
+    algorithm.rollout_correction.bypass_mode=False \
+    algorithm.rollout_correction.use_policy_gradient=True \
     trainer.resume_mode=${resume_mode} \
     trainer.resume_from_path=${resume_from_path} \
     trainer.logger=['tensorboard'] \
     trainer.default_local_dir=${root_dir}/${project_name}/${experiment_name} \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
-    trainer.n_gpus_per_node=2 \
+    trainer.n_gpus_per_node=8 \
     trainer.nnodes=${nnode} \
     trainer.save_freq=6 \
     trainer.test_freq=3 \
     trainer.val_before_train=False \
     trainer.rollout_data_dir=${rollout_data_dir}  \
-    trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/hxh/logs/verl_logs/${project_name}-${experiment_name}.log
+    trainer.total_epochs=${total_epochs} 2>&1 | tee /afs/chatrl/users/zhr/log/verl/logs_sensecore/${experiment_name}.log

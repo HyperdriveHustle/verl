@@ -76,7 +76,7 @@ filter_overlong_prompts=False
 export req_algo=${req_algo:-even_token}
 export agg=${agg:-max}
 
-export base_url=${base_url:-http://app-2abf503c001748c4967f6b495c322ffc.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1}
+export base_url=${base_url:-http://app-a069b3b91a5c4a20b78abad4ef0644c6.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1}
 export api_key=${api_key:-EMPTY}
 export judge_model_name=${judge_model_name:-Qwen3-30B-A3B}
 percentile=90
@@ -87,7 +87,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 
 sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=GSPO-Async-test_${TIMESTAMP}
+export experiment_name=GSPO-Async-test-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}_${TIMESTAMP}
 
 rm -rf /workspace/tmp_tensorboard/*
 export TENSORBOARD_DIR=/afs/chatrl/users/zhr/models/verl_rl_models/${project_name}/${experiment_name}

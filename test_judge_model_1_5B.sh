@@ -22,7 +22,7 @@ export resume_from_path=${resume_from_path:-null}
 
 # export resume_mode=${resume_mode:-resume_path}
 # export resume_from_path=${resume_from_path:-/afs/chatrl/users/zhr/models/test_rm/verl_remote_judge_debug/GSPO-1_5B-Async-test_2025-12-10_05-43-16_judgemodel/global_step_42}
-export model_path=${model_path:-/afs/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B}
+export model_path=${model_path:-/afs/chatrl/public/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1___5B}
 export model_name=$(basename "$model_path")
 
 export project_name=${project_name:-verl_tis_test}
@@ -30,7 +30,7 @@ export project_name=${project_name:-verl_tis_test}
 export total_epochs=${total_epochs:-50}
 export vllm_tp=${vllm_tp:-2}
 
-export train_prompt_batch_size=${train_prompt_batch_size:-256}
+export train_prompt_batch_size=${train_prompt_batch_size:-32}
 ppo_mini_batch_size=32
 export grpo_rollout_n=${grpo_rollout_n:-8}
 
@@ -92,7 +92,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 
 sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=TIS-Baseline-7B-Async-test-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}_${TIMESTAMP}
+export experiment_name=TIS-Baseline-1_5B-Async-test-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}_${TIMESTAMP}
 
 export root_dir=/afs/chatrl/users/zhr/models/test_rm
 rm -rf /workspace/tmp_tensorboard/*
@@ -197,7 +197,7 @@ python3 -u -m verl.trainer.main_ppo \
     trainer.default_local_dir=${root_dir}/${project_name}/${experiment_name} \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
-    trainer.n_gpus_per_node=8 \
+    trainer.n_gpus_per_node=2 \
     trainer.nnodes=${nnode} \
     trainer.save_freq=6 \
     trainer.test_freq=3 \

@@ -22,7 +22,7 @@ export resume_from_path=${resume_from_path:-null}
 
 # export resume_mode=${resume_mode:-resume_path}
 # export resume_from_path=${resume_from_path:-/afs/chatrl/users/zhr/models/test_rm/verl_remote_judge_debug/GSPO-1_5B-Async-test_2025-12-10_05-43-16_judgemodel/global_step_42}
-export model_path=${model_path:-/afs/chatrl/public/models/DeepSeek-R1-Distill-Qwen-7B}
+export model_path=${model_path:-/afs/chatrl/public/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1___5B}
 export model_name=$(basename "$model_path")
 
 export project_name=${project_name:-verl_tis_test}
@@ -92,7 +92,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 
 sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=TIS-Baseline-7B-Async-test-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}_${TIMESTAMP}
+export experiment_name=TIS-Token-1_5B-Async-test-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}_${TIMESTAMP}
 
 export root_dir=/afs/chatrl/users/zhr/models/test_rm
 rm -rf /workspace/tmp_tensorboard/*
@@ -191,13 +191,18 @@ python3 -u -m verl.trainer.main_ppo \
     +reward_model.reward_kwargs.overlong_buffer_cfg.penalty_factor=${overlong_penalty_factor} \
     +reward_model.reward_kwargs.max_resp_len=${max_response_length} \
     actor_rollout_ref.rollout.calculate_log_probs=True \
+    algorithm.rollout_correction.rollout_is="token" \
+    algorithm.rollout_correction.rollout_is_threshold=2.0 \
+    algorithm.rollout_correction.rollout_is_batch_normalize=True \
+    algorithm.rollout_correction.bypass_mode=True \
+    algorithm.rollout_correction.use_policy_gradient=True \
     trainer.resume_mode=${resume_mode} \
     trainer.resume_from_path=${resume_from_path} \
     trainer.logger=['tensorboard'] \
     trainer.default_local_dir=${root_dir}/${project_name}/${experiment_name} \
     trainer.project_name=${project_name} \
     trainer.experiment_name=${experiment_name} \
-    trainer.n_gpus_per_node=8 \
+    trainer.n_gpus_per_node=2 \
     trainer.nnodes=${nnode} \
     trainer.save_freq=6 \
     trainer.test_freq=3 \

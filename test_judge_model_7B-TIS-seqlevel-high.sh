@@ -71,7 +71,7 @@ temperature=1.0
 top_p=1.0
 top_k=-1
 shuffle=False
-offload=False
+offload=True
 
 max_tokens=$((max_prompt_length  + max_response_length))
 gen_max_tokens=$((max_tokens * 2))
@@ -81,6 +81,7 @@ cap_dataset_size=$((1024 * 80000))
 filter_overlong_prompts=False
 export req_algo=${req_algo:-even_token}
 export agg=${agg:-max}
+export rollout_is_threshold=${rollout_is_threshold:-7.0} # 2.0 - 10.0
 
 export base_url=${base_url:-http://app-a069b3b91a5c4a20b78abad4ef0644c6.ns-bjdianxin-cb517126.svc.cluster.local:6669/v1}
 export judge_model_name=${judge_model_name:-Qwen3-30B-A3B}
@@ -92,7 +93,7 @@ echo "real_train_batch_size = $real_train_batch_size, train_prompt_batch_size = 
 
 sleep 1
 export base_model_suffix=${base_model_suffix:-Base}
-export experiment_name=TIS-Baseline-7B-Async-test-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}_${TIMESTAMP}
+export experiment_name=TIS-Seq-7B-${rollout_is_threshold}_Async-test-${base_model_suffix}_${resume_type}_${nnode}node_tp${vllm_tp}_rollout${grpo_rollout_n}_temp${temperature}_bs${train_prompt_batch_size}_minibs${ppo_mini_batch_size}_lr${lr}_sp${ulysses_sequence_parallel_size}_maxlen${max_response_length}_${TIMESTAMP}
 
 export root_dir=/afs/chatrl/users/zhr/models/test_rm
 rm -rf /workspace/tmp_tensorboard/*
@@ -191,6 +192,11 @@ python3 -u -m verl.trainer.main_ppo \
     +reward_model.reward_kwargs.overlong_buffer_cfg.penalty_factor=${overlong_penalty_factor} \
     +reward_model.reward_kwargs.max_resp_len=${max_response_length} \
     actor_rollout_ref.rollout.calculate_log_probs=True \
+    algorithm.rollout_correction.rollout_is="sequence" \
+    algorithm.rollout_correction.rollout_is_threshold=${rollout_is_threshold}\
+    algorithm.rollout_correction.rollout_is_batch_normalize=True \
+    algorithm.rollout_correction.bypass_mode=False \
+    algorithm.rollout_correction.use_policy_gradient=True \
     trainer.resume_mode=${resume_mode} \
     trainer.resume_from_path=${resume_from_path} \
     trainer.logger=['tensorboard'] \
